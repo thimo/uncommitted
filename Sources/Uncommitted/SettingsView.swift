@@ -221,8 +221,8 @@ struct ActionsSettingsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
                 List(selection: $selection) {
                     ForEach($configStore.config.actions) { $action in
                         ActionRow(action: action, isDefault: $action.wrappedValue.id == configStore.config.actions.first?.id)
@@ -232,75 +232,61 @@ struct ActionsSettingsView: View {
                         configStore.config.actions.move(fromOffsets: from, toOffset: to)
                     }
                 }
-                .listStyle(.inset)
+                .listStyle(.inset(alternatesRowBackgrounds: false))
+                .environment(\.defaultMinListRowHeight, 38)
+                .frame(width: 320)
 
                 Divider()
 
-                HStack(spacing: 4) {
-                    Menu {
-                        Button("Add Application…", action: addApp)
-                        Button("Add Custom Command…", action: addCommand)
-                        Button("Add Finder") {
-                            configStore.config.actions.append(
-                                Action(name: "Finder", kind: .finder)
-                            )
+                // Detail pane
+                Group {
+                    if let index = selectedIndex {
+                        ActionDetailView(action: $configStore.config.actions[index])
+                    } else {
+                        VStack {
+                            Text("Select an action")
+                                .foregroundStyle(.secondary)
                         }
-                    } label: {
-                        Image(systemName: "plus").frame(width: 22, height: 22)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-
-                    Button(action: removeSelected) {
-                        Image(systemName: "minus").frame(width: 22, height: 22)
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(selection == nil || configStore.config.actions.count <= 1)
-
-                    Button {
-                        moveSelection(by: -1)
-                    } label: {
-                        Image(systemName: "arrow.up").frame(width: 22, height: 22)
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled((selectedIndex ?? 0) <= 0)
-
-                    Button {
-                        moveSelection(by: 1)
-                    } label: {
-                        Image(systemName: "arrow.down").frame(width: 22, height: 22)
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(selectedIndex == nil || selectedIndex == configStore.config.actions.count - 1)
-
-                    Spacer()
-
-                    Text("First action is the default. Right-click a repo for alternates.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                        .lineLimit(2)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
             }
-            .frame(width: 320)
 
             Divider()
 
-            // Detail pane
-            Group {
-                if let index = selectedIndex {
-                    ActionDetailView(action: $configStore.config.actions[index])
-                } else {
-                    VStack {
-                        Text("Select an action")
-                            .foregroundStyle(.secondary)
+            // Full-width bottom toolbar
+            HStack(spacing: 4) {
+                Menu {
+                    Button("Add Application…", action: addApp)
+                    Button("Add Custom Command…", action: addCommand)
+                    Button("Add Finder") {
+                        configStore.config.actions.append(
+                            Action(name: "Finder", kind: .finder)
+                        )
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } label: {
+                    Image(systemName: "plus").frame(width: 22, height: 22)
                 }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+
+                Button(action: removeSelected) {
+                    Image(systemName: "minus").frame(width: 22, height: 22)
+                }
+                .buttonStyle(.borderless)
+                .disabled(selection == nil || configStore.config.actions.count <= 1)
+
+                Spacer()
+
+                Text("First action is the default — drag rows to reorder. Right-click a repo for alternates.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
     }
 
@@ -331,15 +317,6 @@ struct ActionsSettingsView: View {
         guard let id = selection else { return }
         configStore.config.actions.removeAll { $0.id == id }
         selection = nil
-    }
-
-    private func moveSelection(by offset: Int) {
-        guard let index = selectedIndex else { return }
-        let newIndex = index + offset
-        guard newIndex >= 0 && newIndex < configStore.config.actions.count else { return }
-        // `move(fromOffsets:toOffset:)` uses insertion indices — moving down needs +1.
-        let insertion = offset < 0 ? newIndex : newIndex + 1
-        configStore.config.actions.move(fromOffsets: IndexSet(integer: index), toOffset: insertion)
     }
 }
 

@@ -11,22 +11,35 @@ enum GitService {
         let stderr = Pipe()
         process.standardOutput = stdout
         process.standardError = stderr
+        process.standardInput = FileHandle.nullDevice
 
         do {
             try process.run()
         } catch {
             return nil
         }
+
+        // Read the pipes before waitUntilExit so we can't deadlock on output
+        // that exceeds the 64KB pipe buffer. readDataToEndOfFile unblocks when
+        // git closes its end of the pipe, which happens when it exits.
+        let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
+        _ = stderr.fileHandleForReading.readDataToEndOfFile()
+
         process.waitUntilExit()
 
-        guard process.terminationStatus == 0 else { return nil }
+        try? stdout.fileHandleForReading.close()
+        try? stderr.fileHandleForReading.close()
 
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return nil }
+        guard process.terminationStatus == 0 else { return nil }
+        guard let output = String(data: stdoutData, encoding: .utf8) else { return nil }
         return parse(output)
     }
 
-    private static func parse(_ output: String) -> RepoStatus {
+    /// Parses `git status --porcelain=v2 --branch` output. Returns nil if the
+    /// output is missing the `branch.oid` header, which git always emits for a
+    /// real repository — if it's absent, something is wrong and we'd rather
+    /// preserve the previous status than record a bogus "clean" state.
+    private static func parse(_ output: String) -> RepoStatus? {
         var branch = "(detached)"
         var headOid: String?
         var ahead = 0
@@ -73,6 +86,10 @@ enum GitService {
                 break
             }
         }
+
+        // Require at least a branch.oid — every healthy repo emits one.
+        // Without it we can't trust that "no entry lines" actually means "clean".
+        guard headOid != nil else { return nil }
 
         return RepoStatus(
             branch: branch,

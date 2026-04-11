@@ -64,6 +64,11 @@ final class RepoStore: ObservableObject {
             let status = GitService.status(at: url)
             DispatchQueue.main.async {
                 guard let self else { return }
+                // Preserve the previous status on failure — a nil result from
+                // GitService means we couldn't trust the output (git errored,
+                // or the parse didn't see a branch.oid). Overwriting the last
+                // good status with nothing would make repos "flicker to clean".
+                guard let status else { return }
                 if let i = self.repos.firstIndex(where: { $0.url == url }) {
                     self.repos[i].status = status
                 }
