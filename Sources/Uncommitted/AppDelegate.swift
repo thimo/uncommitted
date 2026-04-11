@@ -26,12 +26,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPopover()
         updateStatusLabel()
 
-        repoStore.$repos
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateStatusLabel()
-            }
-            .store(in: &cancellables)
+        // Re-render the menu bar label whenever repos change OR when the
+        // user picks a different label style in Settings.
+        Publishers.Merge(
+            repoStore.$repos.map { _ in () }.eraseToAnyPublisher(),
+            configStore.$config
+                .map(\.menuBarLabelStyle)
+                .removeDuplicates()
+                .map { _ in () }
+                .eraseToAnyPublisher()
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in
+            self?.updateStatusLabel()
+        }
+        .store(in: &cancellables)
     }
 
     // MARK: - Status item
@@ -55,11 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.imagePosition = .imageLeft
         button.imageHugsTitle = true
 
-        // Single at-a-glance number: how many repositories need attention.
-        // Unknown (nil) status doesn't count — we only tally what we know
-        // to be dirty, so a momentarily-stale repo never inflates the badge.
-        let dirtyCount = repoStore.repos.filter { $0.status?.isClean == false }.count
-        let title = dirtyCount > 0 ? " \(dirtyCount)" : ""
+        let title = labelTitle(for: configStore.config.menuBarLabelStyle)
 
         // NSStatusBarButton silently drops a plain `title` alongside an image
         // in some macOS versions. `attributedTitle` with an explicit font is
@@ -68,6 +73,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             string: title,
             attributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]
         )
+    }
+
+    private func labelTitle(for style: MenuBarLabelStyle) -> String {
+        switch style {
+        case .total:
+            // Everything that needs your attention: files to commit, commits
+            // to push, commits to pull.
+            let total = repoStore.totalUncommitted + repoStore.totalUnpushed + repoStore.totalUnpulled
+            return total > 0 ? " \(total)" : ""
+
+        case .dirtyRepos:
+            let count = repoStore.repos.filter { $0.status?.isClean == false }.count
+            return count > 0 ? " \(count)" : ""
+
+        case .split:
+            var parts: [String] = []
+            let uncommitted = repoStore.totalUncommitted
+            let unpushed = repoStore.totalUnpushed
+            let unpulled = repoStore.totalUnpulled
+            if uncommitted > 0 { parts.append("\(uncommitted)") }
+            if unpushed > 0 { parts.append("↑\(unpushed)") }
+            if unpulled > 0 { parts.append("↓\(unpulled)") }
+            return parts.isEmpty ? "" : " " + parts.joined(separator: " ")
+
+        case .iconOnly:
+            return ""
+        }
     }
 
     // MARK: - Popover
