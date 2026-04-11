@@ -47,7 +47,6 @@ struct MenuContentView: View {
                         RepoRow(
                             repo: repo,
                             actions: configStore.config.actions,
-                            defaultAction: configStore.config.actions.first,
                             onDefault: {
                                 guard let first = configStore.config.actions.first else { return }
                                 ActionRunner.run(repoURL: repo.url, action: first)
@@ -198,14 +197,19 @@ private struct GhostButtonBody<Label: View>: View {
             .background(
                 RoundedRectangle(cornerRadius: 5)
                     .fill(fill)
+                    // Animate ONLY on press state changes so the click
+                    // fades in/out instead of snapping. Scoping to
+                    // `value: isPressed` keeps the animation from
+                    // bleeding into other properties.
+                    .animation(.easeOut(duration: 0.35), value: isPressed)
             )
             .contentShape(RoundedRectangle(cornerRadius: 5))
             .onHover { isHovered = $0 }
     }
 
     private var fill: Color {
-        if isPressed { return Color.primary.opacity(0.15) }
-        if isHovered { return Color.primary.opacity(0.1) }
+        if isPressed { return Color.primary.opacity(0.18) }
+        if isHovered { return Color.primary.opacity(0.08) }
         return .clear
     }
 }
@@ -213,7 +217,6 @@ private struct GhostButtonBody<Label: View>: View {
 struct RepoRow: View {
     let repo: Repo
     let actions: [Action]
-    let defaultAction: Action?
     let onDefault: () -> Void
     let onAlternate: (Action) -> Void
 
@@ -221,12 +224,7 @@ struct RepoRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            // Left: the default action's app icon, so the row visually
-            // telegraphs "click opens this in <X>".
-            defaultActionIcon
-                .frame(width: 18, height: 18)
-
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             // Name + branch. Clickable area for the default action.
             Button(action: onDefault) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -297,19 +295,6 @@ struct RepoRow: View {
         )
         resized.unlockFocus()
         return resized
-    }
-
-    @ViewBuilder
-    private var defaultActionIcon: some View {
-        if let action = defaultAction, let nsImage = AppIcons.icon(for: action) {
-            Image(nsImage: nsImage)
-                .resizable()
-        } else {
-            // Custom shell command or unresolvable app — fall back to a
-            // neutral symbol so the column is never empty.
-            Image(systemName: "terminal")
-                .foregroundStyle(.secondary)
-        }
     }
 }
 

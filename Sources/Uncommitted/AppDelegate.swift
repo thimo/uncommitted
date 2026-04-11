@@ -70,9 +70,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // NSStatusBarButton silently drops a plain `title` alongside an image
         // in some macOS versions. `attributedTitle` with an explicit font is
         // the reliable way to render icon + text in the menu bar.
+        // Paragraph style with zero head indent tightens the gap between
+        // the SF Symbol image and the leading character of the title.
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byClipping
         button.attributedTitle = NSAttributedString(
             string: title,
-            attributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .paragraphStyle: paragraph,
+                .kern: 0,
+            ]
         )
     }
 
@@ -82,11 +90,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Everything that needs your attention: files to commit, commits
             // to push, commits to pull.
             let total = repoStore.totalUncommitted + repoStore.totalUnpushed + repoStore.totalUnpulled
-            return total > 0 ? " \(total)" : ""
+            return total > 0 ? "\(total)" : ""
 
         case .dirtyRepos:
             let count = repoStore.repos.filter { $0.status?.isClean == false }.count
-            return count > 0 ? " \(count)" : ""
+            return count > 0 ? "\(count)" : ""
 
         case .split:
             var parts: [String] = []
@@ -96,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if uncommitted > 0 { parts.append("\(uncommitted)") }
             if unpushed > 0 { parts.append("↑\(unpushed)") }
             if unpulled > 0 { parts.append("↓\(unpulled)") }
-            return parts.isEmpty ? "" : " " + parts.joined(separator: " ")
+            return parts.joined(separator: " ")
 
         case .iconOnly:
             return ""
