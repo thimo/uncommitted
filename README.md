@@ -19,14 +19,17 @@ At-a-glance status for every repo you care about:
 
 ## Menu bar label
 
-Shows a branch icon followed by the totals across every tracked repo:
+A git-branch icon followed by a single at-a-glance number: **how many
+repositories need your attention**. Click for the full breakdown.
 
-| Example | Meaning |
+| State | Label |
 |---|---|
-| `⎇` | everything's clean |
-| `⎇ 20` | 20 uncommitted files across all repos |
-| `⎇ ↑7` | 7 commits ahead of upstream, nothing uncommitted |
-| `⎇ 20 ↑7` | both |
+| All repositories clean | branch icon only |
+| Three repositories have uncommitted or unpushed work | branch icon + `3` |
+
+The per-file counts (`↑7`, `★2`, `M10`, `A1`) live inside the popover, one
+row per repo — not in the menu bar. Menu bars are for "do I need to care?"
+signals, not data.
 
 ## Status badges
 
