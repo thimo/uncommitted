@@ -39,6 +39,13 @@ final class RepoStore: ObservableObject {
         }
     }
 
+    /// Re-resolve sources from config and refresh every repo. Unlike
+    /// `refreshAll`, this also picks up new repos that appeared under a
+    /// watched source folder since the last scan.
+    func rebuildFromConfig() {
+        rebuild(from: configStore.config.sources)
+    }
+
     private func rebuild(from sources: [Source]) {
         let resolvedURLs = Self.resolve(sources: sources)
 

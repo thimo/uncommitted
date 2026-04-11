@@ -53,13 +53,13 @@ struct MenuContentView: View {
                 .font(.headline)
             Spacer()
             Button {
-                store.refreshAll()
+                store.rebuildFromConfig()
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .help("Refresh all")
+            .help("Rescan sources and refresh all")
         }
         .padding(.horizontal, 12)
         .padding(.top, 10)
@@ -87,7 +87,7 @@ struct MenuContentView: View {
             Image(systemName: "checkmark.seal.fill")
                 .font(.largeTitle)
                 .foregroundStyle(.green)
-            Text("You're fully committed 🎉")
+            Text("You're fully committed")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -98,6 +98,9 @@ struct MenuContentView: View {
     private var footer: some View {
         HStack {
             Button("Settings…") {
+                // SwiftUI has no public API to dismiss a MenuBarExtra popover in
+                // macOS 14, so we close the menu-bar status window ourselves.
+                dismissMenuBarPopover()
                 // LSUIElement apps don't auto-activate when a SwiftUI window opens,
                 // so without this the Settings window comes up with an inactive
                 // titlebar and can't be raised again after focusing another app.
@@ -121,6 +124,17 @@ struct MenuContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+}
+
+/// Close the MenuBarExtra popover. SwiftUI has no public API for this in
+/// macOS 14, so we find the status-bar window and close it directly.
+private func dismissMenuBarPopover() {
+    for window in NSApp.windows {
+        let cls = String(describing: type(of: window))
+        if cls.contains("StatusBar") || cls.contains("MenuBar") {
+            window.close()
+        }
     }
 }
 

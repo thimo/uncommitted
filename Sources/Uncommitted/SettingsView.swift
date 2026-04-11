@@ -4,21 +4,53 @@ import ServiceManagement
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    @State private var selection: Tab = .general
+
+    enum Tab: Hashable {
+        case general
+        case repositories
+        case actions
+        case about
+    }
+
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(Tab.general)
 
             RepositoriesSettingsView()
                 .tabItem { Label("Repositories", systemImage: "folder") }
+                .tag(Tab.repositories)
 
             ActionsSettingsView()
                 .tabItem { Label("Actions", systemImage: "cursorarrow.rays") }
+                .tag(Tab.actions)
 
             AboutSettingsView()
                 .tabItem { Label("About", systemImage: "info.circle") }
+                .tag(Tab.about)
         }
-        .frame(minWidth: 560)
+        .frame(width: width(for: selection), height: height(for: selection))
+        .animation(.easeInOut(duration: 0.18), value: selection)
+    }
+
+    private func width(for tab: Tab) -> CGFloat {
+        switch tab {
+        case .general:      return 480
+        case .repositories: return 560
+        case .actions:      return 620
+        case .about:        return 420
+        }
+    }
+
+    private func height(for tab: Tab) -> CGFloat {
+        switch tab {
+        case .general:      return 220
+        case .repositories: return 420
+        case .actions:      return 440
+        case .about:        return 340
+        }
     }
 }
 
@@ -51,7 +83,6 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .frame(width: 560, height: 260)
     }
 }
 
@@ -106,7 +137,6 @@ struct RepositoriesSettingsView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
-        .frame(width: 560, height: 420)
     }
 
     private func addSource() {
@@ -272,9 +302,7 @@ struct ActionsSettingsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .frame(width: 260)
         }
-        .frame(width: 580, height: 420)
     }
 
     private func addApp() {
@@ -488,6 +516,6 @@ struct AboutSettingsView: View {
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 16)
         }
-        .frame(width: 420, height: 340)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
