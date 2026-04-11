@@ -40,6 +40,14 @@ struct MenuContentView: View {
                             onDefault: {
                                 guard let first = configStore.config.actions.first else { return }
                                 ActionRunner.run(repoURL: repo.url, action: first)
+                                // The other app becoming active should auto-close a
+                                // transient popover, but the timing isn't reliable —
+                                // sometimes the popover stays open. Explicit dismiss.
+                                dismissPopover()
+                            },
+                            onAlternate: { action in
+                                ActionRunner.run(repoURL: repo.url, action: action)
+                                dismissPopover()
                             }
                         )
                         .padding(.horizontal, 12)
@@ -63,7 +71,7 @@ struct MenuContentView: View {
             Button {
                 store.rebuildFromConfig()
             } label: {
-                Image(systemName: "arrow.clockwise")
+                RefreshIcon(isWorking: store.runningRefreshes > 0)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(GhostButtonStyle())
@@ -138,6 +146,32 @@ struct MenuContentView: View {
     }
 }
 
+// MARK: - Refresh icon
+
+/// The header refresh icon. When something is in flight (status refresh
+/// in progress), the icon rotates continuously so the user sees the app
+/// is actually doing work. Stops cleanly when idle.
+struct RefreshIcon: View {
+    let isWorking: Bool
+    @State private var angle: Double = 0
+
+    var body: some View {
+        Image(systemName: "arrow.clockwise")
+            .rotationEffect(.degrees(angle))
+            .onChange(of: isWorking) { _, newValue in
+                if newValue {
+                    withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
+                        angle = 360
+                    }
+                } else {
+                    withAnimation(.linear(duration: 0.2)) {
+                        angle = 0
+                    }
+                }
+            }
+    }
+}
+
 // MARK: - Hover cursor helper
 
 extension View {
@@ -195,6 +229,7 @@ struct RepoRow: View {
     let repo: Repo
     let actions: [Action]
     let onDefault: () -> Void
+    let onAlternate: (Action) -> Void
 
     @EnvironmentObject var store: RepoStore
     @State private var isHovered = false
@@ -239,7 +274,7 @@ struct RepoRow: View {
         .contextMenu {
             ForEach(actions) { action in
                 Button(action.name) {
-                    ActionRunner.run(repoURL: repo.url, action: action)
+                    onAlternate(action)
                 }
             }
         }

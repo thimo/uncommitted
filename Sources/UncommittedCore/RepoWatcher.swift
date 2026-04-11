@@ -1,25 +1,41 @@
 import Foundation
 import CoreServices
 
-final class RepoWatcher {
+/// Wraps an FSEvents stream. Lives as long as the owning `RepoStore`.
+/// Notes on safety: `FSEventStreamContext.info` is stored as a retained
+/// `Unmanaged<RepoWatcher>`, not an unretained raw pointer. When the
+/// stream is invalidated we balance that retain in a matching release
+/// callback, so in-flight callbacks can't race a `stop()` and deref a
+/// dangling pointer.
+public final class RepoWatcher {
     private var stream: FSEventStreamRef?
     private let onChange: (URL) -> Void
 
-    init(onChange: @escaping (URL) -> Void) {
+    public init(onChange: @escaping (URL) -> Void) {
         self.onChange = onChange
     }
 
-    func watch(_ urls: [URL]) {
+    public func watch(_ urls: [URL]) {
         stop()
         guard !urls.isEmpty else { return }
 
         let paths = urls.map(\.path) as CFArray
 
+        // Retain self into the context. The `release` callback below
+        // balances this when FSEvents tears the stream down.
+        let retained = Unmanaged.passRetained(self).toOpaque()
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
-            retain: nil,
-            release: nil,
+            info: retained,
+            retain: { ptr in
+                guard let ptr else { return nil }
+                _ = Unmanaged<RepoWatcher>.fromOpaque(ptr).retain()
+                return ptr
+            },
+            release: { ptr in
+                guard let ptr else { return }
+                Unmanaged<RepoWatcher>.fromOpaque(ptr).release()
+            },
             copyDescription: nil
         )
 
@@ -47,14 +63,20 @@ final class RepoWatcher {
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             0.5, // built-in latency: coalesces rapid file bursts
             flags
-        ) else { return }
+        ) else {
+            // FSEventStreamCreate keeps the retain on failure only if it
+            // succeeded — if we get nil here we own the retain ourselves
+            // and must release it, otherwise we leak self.
+            Unmanaged<RepoWatcher>.fromOpaque(retained).release()
+            return
+        }
 
         FSEventStreamSetDispatchQueue(newStream, .main)
         FSEventStreamStart(newStream)
         stream = newStream
     }
 
-    func stop() {
+    public func stop() {
         if let stream {
             FSEventStreamStop(stream)
             FSEventStreamInvalidate(stream)
