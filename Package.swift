@@ -22,6 +22,9 @@ let package = Package(
         .executableTarget(
             name: "Uncommitted",
             dependencies: ["UncommittedCore"],
+            resources: [
+                .copy("Resources/icon-glyph.svg"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]
