@@ -183,36 +183,38 @@ struct StatusBadges: View {
         HStack(spacing: 10) {
             if status.isClean {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.body.weight(.semibold))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(.green)
             } else {
                 // Commit-level state first (ahead / behind), then file-level
-                // as a progression (untracked → unstaged → staged).
+                // as a progression (untracked → unstaged → staged). All text,
+                // using Unicode arrows for direction and git's porcelain
+                // single-letter codes for file state — universal convention.
                 if status.ahead > 0 {
-                    badge("arrow.up", count: status.ahead, color: .blue)
+                    badge("↑", count: status.ahead, color: .blue)
                 }
                 if status.behind > 0 {
-                    badge("arrow.down", count: status.behind, color: .purple)
+                    badge("↓", count: status.behind, color: .purple)
                 }
                 if status.untracked > 0 {
-                    badge("sparkle", count: status.untracked, color: .green)
+                    badge("★", count: status.untracked, color: .green)
                 }
                 if status.unstaged > 0 {
-                    badge("pencil", count: status.unstaged, color: .orange)
+                    badge("M", count: status.unstaged, color: .orange)
                 }
                 if status.staged > 0 {
-                    badge("checkmark", count: status.staged, color: .teal)
+                    badge("A", count: status.staged, color: .teal)
                 }
             }
         }
     }
 
-    private func badge(_ symbol: String, count: Int, color: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol)
+    private func badge(_ glyph: String, count: Int, color: Color) -> some View {
+        HStack(spacing: 2) {
+            Text(glyph)
             Text("\(count)")
         }
-        .font(.body.weight(.semibold).monospacedDigit())
+        .font(.body.weight(.medium).monospacedDigit())
         .foregroundStyle(color)
     }
 }
