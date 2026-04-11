@@ -261,7 +261,11 @@ struct RepoRow: View {
                         Text(action.name)
                     } icon: {
                         if let nsImage = AppIcons.icon(for: action) {
-                            Image(nsImage: nsImage)
+                            // Resize the NSImage down to menu-icon dimensions
+                            // before handing it to SwiftUI — otherwise the
+                            // context menu renders at the app icon's natural
+                            // size, which is 32-64pt.
+                            Image(nsImage: resized(nsImage, to: 16))
                         } else {
                             Image(systemName: "terminal")
                         }
@@ -269,6 +273,20 @@ struct RepoRow: View {
                 }
             }
         }
+    }
+
+    private func resized(_ image: NSImage, to size: CGFloat) -> NSImage {
+        let target = NSSize(width: size, height: size)
+        let resized = NSImage(size: target)
+        resized.lockFocus()
+        image.draw(
+            in: NSRect(origin: .zero, size: target),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1.0
+        )
+        resized.unlockFocus()
+        return resized
     }
 
     @ViewBuilder
