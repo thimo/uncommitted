@@ -24,6 +24,7 @@ let package = Package(
             dependencies: ["UncommittedCore"],
             resources: [
                 .copy("Resources/icon-glyph.svg"),
+                .copy("Resources/github-mark.svg"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v5),
