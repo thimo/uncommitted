@@ -44,14 +44,26 @@ enum ActionRunner {
 
 enum AppIcons {
     /// Returns the icon for a macOS application looked up by display name.
-    /// Checks /Applications and ~/Applications — the modern name-based lookup API is deprecated.
+    /// Checks common install locations plus one level of /Applications
+    /// subdirectories (Setapp, Toolbox, etc.).
     static func icon(forApp name: String) -> NSImage? {
-        let candidates = [
+        let fm = FileManager.default
+        let primaryCandidates = [
             "/Applications/\(name).app",
+            "/Applications/Setapp/\(name).app",
             "\(NSHomeDirectory())/Applications/\(name).app",
         ]
-        for path in candidates where FileManager.default.fileExists(atPath: path) {
+        for path in primaryCandidates where fm.fileExists(atPath: path) {
             return NSWorkspace.shared.icon(forFile: path)
+        }
+        // Fall back to scanning /Applications one level deep for nested containers.
+        if let children = try? fm.contentsOfDirectory(atPath: "/Applications") {
+            for child in children where !child.hasSuffix(".app") {
+                let nested = "/Applications/\(child)/\(name).app"
+                if fm.fileExists(atPath: nested) {
+                    return NSWorkspace.shared.icon(forFile: nested)
+                }
+            }
         }
         return nil
     }

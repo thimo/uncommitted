@@ -97,13 +97,14 @@ struct RepositoriesSettingsView: View {
 
                 Spacer()
 
-                Text("Scan depth controls how many directory levels to search for `.git`. Scanning stops at each repo found.")
+                Text("Scan depth = levels of subdirectories to search for `.git`. Scanning stops at each repo found.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.trailing)
                     .lineLimit(3)
             }
-            .padding(10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
         }
         .frame(width: 560, height: 420)
     }
@@ -246,13 +247,14 @@ struct ActionsSettingsView: View {
 
                     Spacer()
 
-                    Text("First action is the default — clicking a repo uses it. Right-click for the full list.")
+                    Text("First action is the default. Right-click a repo for alternates.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.trailing)
                         .lineLimit(2)
                 }
-                .padding(10)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
             }
             .frame(width: 320)
 
@@ -369,32 +371,40 @@ struct ActionDetailView: View {
     @Binding var action: Action
 
     var body: some View {
-        Form {
-            Section("Name") {
-                TextField("", text: $action.name)
+        VStack(alignment: .leading, spacing: 20) {
+            section(title: "Name") {
+                TextField("Action name", text: $action.name)
                     .textFieldStyle(.roundedBorder)
             }
 
             switch action.kind {
             case .finder:
-                Section {
-                    Text("Opens the repository in Finder. No configuration.")
+                section(title: "Type") {
+                    Text("Opens the repository in Finder.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
 
             case .app(let appName):
-                Section("Application") {
-                    LabeledContent("Opens with") {
-                        Text(appName).foregroundStyle(.secondary)
+                section(title: "Application") {
+                    HStack(spacing: 8) {
+                        if let nsImage = AppIcons.icon(forApp: appName) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .frame(width: 18, height: 18)
+                        }
+                        Text(appName)
+                            .font(.body)
                     }
                     Text("Uses `/usr/bin/open -a \"\(appName)\"`")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .padding(.top, 2)
                 }
 
             case .command(let command):
-                Section("Command") {
+                section(title: "Command") {
                     TextField(
                         "Shell command",
                         text: Binding(
@@ -409,11 +419,24 @@ struct ActionDetailView: View {
                     Text("Runs with `/bin/zsh -l -c …`. Use `{path}` as the repository path.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .padding(.top, 2)
                 }
             }
+
+            Spacer()
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private func section<Content: View>(title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            content()
+        }
     }
 }
 
