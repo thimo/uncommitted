@@ -279,7 +279,7 @@ struct ActionsSettingsView: View {
 
                 Spacer()
 
-                Text("First action is the default — drag rows to reorder. Right-click a repo for alternates.")
+                Text("First action is the default. Drag rows to reorder.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
