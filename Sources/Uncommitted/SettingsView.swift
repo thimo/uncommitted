@@ -65,6 +65,14 @@ struct GeneralSettingsView: View {
                 Toggle("Hide repositories with no changes", isOn: $configStore.config.hideCleanRepos)
             }
 
+            Section("Menu bar") {
+                Picker("Show", selection: $configStore.config.menuBarLabelStyle) {
+                    ForEach(MenuBarLabelStyle.allCases, id: \.self) { style in
+                        Text(style.displayName).tag(style)
+                    }
+                }
+            }
+
             Section("Startup") {
                 Toggle("Launch Uncommitted at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in

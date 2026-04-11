@@ -17,6 +17,10 @@ final class RepoStore: ObservableObject {
         repos.reduce(0) { $0 + ($1.status?.totalUnpushed ?? 0) }
     }
 
+    var totalUnpulled: Int {
+        repos.reduce(0) { $0 + ($1.status?.behind ?? 0) }
+    }
+
     init(configStore: ConfigStore) {
         self.configStore = configStore
 
