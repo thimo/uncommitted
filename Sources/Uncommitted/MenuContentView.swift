@@ -65,11 +65,12 @@ struct MenuContentView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .pointingHandCursor()
             .help("Rescan sources and refresh all")
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
     }
 
     private var emptyNoSources: some View {
@@ -116,6 +117,7 @@ struct MenuContentView: View {
             .foregroundStyle(.secondary)
             .font(.callout)
             .keyboardShortcut(",")
+            .pointingHandCursor()
 
             Spacer()
 
@@ -126,9 +128,28 @@ struct MenuContentView: View {
             .foregroundStyle(.secondary)
             .font(.callout)
             .keyboardShortcut("q")
+            .pointingHandCursor()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 14)
+    }
+}
+
+// MARK: - Hover cursor helper
+
+extension View {
+    /// Changes the cursor to a pointing hand while hovering this view so
+    /// clickable controls read as clickable (macOS doesn't do this by
+    /// default the way web browsers do).
+    func pointingHandCursor() -> some View {
+        onHover { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
     }
 }
 
@@ -137,11 +158,13 @@ struct RepoRow: View {
     let actions: [Action]
     let onDefault: () -> Void
 
+    @EnvironmentObject var store: RepoStore
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onDefault) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            // Left: name + branch. Clickable area for the default action.
+            Button(action: onDefault) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(repo.name)
                         .font(.body.weight(.medium))
@@ -151,20 +174,29 @@ struct RepoRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 8)
-                if let status = repo.status {
-                    StatusBadges(status: status)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
-            )
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .pointingHandCursor()
+
+            // Right: status badges. Push and pull badges are independently
+            // clickable; the rest are read-only counts.
+            if let status = repo.status {
+                StatusBadges(
+                    status: status,
+                    inFlight: store.inFlight[repo.id],
+                    onPush: { store.push(repo: repo) },
+                    onPull: { store.pull(repo: repo) }
+                )
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
+        )
         .onHover { isHovered = $0 }
         .contextMenu {
             ForEach(actions) { action in
@@ -178,6 +210,9 @@ struct RepoRow: View {
 
 struct StatusBadges: View {
     let status: RepoStatus
+    let inFlight: InFlightAction?
+    let onPush: () -> Void
+    let onPull: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -187,14 +222,28 @@ struct StatusBadges: View {
                     .foregroundStyle(.green)
             } else {
                 // Commit-level state first (ahead / behind), then file-level
-                // as a progression (untracked → unstaged → staged). All text,
-                // using Unicode arrows for direction and git's porcelain
-                // single-letter codes for file state — universal convention.
+                // as a progression (untracked → unstaged → staged). Unicode
+                // arrows for direction, git porcelain letters for file state.
+                // The ahead/behind badges are interactive — click to push/pull.
                 if status.ahead > 0 {
-                    badge("↑", count: status.ahead, color: .blue)
+                    actionBadge(
+                        glyph: "↑",
+                        count: status.ahead,
+                        color: .blue,
+                        isInFlight: inFlight == .push,
+                        action: onPush,
+                        help: "Push \(status.ahead) commit\(status.ahead == 1 ? "" : "s")"
+                    )
                 }
                 if status.behind > 0 {
-                    badge("↓", count: status.behind, color: .purple)
+                    actionBadge(
+                        glyph: "↓",
+                        count: status.behind,
+                        color: .purple,
+                        isInFlight: inFlight == .pull,
+                        action: onPull,
+                        help: "Pull \(status.behind) commit\(status.behind == 1 ? "" : "s") (fast-forward only)"
+                    )
                 }
                 if status.untracked > 0 {
                     badge("★", count: status.untracked, color: .green)
@@ -216,5 +265,36 @@ struct StatusBadges: View {
         }
         .font(.body.weight(.medium).monospacedDigit())
         .foregroundStyle(color)
+    }
+
+    private func actionBadge(
+        glyph: String,
+        count: Int,
+        color: Color,
+        isInFlight: Bool,
+        action: @escaping () -> Void,
+        help: String
+    ) -> some View {
+        Button(action: action) {
+            Group {
+                if isInFlight {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                        .frame(width: 22, height: 14)
+                } else {
+                    HStack(spacing: 2) {
+                        Text(glyph)
+                        Text("\(count)")
+                    }
+                }
+            }
+            .font(.body.weight(.medium).monospacedDigit())
+            .foregroundStyle(color)
+        }
+        .buttonStyle(.plain)
+        .disabled(isInFlight)
+        .pointingHandCursor()
+        .help(help)
     }
 }

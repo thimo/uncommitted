@@ -1,13 +1,21 @@
 import Foundation
 import Combine
+import AppKit
+
+enum InFlightAction {
+    case push
+    case pull
+}
 
 final class RepoStore: ObservableObject {
     @Published private(set) var repos: [Repo] = []
+    @Published private(set) var inFlight: [UUID: InFlightAction] = [:]
 
     private let configStore: ConfigStore
     private var cancellables = Set<AnyCancellable>()
     private var watcher: RepoWatcher?
     private let statusQueue = DispatchQueue(label: "nl.thimo.uncommitted.git-status", qos: .utility)
+    private let actionQueue = DispatchQueue(label: "nl.thimo.uncommitted.git-action", qos: .userInitiated)
 
     var totalUncommitted: Int {
         repos.reduce(0) { $0 + ($1.status?.totalUncommitted ?? 0) }
@@ -41,6 +49,62 @@ final class RepoStore: ObservableObject {
         for index in repos.indices {
             refresh(repoAt: index)
         }
+    }
+
+    /// Runs `git push` on the given repo. Marks it in-flight so the UI can
+    /// show a spinner, refreshes status on completion, shows an alert on
+    /// failure with git's stderr.
+    func push(repo: Repo) {
+        runAction(.push, on: repo) { url in
+            GitService.push(at: url)
+        }
+    }
+
+    /// Runs `git pull --ff-only` on the given repo. Uses `--ff-only` so a
+    /// diverged branch fails loudly instead of silently rebasing or creating
+    /// a merge commit.
+    func pull(repo: Repo) {
+        runAction(.pull, on: repo) { url in
+            GitService.pull(at: url)
+        }
+    }
+
+    private func runAction(
+        _ kind: InFlightAction,
+        on repo: Repo,
+        command: @escaping (URL) -> GitService.ActionResult
+    ) {
+        guard inFlight[repo.id] == nil else { return }
+        inFlight[repo.id] = kind
+        let url = repo.url
+        let id = repo.id
+        let repoName = repo.name
+
+        actionQueue.async { [weak self] in
+            let result = command(url)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.inFlight[id] = nil
+                if !result.success {
+                    Self.presentError(
+                        title: "\(kind == .push ? "Push" : "Pull") failed — \(repoName)",
+                        message: result.errorOutput ?? "Unknown error"
+                    )
+                }
+                if let index = self.repos.firstIndex(where: { $0.id == id }) {
+                    self.refresh(repoAt: index)
+                }
+            }
+        }
+    }
+
+    private static func presentError(title: String, message: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     /// Re-resolve sources from config and refresh every repo. Unlike
