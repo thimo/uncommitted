@@ -11,11 +11,35 @@ public enum GitService {
 
     /// Reads repo status via `git status --porcelain=v2 --branch`. Returns
     /// nil if git fails or the output can't be parsed as a valid status.
+    /// When the branch is ahead of or behind its upstream, follows up with
+    /// `git log` to capture commit subjects for the tooltips.
     public static func status(at url: URL) -> RepoStatus? {
         let result = execute(["status", "--porcelain=v2", "--branch"], at: url)
         guard result.exitStatus == 0 else { return nil }
         guard let output = String(data: result.stdout, encoding: .utf8) else { return nil }
-        return parse(output)
+        guard var parsed = parse(output) else { return nil }
+
+        if parsed.ahead > 0 {
+            parsed.aheadCommits = commitSubjects(range: "@{u}..HEAD", at: url)
+        }
+        if parsed.behind > 0 {
+            parsed.behindCommits = commitSubjects(range: "HEAD..@{u}", at: url)
+        }
+        return parsed
+    }
+
+    /// Runs `git log <range> --format=%s` and returns each commit's subject
+    /// (first line only, which is what `%s` gives us). Empty on any error —
+    /// callers treat this as a best-effort enrichment, never a failure.
+    private static func commitSubjects(range: String, at url: URL) -> [String] {
+        let result = execute(["log", range, "--format=%s"], at: url)
+        guard result.exitStatus == 0,
+              let output = String(data: result.stdout, encoding: .utf8) else {
+            return []
+        }
+        return output
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map(String.init)
     }
 
     public static func push(at url: URL) -> ActionResult {
@@ -169,16 +193,16 @@ public enum GitService {
         var headOid: String?
         var ahead = 0
         var behind = 0
-        var staged = 0
-        var unstaged = 0
-        var untracked = 0
+        var stagedPaths: [String] = []
+        var unstagedPaths: [String] = []
+        var untrackedPaths: [String] = []
 
         for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
-            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-            guard let head = parts.first else { continue }
+            guard let head = line.first else { continue }
 
             switch head {
             case "#":
+                let parts = line.split(separator: " ", omittingEmptySubsequences: true)
                 guard parts.count >= 2 else { continue }
                 switch parts[1] {
                 case "branch.oid":
@@ -193,19 +217,32 @@ public enum GitService {
                 default: break
                 }
 
-            case "1", "2":
-                // Entry line: "1 XY ..." where X = index status, Y = worktree status.
-                // "." means unchanged in that column.
-                guard parts.count >= 2 else { continue }
+            case "1":
+                // `1 XY sub mH mI mW hH hI path` — path may contain spaces,
+                // so cap the split at 8 so everything after the 8th space is
+                // treated as one path field.
+                let parts = line.split(separator: " ", maxSplits: 8, omittingEmptySubsequences: false)
+                guard parts.count >= 9 else { continue }
                 let xy = parts[1]
-                let chars = Array(xy)
-                if chars.count >= 2 {
-                    if chars[0] != "." { staged += 1 }
-                    if chars[1] != "." { unstaged += 1 }
-                }
+                let path = String(parts[8])
+                recordEntry(xy: xy, path: path, stagedPaths: &stagedPaths, unstagedPaths: &unstagedPaths)
+
+            case "2":
+                // Renamed/copied: `2 XY sub mH mI mW hH hI Xscore path\torigPath`.
+                // One extra field (the similarity score), then the path field
+                // carries both paths separated by a tab — we only want `path`.
+                let parts = line.split(separator: " ", maxSplits: 9, omittingEmptySubsequences: false)
+                guard parts.count >= 10 else { continue }
+                let xy = parts[1]
+                let pathField = parts[9]
+                let path = String(pathField.split(separator: "\t").first ?? pathField)
+                recordEntry(xy: xy, path: path, stagedPaths: &stagedPaths, unstagedPaths: &unstagedPaths)
 
             case "?":
-                untracked += 1
+                // `? path` — everything after the space-after-? is the path.
+                let afterMarker = line.index(line.startIndex, offsetBy: 2, limitedBy: line.endIndex) ?? line.endIndex
+                guard afterMarker < line.endIndex else { continue }
+                untrackedPaths.append(String(line[afterMarker...]))
 
             default:
                 break
@@ -221,9 +258,21 @@ public enum GitService {
             headOid: headOid,
             ahead: ahead,
             behind: behind,
-            staged: staged,
-            unstaged: unstaged,
-            untracked: untracked
+            stagedPaths: stagedPaths,
+            unstagedPaths: unstagedPaths,
+            untrackedPaths: untrackedPaths
         )
+    }
+
+    private static func recordEntry(
+        xy: Substring,
+        path: String,
+        stagedPaths: inout [String],
+        unstagedPaths: inout [String]
+    ) {
+        let chars = Array(xy)
+        guard chars.count >= 2 else { return }
+        if chars[0] != "." { stagedPaths.append(path) }
+        if chars[1] != "." { unstagedPaths.append(path) }
     }
 }
