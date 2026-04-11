@@ -2,14 +2,14 @@ import Foundation
 import Combine
 import AppKit
 
-enum InFlightAction {
+public enum InFlightAction {
     case push
     case pull
 }
 
-final class RepoStore: ObservableObject {
-    @Published private(set) var repos: [Repo] = []
-    @Published private(set) var inFlight: [UUID: InFlightAction] = [:]
+public final class RepoStore: ObservableObject {
+    @Published public private(set) var repos: [Repo] = []
+    @Published public private(set) var inFlight: [UUID: InFlightAction] = [:]
 
     private let configStore: ConfigStore
     private var cancellables = Set<AnyCancellable>()
@@ -17,19 +17,19 @@ final class RepoStore: ObservableObject {
     private let statusQueue = DispatchQueue(label: "nl.thimo.uncommitted.git-status", qos: .utility)
     private let actionQueue = DispatchQueue(label: "nl.thimo.uncommitted.git-action", qos: .userInitiated)
 
-    var totalUncommitted: Int {
+    public var totalUncommitted: Int {
         repos.reduce(0) { $0 + ($1.status?.totalUncommitted ?? 0) }
     }
 
-    var totalUnpushed: Int {
+    public var totalUnpushed: Int {
         repos.reduce(0) { $0 + ($1.status?.totalUnpushed ?? 0) }
     }
 
-    var totalUnpulled: Int {
+    public var totalUnpulled: Int {
         repos.reduce(0) { $0 + ($1.status?.behind ?? 0) }
     }
 
-    init(configStore: ConfigStore) {
+    public init(configStore: ConfigStore) {
         self.configStore = configStore
 
         self.watcher = RepoWatcher { [weak self] changedURL in
@@ -46,7 +46,7 @@ final class RepoStore: ObservableObject {
             .store(in: &cancellables)
     }
 
-    func refreshAll() {
+    public func refreshAll() {
         for index in repos.indices {
             refresh(repoAt: index)
         }
@@ -55,7 +55,7 @@ final class RepoStore: ObservableObject {
     /// Runs `git push` on the given repo. Marks it in-flight so the UI can
     /// show a spinner, refreshes status on completion, shows an alert on
     /// failure with git's stderr.
-    func push(repo: Repo) {
+    public func push(repo: Repo) {
         runAction(.push, on: repo) { url in
             GitService.push(at: url)
         }
@@ -64,7 +64,7 @@ final class RepoStore: ObservableObject {
     /// Runs `git pull --ff-only` on the given repo. Uses `--ff-only` so a
     /// diverged branch fails loudly instead of silently rebasing or creating
     /// a merge commit.
-    func pull(repo: Repo) {
+    public func pull(repo: Repo) {
         runAction(.pull, on: repo) { url in
             GitService.pull(at: url)
         }
@@ -112,7 +112,7 @@ final class RepoStore: ObservableObject {
     /// Re-resolve sources from config and refresh every repo. Unlike
     /// `refreshAll`, this also picks up new repos that appeared under a
     /// watched source folder since the last scan.
-    func rebuildFromConfig() {
+    public func rebuildFromConfig() {
         rebuild(from: configStore.config.sources)
     }
 
@@ -161,8 +161,8 @@ final class RepoStore: ObservableObject {
     /// Resolve user-configured sources to concrete repo URLs, honouring each
     /// source's scanDepth. Stops descending into a directory as soon as a `.git`
     /// is found so we don't treat submodules or nested checkouts as separate repos.
-    /// Visibility is internal so the test target can hit it directly.
-    static func resolve(sources: [Source]) -> [URL] {
+    /// Public so the test runner can exercise it directly.
+    public static func resolve(sources: [Source]) -> [URL] {
         // Dedup by standardized path so case-insensitive volumes and symlinked
         // siblings don't produce duplicate rows.
         var urls = [String: URL]()

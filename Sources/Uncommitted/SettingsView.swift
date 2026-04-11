@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import ServiceManagement
 import UniformTypeIdentifiers
+import UncommittedCore
 
 struct SettingsView: View {
     var body: some View {

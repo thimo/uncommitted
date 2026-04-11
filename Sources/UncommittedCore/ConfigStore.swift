@@ -4,15 +4,15 @@ import os.log
 
 private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "config")
 
-final class ConfigStore: ObservableObject {
-    @Published var config: Config {
+public final class ConfigStore: ObservableObject {
+    @Published public var config: Config {
         didSet { scheduleSave() }
     }
 
     private let fileURL: URL
     private var saveWorkItem: DispatchWorkItem?
 
-    init() {
+    public init() {
         let support = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -29,13 +29,13 @@ final class ConfigStore: ObservableObject {
         }
     }
 
-    func addSource(path: String, scanDepth: Int = 1) {
+    public func addSource(path: String, scanDepth: Int = 1) {
         let expanded = (path as NSString).expandingTildeInPath
         guard !config.sources.contains(where: { $0.path == expanded }) else { return }
         config.sources.append(Source(path: expanded, scanDepth: scanDepth))
     }
 
-    func removeSource(id: Source.ID) {
+    public func removeSource(id: Source.ID) {
         config.sources.removeAll { $0.id == id }
     }
 

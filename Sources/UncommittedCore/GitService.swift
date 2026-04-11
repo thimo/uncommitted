@@ -1,30 +1,30 @@
 import Foundation
 
-enum GitService {
-    struct ActionResult {
-        let success: Bool
+public enum GitService {
+    public struct ActionResult {
+        public let success: Bool
         /// Captured stderr for use in error alerts. Nil on success.
-        let errorOutput: String?
+        public let errorOutput: String?
     }
 
     // MARK: - Entry points
 
     /// Reads repo status via `git status --porcelain=v2 --branch`. Returns
     /// nil if git fails or the output can't be parsed as a valid status.
-    static func status(at url: URL) -> RepoStatus? {
+    public static func status(at url: URL) -> RepoStatus? {
         let result = execute(["status", "--porcelain=v2", "--branch"], at: url)
         guard result.exitStatus == 0 else { return nil }
         guard let output = String(data: result.stdout, encoding: .utf8) else { return nil }
         return parse(output)
     }
 
-    static func push(at url: URL) -> ActionResult {
+    public static func push(at url: URL) -> ActionResult {
         action(["push"], at: url)
     }
 
     /// Uses `--ff-only` so a diverged branch fails loudly rather than creating
     /// a merge commit or rebasing local work without user intent.
-    static func pull(at url: URL) -> ActionResult {
+    public static func pull(at url: URL) -> ActionResult {
         action(["pull", "--ff-only"], at: url)
     }
 
@@ -118,8 +118,8 @@ enum GitService {
     /// output is missing the `branch.oid` header, which git always emits for a
     /// real repository — if it's absent, something is wrong and we'd rather
     /// preserve the previous status than record a bogus "clean" state.
-    /// Visibility is internal so the test target can hit it directly.
-    static func parse(_ output: String) -> RepoStatus? {
+    /// Public so the test runner can exercise it directly.
+    public static func parse(_ output: String) -> RepoStatus? {
         var branch = "(detached)"
         var headOid: String?
         var ahead = 0
