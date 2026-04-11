@@ -487,6 +487,15 @@ struct AboutSettingsView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
 
+            Link(destination: URL(string: "https://github.com/thimo/uncommitted")!) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.right.square")
+                    Text("github.com/thimo/uncommitted")
+                }
+                .font(.callout)
+            }
+            .padding(.top, 4)
+
             Text("Built with SwiftUI.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
