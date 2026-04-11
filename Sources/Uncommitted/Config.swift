@@ -36,9 +36,9 @@ enum MenuBarLabelStyle: String, Codable, CaseIterable, Hashable {
     var displayName: String {
         switch self {
         case .total:      return "Total files and commits"
-        case .dirtyRepos: return "Repositories needing attention"
-        case .split:      return "Files and commits, split"
-        case .iconOnly:   return "Icon only"
+        case .dirtyRepos: return "Repositories with changes"
+        case .split:      return "Files and commits, separately"
+        case .iconOnly:   return "None"
         }
     }
 }
