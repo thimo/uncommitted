@@ -278,8 +278,18 @@ struct RepoRow: View {
         .onHover { isHovered = $0 }
         .contextMenu {
             ForEach(actions) { action in
-                Button(action.name) {
+                Button {
                     onAlternate(action)
+                } label: {
+                    Label {
+                        Text(action.name)
+                    } icon: {
+                        if let nsImage = AppIcons.icon(for: action) {
+                            Image(nsImage: nsImage)
+                        } else {
+                            Image(systemName: "terminal")
+                        }
+                    }
                 }
             }
         }
