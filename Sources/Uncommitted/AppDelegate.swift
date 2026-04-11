@@ -56,10 +56,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
     }
 
+    /// Cached menu bar icon — loaded once from the bundled SVG and sized
+    /// to match typical menu bar glyph proportions. Marked as template
+    /// so macOS inverts it for dark menu bar backgrounds automatically.
+    private static let menuBarIcon: NSImage? = {
+        guard let url = Bundle.main.url(forResource: "icon-glyph", withExtension: "svg"),
+              let svg = NSImage(contentsOf: url) else {
+            return nil
+        }
+        // The SVG is tall (289×448). Scale to a menu bar-friendly height
+        // while preserving aspect ratio.
+        let targetHeight: CGFloat = 18
+        let aspect = svg.size.width / svg.size.height
+        svg.size = NSSize(width: targetHeight * aspect, height: targetHeight)
+        svg.isTemplate = true
+        return svg
+    }()
+
     private func updateStatusLabel() {
         guard let button = statusItem?.button else { return }
 
-        button.image = NSImage(
+        button.image = AppDelegate.menuBarIcon ?? NSImage(
             systemSymbolName: "arrow.triangle.branch",
             accessibilityDescription: "Uncommitted")
         button.imagePosition = .imageLeft

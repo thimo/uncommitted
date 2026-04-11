@@ -433,18 +433,41 @@ struct AboutSettingsView: View {
         Bundle.main.bundleIdentifier ?? "?"
     }
 
+    private static let gradientStops: [Gradient.Stop] = [
+        .init(color: Color(red: 1.00, green: 0.20, blue: 0.58), location: 0.0),
+        .init(color: Color(red: 0.55, green: 0.28, blue: 0.92), location: 0.55),
+        .init(color: Color(red: 0.22, green: 0.56, blue: 1.00), location: 1.0),
+    ]
+
+    private static let glyph: NSImage? = {
+        guard let url = Bundle.main.url(forResource: "icon-glyph", withExtension: "svg") else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
+    }()
+
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 56, weight: .medium))
-                .foregroundStyle(
+            Group {
+                if let glyph = Self.glyph {
                     LinearGradient(
-                        colors: [.blue, .purple],
+                        stops: Self.gradientStops,
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                )
-                .padding(.top, 12)
+                    .mask {
+                        Image(nsImage: glyph)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                    }
+                } else {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 56, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 64, height: 88)
+            .padding(.top, 12)
 
             Text("Uncommitted")
                 .font(.title.weight(.semibold))

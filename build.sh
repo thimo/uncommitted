@@ -27,6 +27,14 @@ cp Resources/Info.plist "$APP_STAGING/Contents/Info.plist"
 cp build/Uncommitted.icns "$APP_STAGING/Contents/Resources/Uncommitted.icns"
 printf "APPL????" > "$APP_STAGING/Contents/PkgInfo"
 
+# SPM produces a resource bundle next to the binary when a target declares
+# `resources:`. Copy it into the .app so Bundle.main.url(forResource:…)
+# can find the SVG at runtime.
+SPM_BUNDLE=".build/release/Uncommitted_Uncommitted.bundle"
+if [ -d "$SPM_BUNDLE" ]; then
+  cp -R "$SPM_BUNDLE" "$APP_STAGING/Contents/Resources/"
+fi
+
 echo "==> Ad-hoc signing"
 codesign --force --deep --sign - "$APP_STAGING"
 codesign --verify --verbose "$APP_STAGING" 2>&1 | head -5
