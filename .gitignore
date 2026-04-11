@@ -2,3 +2,12 @@
 .build/
 .swiftpm/
 build/
+
+# VSCode: ignore everything by default, allow-list the files that are
+# actually shared project configuration.
+.vscode/*
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Signing credentials for release.sh (local only, never committed).
+.env.local

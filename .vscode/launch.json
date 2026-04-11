@@ -1,0 +1,44 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:uncommitted}",
+      "name": "Debug uncommitted",
+      "target": "uncommitted",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug uncommitted"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:uncommitted}",
+      "name": "Release uncommitted",
+      "target": "uncommitted",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release uncommitted"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:uncommitted}",
+      "name": "Debug UncommittedTests",
+      "target": "UncommittedTests",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug UncommittedTests"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:uncommitted}",
+      "name": "Release UncommittedTests",
+      "target": "UncommittedTests",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release UncommittedTests"
+    }
+  ]
+}
