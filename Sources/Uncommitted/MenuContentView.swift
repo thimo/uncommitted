@@ -289,7 +289,7 @@ struct StatusBadges: View {
                     ReadOnlyBadge(glyph: "●", count: status.unstaged, color: .orange)
                 }
                 if status.staged > 0 {
-                    ReadOnlyBadge(glyph: "A", count: status.staged, color: .teal)
+                    ReadOnlyBadge(glyph: "+", count: status.staged, color: .teal)
                 }
             }
         }
