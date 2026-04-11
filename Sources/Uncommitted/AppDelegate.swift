@@ -118,7 +118,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let popover = NSPopover()
         popover.behavior = .transient
-        popover.animates = true
+        // Menu-bar popovers should feel instant. The default animation makes
+        // the app feel laggy on open/close for no benefit.
+        popover.animates = false
         popover.contentViewController = hosting
         self.popover = popover
     }

@@ -1,5 +1,8 @@
 import Foundation
 import AppKit
+import os.log
+
+private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "actions")
 
 struct Action: Codable, Identifiable, Hashable {
     var id: UUID
@@ -38,7 +41,11 @@ enum ActionRunner {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = args
-        try? process.run()
+        do {
+            try process.run()
+        } catch {
+            log.error("Failed to launch \(executable, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 }
 

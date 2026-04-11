@@ -8,6 +8,7 @@ struct UncommittedApp: App {
         Settings {
             SettingsView()
                 .environmentObject(appDelegate.configStore)
+                .environmentObject(appDelegate.repoStore)
         }
         .windowResizability(.contentSize)
     }

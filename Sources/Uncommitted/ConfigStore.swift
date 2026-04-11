@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+import os.log
+
+private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "config")
 
 final class ConfigStore: ObservableObject {
     @Published var config: Config {
@@ -46,7 +49,14 @@ final class ConfigStore: ObservableObject {
     private func save() {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(config) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        do {
+            let data = try encoder.encode(config)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            // Logged instead of silently swallowed — a failed write leaves
+            // the user's edits only in memory, which is worth noticing in
+            // Console.app if it ever happens (full disk, sandbox denial, …).
+            log.error("Failed to save config: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }
