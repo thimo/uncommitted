@@ -33,17 +33,43 @@ signals, not data.
 
 ## Status badges
 
-Each repo row uses the same glyphs as git's porcelain output
-(`git status --porcelain=v2`) so there's nothing new to learn:
+Each repo row carries compact badges for everything that needs attention:
 
 | Badge | Meaning | Color |
 |---|---|---|
-| `↑ N` | N commits ahead of upstream | blue |
-| `↓ N` | N commits behind upstream | purple |
+| `↑ N` | N commits ahead of upstream (click to push) | blue |
+| `↓ N` | N commits behind upstream (click to pull) | purple |
 | `★ N` | N untracked (new) files | green |
-| `M N` | N modified (unstaged) files | orange |
-| `A N` | N staged files | teal |
+| `● N` | N modified files (macOS's "unsaved" glyph) | orange |
+| `+ N` | N staged files | teal |
 | `✓` | clean | green |
+
+The `↑` and `↓` badges are pill-shaped and interactive — click the `↑`
+to run `git push`, click the `↓` to run `git pull`. The rest are
+read-only indicators.
+
+## Push and pull
+
+Clicking the `↑` pill on a repo runs **`git push`** — straightforward,
+uses whatever upstream the branch tracks. If the push is rejected
+(typically because the remote has commits you don't have), an alert
+surfaces git's actual error text and nothing changes locally.
+
+Clicking the `↓` pill runs **`git pull --ff-only`**, deliberately. Git's
+default pull either creates a merge commit or (with `--rebase`) silently
+rewrites your local history — both of those are surprising things to
+happen from a one-click menu-bar action. Fast-forward-only means: if
+your local branch is strictly behind the remote with no local commits
+of its own, git advances your branch pointer to match the remote and
+that's it. If your branch has **diverged** (you have local commits
+_and_ the remote has new commits), pull aborts with an error and you
+handle it manually in your editor or terminal. Safer default for a
+one-click control.
+
+Both actions show a small spinner in place of the badge count while
+they run, and the `.git/refs` changes they produce get picked up by
+the FSEvents watcher automatically — the count updates within a second
+of completion, no explicit refresh needed.
 
 ## Requirements
 
