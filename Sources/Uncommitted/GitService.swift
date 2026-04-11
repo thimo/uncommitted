@@ -1,6 +1,56 @@
 import Foundation
 
 enum GitService {
+    struct ActionResult {
+        let success: Bool
+        /// Captured stderr for use in error alerts. Nil on success.
+        let errorOutput: String?
+    }
+
+    static func push(at url: URL) -> ActionResult {
+        run(at: url, args: ["push"])
+    }
+
+    /// Uses `--ff-only` so a diverged branch fails loudly rather than creating
+    /// a merge commit or rebasing local work without user intent.
+    static func pull(at url: URL) -> ActionResult {
+        run(at: url, args: ["pull", "--ff-only"])
+    }
+
+    private static func run(at url: URL, args: [String]) -> ActionResult {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.currentDirectoryURL = url
+        process.arguments = args
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        process.standardInput = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            return ActionResult(success: false, errorOutput: error.localizedDescription)
+        }
+
+        let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
+        _ = stdout.fileHandleForReading.readDataToEndOfFile()
+
+        process.waitUntilExit()
+
+        try? stdout.fileHandleForReading.close()
+        try? stderr.fileHandleForReading.close()
+
+        if process.terminationStatus == 0 {
+            return ActionResult(success: true, errorOutput: nil)
+        }
+        let text = String(data: stderrData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return ActionResult(success: false, errorOutput: text?.isEmpty == false ? text : "git exited with status \(process.terminationStatus)")
+    }
+
     static func status(at url: URL) -> RepoStatus? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
