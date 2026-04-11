@@ -68,7 +68,7 @@ struct MenuContentView: View {
             .pointingHandCursor()
             .help("Rescan sources and refresh all")
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.top, 14)
         .padding(.bottom, 10)
     }
@@ -130,7 +130,7 @@ struct MenuContentView: View {
             .keyboardShortcut("q")
             .pointingHandCursor()
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.top, 10)
         .padding(.bottom, 14)
     }
