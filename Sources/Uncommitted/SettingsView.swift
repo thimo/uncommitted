@@ -4,51 +4,19 @@ import ServiceManagement
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @State private var selection: Tab = .general
-
-    enum Tab: Hashable {
-        case general
-        case repositories
-        case actions
-        case about
-    }
-
     var body: some View {
-        TabView(selection: $selection) {
+        TabView {
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
-                .tag(Tab.general)
 
             RepositoriesSettingsView()
                 .tabItem { Label("Repositories", systemImage: "folder") }
-                .tag(Tab.repositories)
 
             ActionsSettingsView()
                 .tabItem { Label("Actions", systemImage: "cursorarrow.rays") }
-                .tag(Tab.actions)
 
             AboutSettingsView()
                 .tabItem { Label("About", systemImage: "info.circle") }
-                .tag(Tab.about)
-        }
-        .frame(width: width(for: selection), height: height(for: selection))
-    }
-
-    private func width(for tab: Tab) -> CGFloat {
-        switch tab {
-        case .general:      return 480
-        case .repositories: return 560
-        case .actions:      return 620
-        case .about:        return 420
-        }
-    }
-
-    private func height(for tab: Tab) -> CGFloat {
-        switch tab {
-        case .general:      return 320
-        case .repositories: return 420
-        case .actions:      return 440
-        case .about:        return 340
         }
     }
 }
@@ -61,20 +29,17 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Display") {
-                Toggle("Hide repositories with no changes", isOn: $configStore.config.hideCleanRepos)
-            }
-
             Section("Menu bar") {
-                Picker("Show", selection: $configStore.config.menuBarLabelStyle) {
+                Picker("Count", selection: $configStore.config.menuBarLabelStyle) {
                     ForEach(MenuBarLabelStyle.allCases, id: \.self) { style in
                         Text(style.displayName).tag(style)
                     }
                 }
+                Toggle("Hide clean repositories", isOn: $configStore.config.hideCleanRepos)
             }
 
             Section("Startup") {
-                Toggle("Launch Uncommitted at login", isOn: $launchAtLogin)
+                Toggle("Open at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in
                         do {
                             if newValue {
@@ -90,6 +55,8 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        .frame(width: 620)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -144,6 +111,7 @@ struct RepositoriesSettingsView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
+        .frame(width: 620, height: 420)
     }
 
     private func addSource() {
@@ -296,6 +264,7 @@ struct ActionsSettingsView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
+        .frame(width: 620, height: 440)
     }
 
     private func addApp() {
@@ -509,6 +478,7 @@ struct AboutSettingsView: View {
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 16)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: 620)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
