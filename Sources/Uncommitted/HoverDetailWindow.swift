@@ -516,49 +516,43 @@ extension EnvironmentValues {
 
 // MARK: - Row frame reader
 
-/// Captures the modified view's frame in screen coordinates via an
-/// NSViewRepresentable layer. Uses `convertToScreen` on the hosting
-/// window, which GeometryReader alone can't give us.
+/// Holds a weak reference to the backing NSView so SwiftUI call sites
+/// can query the row's current screen frame on demand rather than
+/// relying on a cached value that was written on a SwiftUI layout pass.
+/// Earlier versions cached the frame in an `@State` updated from
+/// `viewDidMoveToWindow` / `layout` / `resizeSubviews`, but those
+/// callbacks don't fire when a LazyVStack's children shift around after
+/// initial layout — producing stale frames for every row except the
+/// first one that was displayed.
+final class RowFrameReference: ObservableObject {
+    weak var view: FrameReportingView?
+
+    /// Reads `view.bounds` through the live NSView chain at call time,
+    /// returning its position in screen coordinates. `nil` if the view
+    /// isn't in a window yet.
+    var currentFrameOnScreen: NSRect? {
+        guard let view, let window = view.window else { return nil }
+        let inWindow = view.convert(view.bounds, to: nil)
+        return window.convertToScreen(inWindow)
+    }
+}
+
+/// NSViewRepresentable wrapper whose only job is to hand the backing
+/// NSView's reference to a `RowFrameReference`. The reference is read
+/// on demand from `.onHover`, which is the only place we actually need
+/// the row's screen frame.
 struct RowFrameReader: NSViewRepresentable {
-    let onFrameChange: (NSRect) -> Void
+    let reference: RowFrameReference
 
     func makeNSView(context: Context) -> FrameReportingView {
         let view = FrameReportingView()
-        view.onFrameChange = onFrameChange
+        reference.view = view
         return view
     }
 
     func updateNSView(_ nsView: FrameReportingView, context: Context) {
-        nsView.onFrameChange = onFrameChange
+        reference.view = nsView
     }
 }
 
-final class FrameReportingView: NSView {
-    var onFrameChange: ((NSRect) -> Void)?
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        report()
-    }
-
-    override func layout() {
-        super.layout()
-        report()
-    }
-
-    override func resizeSubviews(withOldSize oldSize: NSSize) {
-        super.resizeSubviews(withOldSize: oldSize)
-        report()
-    }
-
-    private func report() {
-        guard let window else { return }
-        // `self.bounds` in our own coords → window coords (pass nil).
-        // Previously used `superview.bounds` which measured the parent
-        // container instead of the row itself, breaking positioning when
-        // the popup was anchored near the right edge of the screen.
-        let frameInWindow = convert(bounds, to: nil)
-        let frameOnScreen = window.convertToScreen(frameInWindow)
-        onFrameChange?(frameOnScreen)
-    }
-}
+final class FrameReportingView: NSView {}

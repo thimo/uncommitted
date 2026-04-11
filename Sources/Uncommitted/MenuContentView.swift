@@ -239,7 +239,7 @@ struct RepoRow: View {
 
     @EnvironmentObject var store: RepoStore
     @State private var isHovered = false
-    @State private var rowFrameOnScreen: NSRect?
+    @StateObject private var frameRef = RowFrameReference()
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -284,10 +284,13 @@ struct RepoRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
-        .background(RowFrameReader { rowFrameOnScreen = $0 })
+        .background(RowFrameReader(reference: frameRef))
         .onHover { hovering in
             isHovered = hovering
-            onHoverChange(hovering, hovering ? rowFrameOnScreen : nil)
+            // Grab the row's screen frame on demand at the moment of
+            // hover — SwiftUI layout callbacks don't fire reliably when
+            // LazyVStack children shift, so any cached value goes stale.
+            onHoverChange(hovering, hovering ? frameRef.currentFrameOnScreen : nil)
         }
         .contextMenu {
             Section("Open with") {
