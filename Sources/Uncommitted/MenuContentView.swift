@@ -3,6 +3,7 @@ import AppKit
 
 struct MenuContentView: View {
     @EnvironmentObject var store: RepoStore
+    @EnvironmentObject var configStore: ConfigStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -10,15 +11,18 @@ struct MenuContentView: View {
             Divider()
 
             if store.repos.isEmpty {
-                Text("No repositories configured")
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
-                    .padding(12)
+                emptyState
             } else {
                 ForEach(Array(store.repos.enumerated()), id: \.element.id) { index, repo in
-                    RepoRow(repo: repo)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                    RepoRow(repo: repo) {
+                        ClickActionRunner.open(
+                            repoURL: repo.url,
+                            action: configStore.config.clickAction,
+                            customCommand: configStore.config.customCommand
+                        )
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                     if index < store.repos.count - 1 {
                         Divider().padding(.horizontal, 12)
                     }
@@ -28,7 +32,7 @@ struct MenuContentView: View {
             Divider()
             footer
         }
-        .frame(width: 320)
+        .frame(width: 340)
     }
 
     private var header: some View {
@@ -50,9 +54,34 @@ struct MenuContentView: View {
         .padding(.bottom, 8)
     }
 
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "folder.badge.questionmark")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+            Text("No repositories configured")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text("Open Settings to add a folder.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+    }
+
     private var footer: some View {
         HStack {
+            SettingsLink {
+                Text("Settings…")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .font(.callout)
+            .keyboardShortcut(",")
+
             Spacer()
+
             Button("Quit") {
                 NSApplication.shared.terminate(nil)
             }
@@ -68,12 +97,12 @@ struct MenuContentView: View {
 
 struct RepoRow: View {
     let repo: Repo
+    let action: () -> Void
+
     @State private var isHovered = false
 
     var body: some View {
-        Button {
-            NSWorkspace.shared.open(repo.url)
-        } label: {
+        Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(repo.name)
