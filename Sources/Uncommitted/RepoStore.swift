@@ -4,6 +4,8 @@ import Combine
 final class RepoStore: ObservableObject {
     @Published private(set) var repos: [Repo] = []
 
+    private let configStore: ConfigStore
+    private var cancellables = Set<AnyCancellable>()
     private var watcher: RepoWatcher?
     private let statusQueue = DispatchQueue(label: "nl.thimo.uncommitted.git-status", qos: .utility)
 
@@ -11,34 +13,38 @@ final class RepoStore: ObservableObject {
         repos.reduce(0) { $0 + ($1.status?.totalDirty ?? 0) }
     }
 
-    init() {
-        // v0.1: hardcoded repo list. Settings UI lands in v0.2.
-        let hardcodedPaths = [
-            "~/vonk",
-            "~/src/clawbridge",
-            "~/src/uncommitted",
-        ]
+    init(configStore: ConfigStore) {
+        self.configStore = configStore
 
-        self.repos = hardcodedPaths.map { path in
-            Repo(
-                id: UUID(),
-                url: URL(fileURLWithPath: (path as NSString).expandingTildeInPath),
-                status: nil
-            )
-        }
-
-        watcher = RepoWatcher { [weak self] changedURL in
+        self.watcher = RepoWatcher { [weak self] changedURL in
             self?.handleFileChange(at: changedURL)
         }
 
-        refreshAll()
-        watcher?.watch(repos.map(\.url))
+        configStore.$config
+            .map(\.sources)
+            .removeDuplicates()
+            .sink { [weak self] sources in
+                self?.rebuild(from: sources)
+            }
+            .store(in: &cancellables)
     }
 
     func refreshAll() {
         for index in repos.indices {
             refresh(repoAt: index)
         }
+    }
+
+    private func rebuild(from sources: [Source]) {
+        let resolvedURLs = Self.resolve(sources: sources)
+
+        let existing = Dictionary(uniqueKeysWithValues: repos.map { ($0.url, $0) })
+        self.repos = resolvedURLs.map { url in
+            existing[url] ?? Repo(id: UUID(), url: url, status: nil)
+        }
+
+        watcher?.watch(resolvedURLs)
+        refreshAll()
     }
 
     private func refresh(repoAt index: Int) {
@@ -56,10 +62,48 @@ final class RepoStore: ObservableObject {
 
     private func handleFileChange(at url: URL) {
         let changed = url.standardizedFileURL.path
-        // Match the repo whose path is a prefix of the event path.
         guard let index = repos.firstIndex(where: {
             changed.hasPrefix($0.url.standardizedFileURL.path)
         }) else { return }
         refresh(repoAt: index)
+    }
+
+    /// Resolve a list of user-configured source paths to concrete repo URLs.
+    /// If a path is itself a git repo, it's added directly. Otherwise it's
+    /// scanned one level deep for child `.git` directories.
+    private static func resolve(sources: [Source]) -> [URL] {
+        var urls = Set<URL>()
+        let fm = FileManager.default
+
+        for source in sources {
+            let expanded = (source.path as NSString).expandingTildeInPath
+            let url = URL(fileURLWithPath: expanded)
+
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+                continue
+            }
+
+            if fm.fileExists(atPath: url.appendingPathComponent(".git").path) {
+                urls.insert(url)
+                continue
+            }
+
+            if let children = try? fm.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) {
+                for child in children {
+                    if fm.fileExists(atPath: child.appendingPathComponent(".git").path) {
+                        urls.insert(child)
+                    }
+                }
+            }
+        }
+
+        return Array(urls).sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
     }
 }

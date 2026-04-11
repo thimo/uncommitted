@@ -28,6 +28,9 @@ codesign --verify --verbose "$APP_STAGING" 2>&1 | head -5
 APP_INSTALL="$HOME/Applications/Uncommitted.app"
 echo "==> Installing to $APP_INSTALL"
 mkdir -p "$HOME/Applications"
+# Quit any running instance so the bundle can be replaced cleanly.
+killall -q uncommitted 2>/dev/null || true
+sleep 0.2
 rm -rf "$APP_INSTALL"
 cp -R "$APP_STAGING" "$APP_INSTALL"
 
