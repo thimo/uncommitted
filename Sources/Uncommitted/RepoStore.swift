@@ -39,6 +39,7 @@ final class RepoStore: ObservableObject {
         configStore.$config
             .map(\.sources)
             .removeDuplicates()
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] sources in
                 self?.rebuild(from: sources)
             }
@@ -99,7 +100,8 @@ final class RepoStore: ObservableObject {
     }
 
     private static func presentError(title: String, message: String) {
-        NSApp.activate(ignoringOtherApps: true)
+        // NSAlert.runModal() takes focus on its own — don't yank the whole
+        // app forward just to display a warning sheet.
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
@@ -146,8 +148,12 @@ final class RepoStore: ObservableObject {
 
     private func handleFileChange(at url: URL) {
         let changed = url.standardizedFileURL.path
-        guard let index = repos.firstIndex(where: {
-            changed.hasPrefix($0.url.standardizedFileURL.path)
+        // Require a trailing separator after the repo path so a change inside
+        // `/repos/foobar/x.txt` doesn't accidentally match a repo at
+        // `/repos/foo`. Also allow the exact repo path itself.
+        guard let index = repos.firstIndex(where: { repo in
+            let repoPath = repo.url.standardizedFileURL.path
+            return changed == repoPath || changed.hasPrefix(repoPath + "/")
         }) else { return }
         refresh(repoAt: index)
     }
@@ -155,13 +161,16 @@ final class RepoStore: ObservableObject {
     /// Resolve user-configured sources to concrete repo URLs, honouring each
     /// source's scanDepth. Stops descending into a directory as soon as a `.git`
     /// is found so we don't treat submodules or nested checkouts as separate repos.
-    private static func resolve(sources: [Source]) -> [URL] {
-        var urls = Set<URL>()
+    /// Visibility is internal so the test target can hit it directly.
+    static func resolve(sources: [Source]) -> [URL] {
+        // Dedup by standardized path so case-insensitive volumes and symlinked
+        // siblings don't produce duplicate rows.
+        var urls = [String: URL]()
         let fm = FileManager.default
 
         for source in sources {
             let expanded = (source.path as NSString).expandingTildeInPath
-            let url = URL(fileURLWithPath: expanded)
+            let url = URL(fileURLWithPath: expanded).standardizedFileURL
 
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
@@ -170,14 +179,15 @@ final class RepoStore: ObservableObject {
             scan(url: url, remainingDepth: max(0, source.scanDepth), into: &urls, fm: fm)
         }
 
-        return Array(urls).sorted {
+        return Array(urls.values).sorted {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
         }
     }
 
-    private static func scan(url: URL, remainingDepth: Int, into urls: inout Set<URL>, fm: FileManager) {
+    private static func scan(url: URL, remainingDepth: Int, into urls: inout [String: URL], fm: FileManager) {
         if fm.fileExists(atPath: url.appendingPathComponent(".git").path) {
-            urls.insert(url)
+            let key = url.standardizedFileURL.path.lowercased()
+            urls[key] = url.standardizedFileURL
             return
         }
         guard remainingDepth > 0 else { return }
@@ -191,7 +201,7 @@ final class RepoStore: ObservableObject {
         for child in children {
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: child.path, isDirectory: &isDir), isDir.boolValue {
-                scan(url: child, remainingDepth: remainingDepth - 1, into: &urls, fm: fm)
+                scan(url: child.standardizedFileURL, remainingDepth: remainingDepth - 1, into: &urls, fm: fm)
             }
         }
     }
