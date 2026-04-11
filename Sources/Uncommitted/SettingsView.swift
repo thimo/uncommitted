@@ -55,7 +55,7 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .frame(width: 620)
+        .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -210,7 +210,7 @@ struct ActionsSettingsView: View {
                 }
                 .listStyle(.inset(alternatesRowBackgrounds: false))
                 .environment(\.defaultMinListRowHeight, 38)
-                .frame(width: 320)
+                .frame(width: 280)
 
                 Divider()
 
@@ -255,7 +255,7 @@ struct ActionsSettingsView: View {
 
                 Spacer()
 
-                Text("Top action runs on click. Right-click for the full list. Drag rows to reorder.")
+                Text("Top action runs on click. Right-click shows all. Drag rows to reorder.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -478,7 +478,7 @@ struct AboutSettingsView: View {
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 16)
         }
-        .frame(width: 620)
+        .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
