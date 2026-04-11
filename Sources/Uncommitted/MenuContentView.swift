@@ -108,6 +108,18 @@ struct MenuContentView: View {
                 // titlebar and can't be raised again after focusing another app.
                 NSApp.activate(ignoringOtherApps: true)
                 openSettings()
+                // Close the menu-bar popover on the NEXT run loop tick. Closing it
+                // synchronously during the button action tears down the view host
+                // while the action is still on the stack and hangs the app.
+                // Deferring lets the action unwind first.
+                DispatchQueue.main.async {
+                    for window in NSApp.windows {
+                        let cls = String(describing: type(of: window))
+                        if cls.contains("StatusBar") || cls.contains("MenuBar") {
+                            window.close()
+                        }
+                    }
+                }
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
