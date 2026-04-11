@@ -279,7 +279,7 @@ struct StatusBadges: View {
                         color: .purple,
                         isInFlight: inFlight == .pull,
                         action: onPull,
-                        help: "Pull \(status.behind) commit\(status.behind == 1 ? "" : "s") (fast-forward only)"
+                        help: "Pull \(status.behind) commit\(status.behind == 1 ? "" : "s"). Aborts if your branch has diverged."
                     )
                 }
                 if status.untracked > 0 {
