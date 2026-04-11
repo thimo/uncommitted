@@ -429,10 +429,6 @@ struct AboutSettingsView: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
     }
 
-    private var bundleID: String {
-        Bundle.main.bundleIdentifier ?? "?"
-    }
-
     private static let gradientStops: [Gradient.Stop] = [
         .init(color: Color(red: 1.00, green: 0.20, blue: 0.58), location: 0.0),
         .init(color: Color(red: 0.55, green: 0.28, blue: 0.92), location: 0.55),
@@ -444,6 +440,17 @@ struct AboutSettingsView: View {
             return nil
         }
         return NSImage(contentsOf: url)
+    }()
+
+    /// GitHub's official mark, rendered as a template image so it picks
+    /// up the link's accent color. Bundled alongside the app icon glyph.
+    private static let githubMark: NSImage? = {
+        guard let url = Bundle.module.url(forResource: "github-mark", withExtension: "svg"),
+              let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        image.isTemplate = true
+        return image
     }()
 
     var body: some View {
@@ -476,8 +483,8 @@ struct AboutSettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
-            Text(bundleID)
-                .font(.caption.monospaced())
+            Text("Thimo Jansen")
+                .font(.caption)
                 .foregroundStyle(.tertiary)
 
             Spacer(minLength: 8)
@@ -489,15 +496,22 @@ struct AboutSettingsView: View {
                 .padding(.horizontal, 24)
 
             Link(destination: URL(string: "https://github.com/thimo/uncommitted")!) {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.up.right.square")
+                HStack(spacing: 6) {
+                    if let mark = Self.githubMark {
+                        Image(nsImage: mark)
+                            .resizable()
+                            .frame(width: 14, height: 14)
+                    } else {
+                        Image(systemName: "arrow.up.right.square")
+                    }
                     Text("github.com/thimo/uncommitted")
                 }
                 .font(.callout)
             }
+            .pointingHandCursor()
             .padding(.top, 4)
 
-            Text("Built with SwiftUI.")
+            Text("Built with ❤️ in the Netherlands")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 16)
