@@ -215,7 +215,7 @@ struct StatusBadges: View {
     let onPull: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             if status.isClean {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.body.weight(.medium))
@@ -226,7 +226,7 @@ struct StatusBadges: View {
                 // arrows for direction, git porcelain letters for file state.
                 // The ahead/behind badges are interactive — click to push/pull.
                 if status.ahead > 0 {
-                    actionBadge(
+                    ActionBadge(
                         glyph: "↑",
                         count: status.ahead,
                         color: .blue,
@@ -236,7 +236,7 @@ struct StatusBadges: View {
                     )
                 }
                 if status.behind > 0 {
-                    actionBadge(
+                    ActionBadge(
                         glyph: "↓",
                         count: status.behind,
                         color: .purple,
@@ -246,35 +246,51 @@ struct StatusBadges: View {
                     )
                 }
                 if status.untracked > 0 {
-                    badge("★", count: status.untracked, color: .green)
+                    ReadOnlyBadge(glyph: "★", count: status.untracked, color: .green)
                 }
                 if status.unstaged > 0 {
-                    badge("M", count: status.unstaged, color: .orange)
+                    ReadOnlyBadge(glyph: "M", count: status.unstaged, color: .orange)
                 }
                 if status.staged > 0 {
-                    badge("A", count: status.staged, color: .teal)
+                    ReadOnlyBadge(glyph: "A", count: status.staged, color: .teal)
                 }
             }
         }
     }
+}
 
-    private func badge(_ glyph: String, count: Int, color: Color) -> some View {
+/// Read-only status indicator — untracked / modified / staged. No hover state.
+private struct ReadOnlyBadge: View {
+    let glyph: String
+    let count: Int
+    let color: Color
+
+    var body: some View {
         HStack(spacing: 2) {
             Text(glyph)
             Text("\(count)")
         }
         .font(.body.weight(.medium).monospacedDigit())
         .foregroundStyle(color)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
     }
+}
 
-    private func actionBadge(
-        glyph: String,
-        count: Int,
-        color: Color,
-        isInFlight: Bool,
-        action: @escaping () -> Void,
-        help: String
-    ) -> some View {
+/// Interactive push/pull badge. Shows a hover-fill and a pointing-hand
+/// cursor so it's obviously clickable, and swaps to a spinner while the
+/// command is running.
+private struct ActionBadge: View {
+    let glyph: String
+    let count: Int
+    let color: Color
+    let isInFlight: Bool
+    let action: () -> Void
+    let help: String
+
+    @State private var isHovered = false
+
+    var body: some View {
         Button(action: action) {
             Group {
                 if isInFlight {
@@ -291,10 +307,22 @@ struct StatusBadges: View {
             }
             .font(.body.weight(.medium).monospacedDigit())
             .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(isHovered ? color.opacity(0.18) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(color.opacity(isHovered ? 0.0 : 0.35), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
         .disabled(isInFlight)
         .pointingHandCursor()
         .help(help)
+        .onHover { isHovered = $0 }
     }
 }
