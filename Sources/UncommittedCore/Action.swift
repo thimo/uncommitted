@@ -4,26 +4,26 @@ import os.log
 
 private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "actions")
 
-struct Action: Codable, Identifiable, Hashable {
-    var id: UUID
-    var name: String
-    var kind: ActionKind
+public struct Action: Codable, Identifiable, Hashable {
+    public var id: UUID
+    public var name: String
+    public var kind: ActionKind
 
-    init(id: UUID = UUID(), name: String, kind: ActionKind) {
+    public init(id: UUID = UUID(), name: String, kind: ActionKind) {
         self.id = id
         self.name = name
         self.kind = kind
     }
 }
 
-enum ActionKind: Codable, Hashable {
+public enum ActionKind: Codable, Hashable {
     case finder
     case app(String)        // application name passed to `open -a`
     case command(String)    // shell command; `{path}` is replaced with the repo path
 }
 
-enum ActionRunner {
-    static func run(repoURL: URL, action: Action) {
+public enum ActionRunner {
+    public static func run(repoURL: URL, action: Action) {
         switch action.kind {
         case .finder:
             NSWorkspace.shared.open(repoURL)
@@ -49,11 +49,11 @@ enum ActionRunner {
     }
 }
 
-enum AppIcons {
+public enum AppIcons {
     /// Returns the icon for a macOS application looked up by display name.
     /// Checks common install locations plus one level of /Applications
     /// subdirectories (Setapp, Toolbox, etc.).
-    static func icon(forApp name: String) -> NSImage? {
+    public static func icon(forApp name: String) -> NSImage? {
         let fm = FileManager.default
         let primaryCandidates = [
             "/Applications/\(name).app",
@@ -75,7 +75,7 @@ enum AppIcons {
         return nil
     }
 
-    static func icon(for action: Action) -> NSImage? {
+    public static func icon(for action: Action) -> NSImage? {
         switch action.kind {
         case .finder:
             return NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app")

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UncommittedCore
 
 struct MenuContentView: View {
     @EnvironmentObject var store: RepoStore

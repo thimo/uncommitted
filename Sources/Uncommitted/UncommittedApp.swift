@@ -1,4 +1,5 @@
 import SwiftUI
+import UncommittedCore
 
 @main
 struct UncommittedApp: App {

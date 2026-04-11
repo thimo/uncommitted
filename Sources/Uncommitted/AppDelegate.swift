@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import UncommittedCore
 
 /// Owns the AppKit menu-bar presence: an NSStatusItem that toggles an
 /// NSPopover hosting our SwiftUI content. We went AppKit-hosted (same shape
