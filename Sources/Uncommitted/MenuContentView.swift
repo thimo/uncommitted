@@ -13,6 +13,16 @@ struct MenuContentView: View {
         return store.repos.filter { !($0.status?.isClean ?? false) }
     }
 
+    /// Cap the repo list at ~55% of the current screen's visible height
+    /// so the popover grows with the display instead of sitting at a
+    /// hardcoded 440pt. Falls back to 440 if we can't read the screen.
+    private var maxListHeight: CGFloat {
+        guard let screenHeight = NSScreen.main?.visibleFrame.height else {
+            return 440
+        }
+        return max(300, screenHeight * 0.55)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -59,7 +69,7 @@ struct MenuContentView: View {
                     }
                 }
             }
-            .frame(maxHeight: 440)
+            .frame(maxHeight: maxListHeight)
         }
     }
 
