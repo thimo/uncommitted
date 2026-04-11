@@ -45,7 +45,7 @@ struct SettingsView: View {
 
     private func height(for tab: Tab) -> CGFloat {
         switch tab {
-        case .general:      return 220
+        case .general:      return 320
         case .repositories: return 420
         case .actions:      return 440
         case .about:        return 340
