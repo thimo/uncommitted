@@ -111,7 +111,7 @@ struct RepositoriesSettingsView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
-        .frame(width: 620, height: 420)
+        .frame(width: 560, height: 420)
     }
 
     private func addSource() {
@@ -264,7 +264,7 @@ struct ActionsSettingsView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
-        .frame(width: 620, height: 440)
+        .frame(width: 560, height: 440)
     }
 
     private func addApp() {
