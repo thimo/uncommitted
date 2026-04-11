@@ -52,16 +52,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.image = NSImage(
             systemSymbolName: "arrow.triangle.branch",
             accessibilityDescription: "Uncommitted")
-        button.imagePosition = .imageLeading
+        button.imagePosition = .imageLeft
         button.imageHugsTitle = true
 
-        let uncommitted = repoStore.totalUncommitted
-        let unpushed = repoStore.totalUnpushed
+        // Single at-a-glance number: how many repositories need attention.
+        // Unknown (nil) status doesn't count — we only tally what we know
+        // to be dirty, so a momentarily-stale repo never inflates the badge.
+        let dirtyCount = repoStore.repos.filter { $0.status?.isClean == false }.count
+        let title = dirtyCount > 0 ? " \(dirtyCount)" : ""
 
-        var parts: [String] = []
-        if uncommitted > 0 { parts.append("\(uncommitted)") }
-        if unpushed > 0 { parts.append("↑\(unpushed)") }
-        button.title = parts.isEmpty ? "" : " " + parts.joined(separator: " ")
+        // NSStatusBarButton silently drops a plain `title` alongside an image
+        // in some macOS versions. `attributedTitle` with an explicit font is
+        // the reliable way to render icon + text in the menu bar.
+        button.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]
+        )
     }
 
     // MARK: - Popover
