@@ -82,6 +82,15 @@ These are worth doing when the mood strikes. Not blocked on anything.
 - **FSEvents safety net.** The watcher can drift after sleep/wake. Listen
   for `NSWorkspace.didWakeNotification` and rebuild the stream. Cheap
   belt-and-suspenders against silent drift.
+- **Interval-based status refresh.** Even with FSEvents, nothing guarantees
+  the status reflects reality after long idle periods — FSEvents drops
+  events on sleep, some filesystem operations don't fire events, and other
+  git tools (Tower, VSCode, dependabot) make changes out-of-band that
+  eventually get picked up but not immediately. Add an opt-in "refresh
+  every N minutes" setting in General (default off, suggested 5–10 min
+  when enabled) that runs `rebuildFromConfig()` on a timer. Independent
+  of `git fetch` — this is purely status re-checks, so no network. Pairs
+  well with the FSEvents safety net above as defense in depth.
 - **README screenshots.** `scripts/setup-screenshots.sh` creates demo
   repos in every status state. Drop the output into `docs/menubar.png`
   and friends, update the README image references.
