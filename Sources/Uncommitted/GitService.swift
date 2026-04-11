@@ -7,89 +7,119 @@ enum GitService {
         let errorOutput: String?
     }
 
+    // MARK: - Entry points
+
+    /// Reads repo status via `git status --porcelain=v2 --branch`. Returns
+    /// nil if git fails or the output can't be parsed as a valid status.
+    static func status(at url: URL) -> RepoStatus? {
+        let result = execute(["status", "--porcelain=v2", "--branch"], at: url)
+        guard result.exitStatus == 0 else { return nil }
+        guard let output = String(data: result.stdout, encoding: .utf8) else { return nil }
+        return parse(output)
+    }
+
     static func push(at url: URL) -> ActionResult {
-        run(at: url, args: ["push"])
+        action(["push"], at: url)
     }
 
     /// Uses `--ff-only` so a diverged branch fails loudly rather than creating
     /// a merge commit or rebasing local work without user intent.
     static func pull(at url: URL) -> ActionResult {
-        run(at: url, args: ["pull", "--ff-only"])
+        action(["pull", "--ff-only"], at: url)
     }
 
-    private static func run(at url: URL, args: [String]) -> ActionResult {
+    // MARK: - Shared process runner
+
+    private struct ExecuteResult {
+        let exitStatus: Int32
+        let stdout: Data
+        let stderr: Data
+        let launchFailure: Error?
+    }
+
+    /// Runs `/usr/bin/git <args>` in `url` with stdout and stderr captured
+    /// concurrently on background queues. Draining both pipes in parallel
+    /// before waitUntilExit avoids the ~64KB pipe-buffer deadlock that
+    /// would otherwise stall when git (or a hook) is chatty on one stream.
+    private static func execute(_ args: [String], at url: URL) -> ExecuteResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.currentDirectoryURL = url
         process.arguments = args
 
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
         process.standardInput = FileHandle.nullDevice
 
         do {
             try process.run()
         } catch {
-            return ActionResult(success: false, errorOutput: error.localizedDescription)
+            return ExecuteResult(exitStatus: -1, stdout: Data(), stderr: Data(), launchFailure: error)
         }
 
-        let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
-        _ = stdout.fileHandleForReading.readDataToEndOfFile()
+        // Drain both pipes in parallel on a concurrent queue. If we read one
+        // pipe before the other, git can block writing to the un-drained one
+        // when its internal buffer fills up, leading to an unkillable stall.
+        let group = DispatchGroup()
+        let concurrentQueue = DispatchQueue(label: "nl.thimo.uncommitted.pipe-drain", attributes: .concurrent)
 
+        var stdoutData = Data()
+        var stderrData = Data()
+
+        group.enter()
+        concurrentQueue.async {
+            stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+
+        group.enter()
+        concurrentQueue.async {
+            stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+
+        group.wait()
         process.waitUntilExit()
 
-        try? stdout.fileHandleForReading.close()
-        try? stderr.fileHandleForReading.close()
+        try? stdoutPipe.fileHandleForReading.close()
+        try? stderrPipe.fileHandleForReading.close()
 
-        if process.terminationStatus == 0 {
+        return ExecuteResult(
+            exitStatus: process.terminationStatus,
+            stdout: stdoutData,
+            stderr: stderrData,
+            launchFailure: nil
+        )
+    }
+
+    private static func action(_ args: [String], at url: URL) -> ActionResult {
+        let result = execute(args, at: url)
+
+        if let launchFailure = result.launchFailure {
+            return ActionResult(success: false, errorOutput: launchFailure.localizedDescription)
+        }
+
+        if result.exitStatus == 0 {
             return ActionResult(success: true, errorOutput: nil)
         }
-        let text = String(data: stderrData, encoding: .utf8)?
+
+        let text = String(data: result.stderr, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return ActionResult(success: false, errorOutput: text?.isEmpty == false ? text : "git exited with status \(process.terminationStatus)")
+        let message = (text?.isEmpty == false ? text : nil)
+            ?? "git exited with status \(result.exitStatus)"
+        return ActionResult(success: false, errorOutput: message)
     }
 
-    static func status(at url: URL) -> RepoStatus? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.currentDirectoryURL = url
-        process.arguments = ["status", "--porcelain=v2", "--branch"]
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-        process.standardInput = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-
-        // Read the pipes before waitUntilExit so we can't deadlock on output
-        // that exceeds the 64KB pipe buffer. readDataToEndOfFile unblocks when
-        // git closes its end of the pipe, which happens when it exits.
-        let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
-        _ = stderr.fileHandleForReading.readDataToEndOfFile()
-
-        process.waitUntilExit()
-
-        try? stdout.fileHandleForReading.close()
-        try? stderr.fileHandleForReading.close()
-
-        guard process.terminationStatus == 0 else { return nil }
-        guard let output = String(data: stdoutData, encoding: .utf8) else { return nil }
-        return parse(output)
-    }
+    // MARK: - Parser
 
     /// Parses `git status --porcelain=v2 --branch` output. Returns nil if the
     /// output is missing the `branch.oid` header, which git always emits for a
     /// real repository — if it's absent, something is wrong and we'd rather
     /// preserve the previous status than record a bogus "clean" state.
-    private static func parse(_ output: String) -> RepoStatus? {
+    /// Visibility is internal so the test target can hit it directly.
+    static func parse(_ output: String) -> RepoStatus? {
         var branch = "(detached)"
         var headOid: String?
         var ahead = 0
