@@ -1,7 +1,9 @@
 #!/usr/bin/env swift
 // Generates an .iconset directory with all sizes macOS expects for iconutil.
-// Drawing: rounded-square gradient background (blue → purple), centered SF
-// `arrow.triangle.branch` symbol in white with a subtle drop shadow.
+// Drawing: rounded-square gradient background (blue → purple) with a custom
+// "git branch graph" glyph in white — three stroked circles connected by a
+// vertical spine and a curving branch line, the shape the git logo uses and
+// the one most developers recognize at a glance.
 
 import Foundation
 import AppKit
@@ -72,37 +74,84 @@ func render(size: CGFloat) -> NSImage {
 
     ctx.restoreGState()
 
-    // Centered SF Symbol, white, bold-ish.
-    let symbolPointSize = size * 0.54
-    let symbolConfig = NSImage.SymbolConfiguration(
-        pointSize: symbolPointSize,
-        weight: .semibold
-    ).applying(.init(paletteColors: [.white]))
-
-    if let symbolBase = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil),
-       let symbol = symbolBase.withSymbolConfiguration(symbolConfig) {
-        let symbolSize = symbol.size
-        let origin = CGPoint(
-            x: (size - symbolSize.width) / 2,
-            y: (size - symbolSize.height) / 2
-        )
-
-        // Soft drop shadow under the symbol.
-        let shadow = NSShadow()
-        shadow.shadowOffset = NSSize(width: 0, height: -size * 0.008)
-        shadow.shadowBlurRadius = size * 0.035
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.28)
-        shadow.set()
-
-        symbol.draw(
-            at: origin,
-            from: .zero,
-            operation: .sourceOver,
-            fraction: 1.0
-        )
-    }
+    // Custom git-branch glyph: three stroked circles connected by a
+    // vertical spine (between two left-column dots) and a curving branch
+    // line out to a right-column dot. All in white with a soft drop
+    // shadow. Geometry is normalized against `size` so it scales cleanly.
+    drawBranchGlyph(in: ctx, size: size)
 
     return image
+}
+
+/// Draws the branch graph glyph centered in the canvas.
+/// Coordinate system is Core Graphics: origin bottom-left, Y goes up.
+func drawBranchGlyph(in ctx: CGContext, size: CGFloat) {
+    ctx.saveGState()
+    defer { ctx.restoreGState() }
+
+    // Normalized geometry. Kept tighter than a typical Lucide-style
+    // git-branch icon — left column nearly hugs the right column so the
+    // glyph doesn't feel wide.
+    let dotRadius = size * 0.085
+    let strokeWidth = size * 0.055
+
+    // Dot centers in 0..1 space, then scaled to pixel space.
+    // CG origin is bottom-left; "top" visually = larger Y.
+    let bottomDot = CGPoint(x: size * 0.34, y: size * 0.25)
+    let topDot    = CGPoint(x: size * 0.34, y: size * 0.75)
+    let rightDot  = CGPoint(x: size * 0.70, y: size * 0.75)
+
+    // Soft drop shadow on everything we draw.
+    let shadow = NSShadow()
+    shadow.shadowOffset = NSSize(width: 0, height: -size * 0.01)
+    shadow.shadowBlurRadius = size * 0.04
+    shadow.shadowColor = NSColor.black.withAlphaComponent(0.28)
+    shadow.set()
+
+    ctx.setStrokeColor(NSColor.white.cgColor)
+    ctx.setFillColor(NSColor.white.cgColor)
+    ctx.setLineWidth(strokeWidth)
+    ctx.setLineCap(.round)
+    ctx.setLineJoin(.round)
+
+    // --- Spine: vertical line between top edge of bottom dot and bottom
+    // edge of top dot.
+    ctx.move(to: CGPoint(x: bottomDot.x, y: bottomDot.y + dotRadius))
+    ctx.addLine(to: CGPoint(x: topDot.x,    y: topDot.y - dotRadius))
+    ctx.strokePath()
+
+    // --- Branch: curves from the spine out to the left edge of the right
+    // dot. Start the branch roughly at the same height as the top dot so
+    // the curve arcs gracefully up-and-right.
+    let branchStart = CGPoint(x: topDot.x, y: topDot.y - dotRadius * 0.2)
+    let branchEnd   = CGPoint(x: rightDot.x - dotRadius, y: rightDot.y)
+    // Control point forces a smooth right-then-up curve.
+    let control     = CGPoint(x: rightDot.x - dotRadius, y: branchStart.y)
+
+    ctx.move(to: branchStart)
+    ctx.addQuadCurve(to: branchEnd, control: control)
+    ctx.strokePath()
+
+    // --- Three dots. Draw as stroked rings (hollow), matching the
+    // reference image's outlined-circle style.
+    let innerRadius = dotRadius - strokeWidth / 2
+    for dot in [bottomDot, topDot, rightDot] {
+        // Punch a hole so the spine/branch lines visibly enter the
+        // circles: first fill background color to clear anything behind,
+        // then stroke the ring.
+        let outerRect = CGRect(
+            x: dot.x - dotRadius,
+            y: dot.y - dotRadius,
+            width: dotRadius * 2,
+            height: dotRadius * 2
+        )
+        // Solid fill inside the ring to hide line endings that would
+        // otherwise show through. Use the gradient background color by
+        // clipping — but simpler: just draw a stroked ring and let the
+        // line caps round off cleanly at the dot edges.
+        ctx.strokeEllipse(in: outerRect)
+        _ = innerRadius
+    }
 }
 
 func writePNG(_ image: NSImage, to url: URL, pixelSize: Int) throws {
