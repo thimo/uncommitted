@@ -57,6 +57,7 @@ struct MenuContentView: View {
         HStack {
             Text("Uncommitted")
                 .font(.headline)
+                .padding(.horizontal, 6) // match GhostButtonStyle internal padding
             Spacer()
             Button {
                 store.rebuildFromConfig()
@@ -64,11 +65,11 @@ struct MenuContentView: View {
                 Image(systemName: "arrow.clockwise")
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GhostButtonStyle())
             .pointingHandCursor()
             .help("Rescan sources and refresh all")
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 14)
         .padding(.top, 14)
         .padding(.bottom, 10)
     }
@@ -113,7 +114,7 @@ struct MenuContentView: View {
                 openSettings()
                 dismissPopover()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GhostButtonStyle())
             .foregroundStyle(.secondary)
             .font(.callout)
             .keyboardShortcut(",")
@@ -124,13 +125,13 @@ struct MenuContentView: View {
             Button("Quit") {
                 NSApplication.shared.terminate(nil)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GhostButtonStyle())
             .foregroundStyle(.secondary)
             .font(.callout)
             .keyboardShortcut("q")
             .pointingHandCursor()
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 14)
         .padding(.top, 10)
         .padding(.bottom, 14)
     }
@@ -150,6 +151,42 @@ extension View {
                 NSCursor.pop()
             }
         }
+    }
+}
+
+// MARK: - Ghost button style
+
+/// A compact button style with a rounded-rect hover fill and a pressed
+/// state — used for the popover's chrome (Settings, Quit, Refresh).
+/// Adds 6pt horizontal / 3pt vertical internal padding so the fill has
+/// room to breathe around the label.
+struct GhostButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        GhostButtonBody(label: configuration.label, isPressed: configuration.isPressed)
+    }
+}
+
+private struct GhostButtonBody<Label: View>: View {
+    let label: Label
+    let isPressed: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        label
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(fill)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 5))
+            .onHover { isHovered = $0 }
+    }
+
+    private var fill: Color {
+        if isPressed { return Color.primary.opacity(0.15) }
+        if isHovered { return Color.primary.opacity(0.1) }
+        return .clear
     }
 }
 
