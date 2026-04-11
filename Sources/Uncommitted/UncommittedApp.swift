@@ -36,22 +36,13 @@ struct MenuBarLabel: View {
         let uncommitted = store.totalUncommitted
         let unpushed = store.totalUnpushed
 
-        if uncommitted == 0 && unpushed == 0 {
-            Image(systemName: "checkmark")
-        } else {
-            HStack(spacing: 6) {
-                if uncommitted > 0 {
-                    HStack(spacing: 2) {
-                        Image(systemName: "pencil")
-                        Text("\(uncommitted)")
-                    }
-                }
-                if unpushed > 0 {
-                    HStack(spacing: 2) {
-                        Image(systemName: "arrow.up")
-                        Text("\(unpushed)")
-                    }
-                }
+        HStack(spacing: 4) {
+            Image(systemName: "arrow.triangle.branch")
+            if uncommitted > 0 {
+                Text("\(uncommitted)")
+            }
+            if unpushed > 0 {
+                Text("↑\(unpushed)")
             }
         }
     }

@@ -29,21 +29,26 @@ struct MenuContentView: View {
         } else if visible.isEmpty {
             emptyAllClean
         } else {
-            ForEach(Array(visible.enumerated()), id: \.element.id) { index, repo in
-                RepoRow(
-                    repo: repo,
-                    actions: configStore.config.actions,
-                    onDefault: {
-                        guard let first = configStore.config.actions.first else { return }
-                        ActionRunner.run(repoURL: repo.url, action: first)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, repo in
+                        RepoRow(
+                            repo: repo,
+                            actions: configStore.config.actions,
+                            onDefault: {
+                                guard let first = configStore.config.actions.first else { return }
+                                ActionRunner.run(repoURL: repo.url, action: first)
+                            }
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        if index < visible.count - 1 {
+                            Divider().padding(.horizontal, 12)
+                        }
                     }
-                )
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                if index < visible.count - 1 {
-                    Divider().padding(.horizontal, 12)
                 }
             }
+            .frame(maxHeight: 440)
         }
     }
 
