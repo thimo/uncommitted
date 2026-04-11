@@ -4,6 +4,7 @@ import AppKit
 struct MenuContentView: View {
     @EnvironmentObject var store: RepoStore
     @EnvironmentObject var configStore: ConfigStore
+    @Environment(\.openSettings) private var openSettings
 
     private var visibleRepos: [Repo] {
         guard configStore.config.hideCleanRepos else { return store.repos }
@@ -96,8 +97,12 @@ struct MenuContentView: View {
 
     private var footer: some View {
         HStack {
-            SettingsLink {
-                Text("Settings…")
+            Button("Settings…") {
+                // LSUIElement apps don't auto-activate when a SwiftUI window opens,
+                // so without this the Settings window comes up with an inactive
+                // titlebar and can't be raised again after focusing another app.
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
