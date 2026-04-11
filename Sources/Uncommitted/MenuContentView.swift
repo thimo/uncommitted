@@ -5,34 +5,45 @@ struct MenuContentView: View {
     @EnvironmentObject var store: RepoStore
     @EnvironmentObject var configStore: ConfigStore
 
+    private var visibleRepos: [Repo] {
+        guard configStore.config.hideCleanRepos else { return store.repos }
+        return store.repos.filter { !($0.status?.isClean ?? false) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
-
-            if store.repos.isEmpty {
-                emptyState
-            } else {
-                ForEach(Array(store.repos.enumerated()), id: \.element.id) { index, repo in
-                    RepoRow(repo: repo) {
-                        ClickActionRunner.open(
-                            repoURL: repo.url,
-                            action: configStore.config.clickAction,
-                            customCommand: configStore.config.customCommand
-                        )
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    if index < store.repos.count - 1 {
-                        Divider().padding(.horizontal, 12)
-                    }
-                }
-            }
-
+            repoList(for: visibleRepos)
             Divider()
             footer
         }
         .frame(width: 340)
+    }
+
+    @ViewBuilder
+    private func repoList(for visible: [Repo]) -> some View {
+        if store.repos.isEmpty {
+            emptyNoSources
+        } else if visible.isEmpty {
+            emptyAllClean
+        } else {
+            ForEach(Array(visible.enumerated()), id: \.element.id) { index, repo in
+                RepoRow(
+                    repo: repo,
+                    actions: configStore.config.actions,
+                    onDefault: {
+                        guard let first = configStore.config.actions.first else { return }
+                        ActionRunner.run(repoURL: repo.url, action: first)
+                    }
+                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                if index < visible.count - 1 {
+                    Divider().padding(.horizontal, 12)
+                }
+            }
+        }
     }
 
     private var header: some View {
@@ -54,7 +65,7 @@ struct MenuContentView: View {
         .padding(.bottom, 8)
     }
 
-    private var emptyState: some View {
+    private var emptyNoSources: some View {
         VStack(spacing: 8) {
             Image(systemName: "folder.badge.questionmark")
                 .font(.largeTitle)
@@ -65,6 +76,19 @@ struct MenuContentView: View {
             Text("Open Settings to add a folder.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+    }
+
+    private var emptyAllClean: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.largeTitle)
+                .foregroundStyle(.green)
+            Text("You're fully committed 🎉")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
@@ -97,18 +121,19 @@ struct MenuContentView: View {
 
 struct RepoRow: View {
     let repo: Repo
-    let action: () -> Void
+    let actions: [Action]
+    let onDefault: () -> Void
 
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: action) {
+        Button(action: onDefault) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(repo.name)
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
-                    Text(repo.status?.branch ?? "Loading…")
+                    Text(repo.status?.displayBranch ?? "Loading…")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -128,6 +153,13 @@ struct RepoRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .contextMenu {
+            ForEach(actions) { action in
+                Button(action.name) {
+                    ActionRunner.run(repoURL: repo.url, action: action)
+                }
+            }
+        }
     }
 }
 

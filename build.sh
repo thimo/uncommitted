@@ -13,12 +13,18 @@ if [ ! -x "$BIN_SRC" ]; then
   exit 1
 fi
 
+echo "==> Rendering icon"
+mkdir -p build
+swift Resources/make-icon.swift build/Uncommitted.iconset >/dev/null
+iconutil -c icns build/Uncommitted.iconset -o build/Uncommitted.icns
+
 APP_STAGING="build/Uncommitted.app"
 echo "==> Assembling $APP_STAGING"
 rm -rf "$APP_STAGING"
 mkdir -p "$APP_STAGING/Contents/MacOS" "$APP_STAGING/Contents/Resources"
 cp "$BIN_SRC" "$APP_STAGING/Contents/MacOS/uncommitted"
 cp Resources/Info.plist "$APP_STAGING/Contents/Info.plist"
+cp build/Uncommitted.icns "$APP_STAGING/Contents/Resources/Uncommitted.icns"
 printf "APPL????" > "$APP_STAGING/Contents/PkgInfo"
 
 echo "==> Ad-hoc signing"

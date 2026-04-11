@@ -28,6 +28,7 @@ enum GitService {
 
     private static func parse(_ output: String) -> RepoStatus {
         var branch = "(detached)"
+        var headOid: String?
         var ahead = 0
         var behind = 0
         var staged = 0
@@ -42,6 +43,8 @@ enum GitService {
             case "#":
                 guard parts.count >= 2 else { continue }
                 switch parts[1] {
+                case "branch.oid":
+                    if parts.count >= 3 { headOid = String(parts[2]) }
                 case "branch.head":
                     if parts.count >= 3 { branch = String(parts[2]) }
                 case "branch.ab":
@@ -73,6 +76,7 @@ enum GitService {
 
         return RepoStatus(
             branch: branch,
+            headOid: headOid,
             ahead: ahead,
             behind: behind,
             staged: staged,

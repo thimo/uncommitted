@@ -26,10 +26,10 @@ final class ConfigStore: ObservableObject {
         }
     }
 
-    func addSource(path: String) {
+    func addSource(path: String, scanDepth: Int = 1) {
         let expanded = (path as NSString).expandingTildeInPath
         guard !config.sources.contains(where: { $0.path == expanded }) else { return }
-        config.sources.append(Source(path: expanded))
+        config.sources.append(Source(path: expanded, scanDepth: scanDepth))
     }
 
     func removeSource(id: Source.ID) {

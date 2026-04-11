@@ -9,8 +9,12 @@ final class RepoStore: ObservableObject {
     private var watcher: RepoWatcher?
     private let statusQueue = DispatchQueue(label: "nl.thimo.uncommitted.git-status", qos: .utility)
 
-    var totalDirty: Int {
-        repos.reduce(0) { $0 + ($1.status?.totalDirty ?? 0) }
+    var totalUncommitted: Int {
+        repos.reduce(0) { $0 + ($1.status?.totalUncommitted ?? 0) }
+    }
+
+    var totalUnpushed: Int {
+        repos.reduce(0) { $0 + ($1.status?.totalUnpushed ?? 0) }
     }
 
     init(configStore: ConfigStore) {
@@ -68,9 +72,9 @@ final class RepoStore: ObservableObject {
         refresh(repoAt: index)
     }
 
-    /// Resolve a list of user-configured source paths to concrete repo URLs.
-    /// If a path is itself a git repo, it's added directly. Otherwise it's
-    /// scanned one level deep for child `.git` directories.
+    /// Resolve user-configured sources to concrete repo URLs, honouring each
+    /// source's scanDepth. Stops descending into a directory as soon as a `.git`
+    /// is found so we don't treat submodules or nested checkouts as separate repos.
     private static func resolve(sources: [Source]) -> [URL] {
         var urls = Set<URL>()
         let fm = FileManager.default
@@ -83,27 +87,32 @@ final class RepoStore: ObservableObject {
             guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
                 continue
             }
-
-            if fm.fileExists(atPath: url.appendingPathComponent(".git").path) {
-                urls.insert(url)
-                continue
-            }
-
-            if let children = try? fm.contentsOfDirectory(
-                at: url,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            ) {
-                for child in children {
-                    if fm.fileExists(atPath: child.appendingPathComponent(".git").path) {
-                        urls.insert(child)
-                    }
-                }
-            }
+            scan(url: url, remainingDepth: max(0, source.scanDepth), into: &urls, fm: fm)
         }
 
         return Array(urls).sorted {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
+    }
+
+    private static func scan(url: URL, remainingDepth: Int, into urls: inout Set<URL>, fm: FileManager) {
+        if fm.fileExists(atPath: url.appendingPathComponent(".git").path) {
+            urls.insert(url)
+            return
+        }
+        guard remainingDepth > 0 else { return }
+
+        guard let children = try? fm.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        for child in children {
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: child.path, isDirectory: &isDir), isDir.boolValue {
+                scan(url: child, remainingDepth: remainingDepth - 1, into: &urls, fm: fm)
+            }
         }
     }
 }
