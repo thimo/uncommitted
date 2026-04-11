@@ -37,22 +37,30 @@ public enum GitService {
         let launchFailure: Error?
     }
 
-    /// How long any single git invocation is allowed to run before we give
-    /// up and kill it. Push and pull over SSH can leave background helpers
-    /// (ssh ControlMaster, git-credential-osxkeychain) that inherit our
-    /// pipes and prevent readDataToEndOfFile from ever seeing EOF — even
-    /// after git itself has successfully finished its work. Without a
-    /// timeout, the UI spinner would stay stuck forever. 30 seconds is
-    /// plenty for any reasonable git operation over a functioning network.
-    private static let executeTimeoutSeconds: Int = 30
+    /// After git exits, how long we wait for the stdout/stderr pipes to
+    /// drain to EOF. Should be near-instant in the normal case — git is
+    /// the only writer, so EOF fires the moment the process dies. If a
+    /// child subprocess (ssh ControlMaster, credential helper) inherited
+    /// our pipe FDs and stays alive past git's exit, EOF is blocked on
+    /// that child, so we bail after this timeout, kill the process group,
+    /// and return a stale-state-refresh error.
+    private static let pipeDrainTimeoutSeconds: Int = 2
 
     /// Runs `/usr/bin/git <args>` in `url` with stdout and stderr captured
-    /// concurrently on background queues. Draining both pipes in parallel
-    /// before waitUntilExit avoids the ~64KB pipe-buffer deadlock that
-    /// would otherwise stall when git (or a hook) is chatty on one stream.
-    /// Wraps the whole thing in `executeTimeoutSeconds` — if a git child
-    /// subprocess inherits the pipes and holds them open past the
-    /// parent's exit, we kill the process group and return failure.
+    /// concurrently on background queues.
+    ///
+    /// The concurrent drain is necessary to avoid a ~64KB pipe-buffer
+    /// deadlock: if we read one pipe sequentially, git can block writing
+    /// the other one and deadlock.
+    ///
+    /// We wait for the process to exit *first* — this is unbounded on
+    /// purpose, so a legitimately slow git operation (large fetch, slow
+    /// network) has all the time it needs. Only *after* git has exited
+    /// do we apply a short timeout to the pipe drain. In the happy path
+    /// the pipes see EOF instantly when git dies and this is a no-op. In
+    /// the pathological case where a child subprocess kept our pipe FDs
+    /// open past git's exit, the short timeout detects that, kills the
+    /// process group to sever the children, and force-closes our FDs.
     private static func execute(_ args: [String], at url: URL) -> ExecuteResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
@@ -71,9 +79,7 @@ public enum GitService {
             return ExecuteResult(exitStatus: -1, stdout: Data(), stderr: Data(), launchFailure: error)
         }
 
-        // Drain both pipes in parallel on a concurrent queue. If we read one
-        // pipe before the other, git can block writing to the un-drained one
-        // when its internal buffer fills up, leading to an unkillable stall.
+        // Concurrent drain — neither pipe can starve the other.
         let group = DispatchGroup()
         let concurrentQueue = DispatchQueue(label: "nl.thimo.uncommitted.pipe-drain", attributes: .concurrent)
 
@@ -92,38 +98,35 @@ public enum GitService {
             group.leave()
         }
 
-        // Bounded wait. If the pipe drains don't finish within the timeout,
-        // we assume git (or a child of git) is holding the pipes open and
-        // force the situation closed.
-        let deadline: DispatchTime = .now() + .seconds(executeTimeoutSeconds)
-        let drained = group.wait(timeout: deadline)
+        // Wait unbounded for git to actually finish its work.
+        process.waitUntilExit()
+
+        // Git is dead. Pipe drains SHOULD be done (or finishing right now)
+        // because EOF fires when the last writer closes. If they're still
+        // blocked, a child subprocess inherited our pipe FDs.
+        let drained = group.wait(timeout: .now() + .seconds(pipeDrainTimeoutSeconds))
 
         if drained == .timedOut {
-            // Kill the entire process group to catch any lingering children
-            // — ssh helpers, credential helpers, etc.
+            // Sever any surviving children from the pipes by killing the
+            // process group. git itself is already gone; this only targets
+            // ssh helpers and the like.
             let pgid = getpgid(process.processIdentifier)
             if pgid > 0 {
-                Foundation.kill(-pgid, SIGTERM)
-                usleep(200_000) // 200ms grace
                 Foundation.kill(-pgid, SIGKILL)
-            } else {
-                process.terminate()
             }
 
-            // Close our ends of the pipes so any remaining async reader
-            // eventually gets EOF and releases its closure capture.
+            // Force-close our read ends so the dangling readers see EOF
+            // on their next read attempt and release their closure captures.
             try? stdoutPipe.fileHandleForReading.close()
             try? stderrPipe.fileHandleForReading.close()
 
             return ExecuteResult(
                 exitStatus: -1,
                 stdout: Data(),
-                stderr: "Operation timed out after \(executeTimeoutSeconds) seconds. Git likely succeeded but a background helper (ssh ControlMaster, credential cache) kept the connection open. Refresh to confirm.".data(using: .utf8) ?? Data(),
+                stderr: "A background helper (ssh ControlMaster, credential cache) kept stdout/stderr open after git exited. Git probably succeeded — refresh to confirm.".data(using: .utf8) ?? Data(),
                 launchFailure: nil
             )
         }
-
-        process.waitUntilExit()
 
         try? stdoutPipe.fileHandleForReading.close()
         try? stderrPipe.fileHandleForReading.close()
