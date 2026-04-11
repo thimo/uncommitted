@@ -94,16 +94,6 @@ These are worth doing when the mood strikes. Not blocked on anything.
 - **README screenshots.** `scripts/setup-screenshots.sh` creates demo
   repos in every status state. Drop the output into `docs/menubar.png`
   and friends, update the README image references.
-- **Polished app icon.** The current `make-icon.swift` renders a
-  gradient + SF Symbol programmatically. Fine, but not gorgeous at 16px
-  and the symbol doesn't read as "git" at a glance. Two attempts at
-  drawing a custom git-branch graph glyph programmatically didn't land;
-  the right answer is a real hand-drawn icon — a three-circle
-  branch-graph style (Lucide-inspired) on the current blue→purple
-  gradient background, exported at all iconset sizes from Figma or Icon
-  Composer. Hire a designer or trace one yourself when you have an
-  evening for it. Replace the programmatic path in `make-icon.swift`
-  with a static PNG import.
 - **Per-repo overrides.** Right-click a repo row → Pin, Hide, Rename.
   Config gets a `repoOverrides: [path: overrides]` map.
 - **Keyboard shortcut** to open the popover from anywhere — via the
