@@ -25,6 +25,7 @@ struct UncommittedApp: App {
             SettingsView()
                 .environmentObject(configStore)
         }
+        .windowResizability(.contentSize)
     }
 }
 
@@ -32,14 +33,26 @@ struct MenuBarLabel: View {
     @ObservedObject var store: RepoStore
 
     var body: some View {
-        let total = store.totalDirty
-        if total > 0 {
-            HStack(spacing: 3) {
-                Image(systemName: "arrow.triangle.branch")
-                Text("\(total)")
-            }
+        let uncommitted = store.totalUncommitted
+        let unpushed = store.totalUnpushed
+
+        if uncommitted == 0 && unpushed == 0 {
+            Image(systemName: "checkmark")
         } else {
-            Image(systemName: "checkmark.circle")
+            HStack(spacing: 6) {
+                if uncommitted > 0 {
+                    HStack(spacing: 2) {
+                        Image(systemName: "pencil")
+                        Text("\(uncommitted)")
+                    }
+                }
+                if unpushed > 0 {
+                    HStack(spacing: 2) {
+                        Image(systemName: "arrow.up")
+                        Text("\(unpushed)")
+                    }
+                }
+            }
         }
     }
 }
