@@ -5,6 +5,7 @@ struct MenuContentView: View {
     @EnvironmentObject var store: RepoStore
     @EnvironmentObject var configStore: ConfigStore
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.dismissPopover) private var dismissPopover
 
     private var visibleRepos: [Repo] {
         guard configStore.config.hideCleanRepos else { return store.repos }
@@ -19,7 +20,7 @@ struct MenuContentView: View {
             Divider()
             footer
         }
-        .frame(width: 340)
+        .frame(width: 360)
     }
 
     @ViewBuilder
@@ -103,23 +104,13 @@ struct MenuContentView: View {
     private var footer: some View {
         HStack {
             Button("Settings…") {
-                // LSUIElement apps don't auto-activate when a SwiftUI window opens,
-                // so without this the Settings window comes up with an inactive
-                // titlebar and can't be raised again after focusing another app.
+                // LSUIElement apps don't auto-activate when a SwiftUI window
+                // opens, so without this the Settings window comes up with
+                // an inactive titlebar. dismissPopover() is hosted by our
+                // AppDelegate via the DismissPopoverKey environment.
                 NSApp.activate(ignoringOtherApps: true)
                 openSettings()
-                // Close the menu-bar popover on the NEXT run loop tick. Closing it
-                // synchronously during the button action tears down the view host
-                // while the action is still on the stack and hangs the app.
-                // Deferring lets the action unwind first.
-                DispatchQueue.main.async {
-                    for window in NSApp.windows {
-                        let cls = String(describing: type(of: window))
-                        if cls.contains("StatusBar") || cls.contains("MenuBar") {
-                            window.close()
-                        }
-                    }
-                }
+                dismissPopover()
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
@@ -189,37 +180,39 @@ struct StatusBadges: View {
     let status: RepoStatus
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             if status.isClean {
                 Image(systemName: "checkmark.circle.fill")
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.green)
-                    .font(.callout)
             } else {
+                // Commit-level state first (ahead / behind), then file-level
+                // as a progression (untracked → unstaged → staged).
                 if status.ahead > 0 {
                     badge("arrow.up", count: status.ahead, color: .blue)
                 }
                 if status.behind > 0 {
                     badge("arrow.down", count: status.behind, color: .purple)
                 }
-                if status.staged > 0 {
-                    badge("plus", count: status.staged, color: .green)
+                if status.untracked > 0 {
+                    badge("sparkle", count: status.untracked, color: .green)
                 }
                 if status.unstaged > 0 {
                     badge("pencil", count: status.unstaged, color: .orange)
                 }
-                if status.untracked > 0 {
-                    badge("questionmark", count: status.untracked, color: .gray)
+                if status.staged > 0 {
+                    badge("checkmark", count: status.staged, color: .teal)
                 }
             }
         }
     }
 
     private func badge(_ symbol: String, count: Int, color: Color) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 3) {
             Image(systemName: symbol)
             Text("\(count)")
         }
-        .font(.caption.monospacedDigit())
+        .font(.body.weight(.semibold).monospacedDigit())
         .foregroundStyle(color)
     }
 }
