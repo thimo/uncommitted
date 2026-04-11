@@ -440,7 +440,7 @@ struct AboutSettingsView: View {
     ]
 
     private static let glyph: NSImage? = {
-        guard let url = Bundle.main.url(forResource: "icon-glyph", withExtension: "svg") else {
+        guard let url = Bundle.module.url(forResource: "icon-glyph", withExtension: "svg") else {
             return nil
         }
         return NSImage(contentsOf: url)
@@ -467,7 +467,7 @@ struct AboutSettingsView: View {
                 }
             }
             .frame(width: 64, height: 88)
-            .padding(.top, 12)
+            .padding(.top, 28)
 
             Text("Uncommitted")
                 .font(.title.weight(.semibold))

@@ -59,14 +59,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Cached menu bar icon — loaded once from the bundled SVG and sized
     /// to match typical menu bar glyph proportions. Marked as template
     /// so macOS inverts it for dark menu bar backgrounds automatically.
+    /// Uses Bundle.module because SPM puts declared resources there,
+    /// not in Bundle.main.
     private static let menuBarIcon: NSImage? = {
-        guard let url = Bundle.main.url(forResource: "icon-glyph", withExtension: "svg"),
+        guard let url = Bundle.module.url(forResource: "icon-glyph", withExtension: "svg"),
               let svg = NSImage(contentsOf: url) else {
             return nil
         }
         // The SVG is tall (289×448). Scale to a menu bar-friendly height
-        // while preserving aspect ratio.
-        let targetHeight: CGFloat = 18
+        // while preserving aspect ratio. 14pt matches the visual weight of
+        // neighbouring system menu bar icons like CodexBar's sparkle.
+        let targetHeight: CGFloat = 14
         let aspect = svg.size.width / svg.size.height
         svg.size = NSSize(width: targetHeight * aspect, height: targetHeight)
         svg.isTemplate = true
