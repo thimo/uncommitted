@@ -37,10 +37,22 @@ public enum GitService {
         let launchFailure: Error?
     }
 
+    /// How long any single git invocation is allowed to run before we give
+    /// up and kill it. Push and pull over SSH can leave background helpers
+    /// (ssh ControlMaster, git-credential-osxkeychain) that inherit our
+    /// pipes and prevent readDataToEndOfFile from ever seeing EOF — even
+    /// after git itself has successfully finished its work. Without a
+    /// timeout, the UI spinner would stay stuck forever. 30 seconds is
+    /// plenty for any reasonable git operation over a functioning network.
+    private static let executeTimeoutSeconds: Int = 30
+
     /// Runs `/usr/bin/git <args>` in `url` with stdout and stderr captured
     /// concurrently on background queues. Draining both pipes in parallel
     /// before waitUntilExit avoids the ~64KB pipe-buffer deadlock that
     /// would otherwise stall when git (or a hook) is chatty on one stream.
+    /// Wraps the whole thing in `executeTimeoutSeconds` — if a git child
+    /// subprocess inherits the pipes and holds them open past the
+    /// parent's exit, we kill the process group and return failure.
     private static func execute(_ args: [String], at url: URL) -> ExecuteResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
@@ -80,7 +92,37 @@ public enum GitService {
             group.leave()
         }
 
-        group.wait()
+        // Bounded wait. If the pipe drains don't finish within the timeout,
+        // we assume git (or a child of git) is holding the pipes open and
+        // force the situation closed.
+        let deadline: DispatchTime = .now() + .seconds(executeTimeoutSeconds)
+        let drained = group.wait(timeout: deadline)
+
+        if drained == .timedOut {
+            // Kill the entire process group to catch any lingering children
+            // — ssh helpers, credential helpers, etc.
+            let pgid = getpgid(process.processIdentifier)
+            if pgid > 0 {
+                Foundation.kill(-pgid, SIGTERM)
+                usleep(200_000) // 200ms grace
+                Foundation.kill(-pgid, SIGKILL)
+            } else {
+                process.terminate()
+            }
+
+            // Close our ends of the pipes so any remaining async reader
+            // eventually gets EOF and releases its closure capture.
+            try? stdoutPipe.fileHandleForReading.close()
+            try? stderrPipe.fileHandleForReading.close()
+
+            return ExecuteResult(
+                exitStatus: -1,
+                stdout: Data(),
+                stderr: "Operation timed out after \(executeTimeoutSeconds) seconds. Git likely succeeded but a background helper (ssh ControlMaster, credential cache) kept the connection open. Refresh to confirm.".data(using: .utf8) ?? Data(),
+                launchFailure: nil
+            )
+        }
+
         process.waitUntilExit()
 
         try? stdoutPipe.fileHandleForReading.close()
