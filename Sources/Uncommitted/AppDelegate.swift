@@ -11,6 +11,7 @@ import UncommittedCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let configStore: ConfigStore
     let repoStore: RepoStore
+    let hoverDetail: HoverDetailController
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
@@ -19,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         self.configStore = ConfigStore()
         self.repoStore = RepoStore(configStore: configStore)
+        self.hoverDetail = HoverDetailController()
         super.init()
     }
 
@@ -140,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(\.dismissPopover) { [weak self] in
                 self?.closePopover()
             }
+            .environment(\.hoverDetail, hoverDetail)
 
         let hosting = NSHostingController(rootView: contentView)
         // Let the SwiftUI content drive the popover size — no more hardcoded frames.
@@ -162,10 +165,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             // Make the popover's window key so SwiftUI receives events normally.
             popover.contentViewController?.view.window?.makeKey()
+            // Hand the hosting view to the hover controller so it can
+            // compute the visible content frame without guessing at
+            // NSPopover's private view hierarchy.
+            hoverDetail.popupHostingView = popover.contentViewController?.view
         }
     }
 
     func closePopover() {
+        // Tear down any floating hover detail panel first, otherwise it
+        // outlives its parent popup.
+        hoverDetail.dismissImmediately()
         popover?.performClose(nil)
     }
 }

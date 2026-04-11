@@ -21,26 +21,42 @@ public struct RepoStatus: Equatable {
     public var headOid: String?
     public var ahead: Int
     public var behind: Int
-    public var staged: Int
-    public var unstaged: Int
-    public var untracked: Int
+    /// Repo-relative paths for each file state. Populated by the porcelain=v2
+    /// parser; the `staged` / `unstaged` / `untracked` counts are computed
+    /// from these so they can never drift from the paths themselves.
+    public var stagedPaths: [String]
+    public var unstagedPaths: [String]
+    public var untrackedPaths: [String]
+    /// Commit subjects (first line only) for ahead/behind commits, newest
+    /// first. Populated by an extra `git log` call after parsing; empty
+    /// when there's no upstream divergence.
+    public var aheadCommits: [String]
+    public var behindCommits: [String]
+
+    public var staged: Int { stagedPaths.count }
+    public var unstaged: Int { unstagedPaths.count }
+    public var untracked: Int { untrackedPaths.count }
 
     public init(
         branch: String,
         headOid: String? = nil,
         ahead: Int = 0,
         behind: Int = 0,
-        staged: Int = 0,
-        unstaged: Int = 0,
-        untracked: Int = 0
+        stagedPaths: [String] = [],
+        unstagedPaths: [String] = [],
+        untrackedPaths: [String] = [],
+        aheadCommits: [String] = [],
+        behindCommits: [String] = []
     ) {
         self.branch = branch
         self.headOid = headOid
         self.ahead = ahead
         self.behind = behind
-        self.staged = staged
-        self.unstaged = unstaged
-        self.untracked = untracked
+        self.stagedPaths = stagedPaths
+        self.unstagedPaths = unstagedPaths
+        self.untrackedPaths = untrackedPaths
+        self.aheadCommits = aheadCommits
+        self.behindCommits = behindCommits
     }
 
     /// Number of working-tree files with changes (staged + unstaged + untracked).

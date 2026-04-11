@@ -7,6 +7,7 @@ struct MenuContentView: View {
     @EnvironmentObject var configStore: ConfigStore
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismissPopover) private var dismissPopover
+    @Environment(\.hoverDetail) private var hoverDetail
 
     private var visibleRepos: [Repo] {
         guard configStore.config.hideCleanRepos else { return store.repos }
@@ -32,6 +33,10 @@ struct MenuContentView: View {
             footer
         }
         .frame(width: 360)
+        .onDisappear {
+            // Popup closed — drop any lingering hover detail panel.
+            hoverDetail?.dismissImmediately()
+        }
     }
 
     @ViewBuilder
@@ -58,10 +63,18 @@ struct MenuContentView: View {
                             onAlternate: { action in
                                 ActionRunner.run(repoURL: repo.url, action: action)
                                 dismissPopover()
+                            },
+                            onHoverChange: { hovering, rowFrameOnScreen in
+                                if hovering, let frame = rowFrameOnScreen {
+                                    hoverDetail?.showDetail(
+                                        for: repo,
+                                        rowFrameOnScreen: frame
+                                    )
+                                } else {
+                                    hoverDetail?.scheduleDismiss(for: repo.id)
+                                }
                             }
                         )
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
                         if index < visible.count - 1 {
                             Divider().padding(.horizontal, 12)
                         }
@@ -219,9 +232,14 @@ struct RepoRow: View {
     let actions: [Action]
     let onDefault: () -> Void
     let onAlternate: (Action) -> Void
+    /// Reports hover state changes along with the row's screen-space
+    /// frame so the hover detail controller can position its floating
+    /// panel next to the correct row. Frame is nil on hover-out.
+    let onHoverChange: (Bool, NSRect?) -> Void
 
     @EnvironmentObject var store: RepoStore
     @State private var isHovered = false
+    @State private var rowFrameOnScreen: NSRect?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -259,23 +277,36 @@ struct RepoRow: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
         )
-        .onHover { isHovered = $0 }
+        // Outer padding: the "gap" between rows at the popup edge still
+        // counts as part of the row for hover purposes. Without
+        // contentShape the outer padding is empty space and the hover
+        // flickers off when the cursor drifts into it.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .background(RowFrameReader { rowFrameOnScreen = $0 })
+        .onHover { hovering in
+            isHovered = hovering
+            onHoverChange(hovering, hovering ? rowFrameOnScreen : nil)
+        }
         .contextMenu {
-            ForEach(actions) { action in
-                Button {
-                    onAlternate(action)
-                } label: {
-                    Label {
-                        Text(action.name)
-                    } icon: {
-                        if let nsImage = AppIcons.icon(for: action) {
-                            // Resize the NSImage down to menu-icon dimensions
-                            // before handing it to SwiftUI — otherwise the
-                            // context menu renders at the app icon's natural
-                            // size, which is 32-64pt.
-                            Image(nsImage: resized(nsImage, to: 16))
-                        } else {
-                            Image(systemName: "terminal")
+            Section("Open with") {
+                ForEach(actions) { action in
+                    Button {
+                        onAlternate(action)
+                    } label: {
+                        Label {
+                            Text(action.name)
+                        } icon: {
+                            if let nsImage = AppIcons.icon(for: action) {
+                                // Resize the NSImage down to menu-icon dimensions
+                                // before handing it to SwiftUI — otherwise the
+                                // context menu renders at the app icon's natural
+                                // size, which is 32-64pt.
+                                Image(nsImage: resized(nsImage, to: 16))
+                            } else {
+                                Image(systemName: "terminal")
+                            }
                         }
                     }
                 }
@@ -295,6 +326,150 @@ struct RepoRow: View {
         )
         resized.unlockFocus()
         return resized
+    }
+}
+
+/// Rich hover detail for a repo row. Shows every pending state as its own
+/// section with a colored glyph, count, and the paths or commit subjects
+/// backing it. Matches the glyph/color scheme of the inline badges so the
+/// popover reads as "the badges, expanded".
+struct RepoDetailPopover: View {
+    let repoName: String
+    let status: RepoStatus
+
+    /// Max paths/commits to list per section before "+N more".
+    private static let itemLimit = 12
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            if status.isClean {
+                cleanMessage
+            } else {
+                sections
+            }
+        }
+        .padding(14)
+        .frame(minWidth: 260, idealWidth: 320, maxWidth: 420, alignment: .leading)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(repoName)
+                .font(.headline)
+            Text(status.displayBranch)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospaced()
+        }
+    }
+
+    private var cleanMessage: some View {
+        Label("No pending changes", systemImage: "checkmark.circle.fill")
+            .font(.callout)
+            .foregroundStyle(.green)
+    }
+
+    @ViewBuilder
+    private var sections: some View {
+        if status.ahead > 0 {
+            DetailSection(
+                glyph: "↑",
+                noun: "commit to push",
+                count: status.ahead,
+                items: status.aheadCommits,
+                color: .blue,
+                limit: Self.itemLimit
+            )
+        }
+        if status.behind > 0 {
+            DetailSection(
+                glyph: "↓",
+                noun: "commit to pull",
+                count: status.behind,
+                items: status.behindCommits,
+                color: .purple,
+                limit: Self.itemLimit
+            )
+        }
+        if status.untracked > 0 {
+            DetailSection(
+                glyph: "★",
+                noun: "untracked file",
+                count: status.untracked,
+                items: status.untrackedPaths,
+                color: .green,
+                limit: Self.itemLimit
+            )
+        }
+        if status.unstaged > 0 {
+            DetailSection(
+                glyph: "●",
+                noun: "modified file",
+                count: status.unstaged,
+                items: status.unstagedPaths,
+                color: .orange,
+                limit: Self.itemLimit
+            )
+        }
+        if status.staged > 0 {
+            DetailSection(
+                glyph: "+",
+                noun: "staged file",
+                count: status.staged,
+                items: status.stagedPaths,
+                color: .teal,
+                limit: Self.itemLimit
+            )
+        }
+    }
+}
+
+private struct DetailSection: View {
+    let glyph: String
+    let noun: String
+    let count: Int
+    let items: [String]
+    let color: Color
+    let limit: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(glyph)
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(color)
+                Text(headerText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+
+            if items.isEmpty {
+                // `git log` follow-up failed (rare) — header alone is fine.
+                EmptyView()
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(items.prefix(limit).enumerated()), id: \.offset) { _, text in
+                        Text(text)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    if items.count > limit {
+                        Text("+\(items.count - limit) more")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.leading, 18) // align under the header text, not the glyph
+            }
+        }
+    }
+
+    private var headerText: String {
+        let word = count == 1 ? noun : noun + "s"
+        return "\(count) \(word)"
     }
 }
 
@@ -321,8 +496,7 @@ struct StatusBadges: View {
                         count: status.ahead,
                         color: .blue,
                         isInFlight: inFlight == .push,
-                        action: onPush,
-                        help: "Push \(status.ahead) commit\(status.ahead == 1 ? "" : "s")"
+                        action: onPush
                     )
                 }
                 if status.behind > 0 {
@@ -331,8 +505,7 @@ struct StatusBadges: View {
                         count: status.behind,
                         color: .purple,
                         isInFlight: inFlight == .pull,
-                        action: onPull,
-                        help: "Pull \(status.behind) commit\(status.behind == 1 ? "" : "s"). Aborts if your branch has diverged."
+                        action: onPull
                     )
                 }
                 if status.untracked > 0 {
@@ -349,7 +522,9 @@ struct StatusBadges: View {
     }
 }
 
-/// Read-only status indicator — untracked / modified / staged. No hover state.
+/// Read-only status indicator — untracked / modified / staged. No hover
+/// state, no tooltip — the enclosing row's detail popover surfaces the
+/// full breakdown on hover.
 private struct ReadOnlyBadge: View {
     let glyph: String
     let count: Int
@@ -367,16 +542,17 @@ private struct ReadOnlyBadge: View {
     }
 }
 
+
 /// Interactive push/pull badge. Shows a hover-fill and a pointing-hand
 /// cursor so it's obviously clickable, and swaps to a spinner while the
-/// command is running.
+/// command is running. Details (counts, commit subjects) are surfaced
+/// via the enclosing row's hover popover instead of a per-badge tooltip.
 private struct ActionBadge: View {
     let glyph: String
     let count: Int
     let color: Color
     let isInFlight: Bool
     let action: () -> Void
-    let help: String
 
     @State private var isHovered = false
 
@@ -412,7 +588,6 @@ private struct ActionBadge: View {
         .buttonStyle(.plain)
         .disabled(isInFlight)
         .pointingHandCursor()
-        .help(help)
         .onHover { isHovered = $0 }
     }
 }
