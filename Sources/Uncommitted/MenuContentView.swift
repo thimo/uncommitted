@@ -72,7 +72,7 @@ struct MenuContentView: View {
             Button {
                 store.rebuildFromConfig()
             } label: {
-                RefreshIcon(isWorking: store.runningRefreshes > 0)
+                Image(systemName: "arrow.clockwise")
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(GhostButtonStyle())
@@ -144,30 +144,6 @@ struct MenuContentView: View {
         .padding(.horizontal, 14)
         .padding(.top, 10)
         .padding(.bottom, 14)
-    }
-}
-
-// MARK: - Refresh icon
-
-/// The header refresh icon. When something is in flight (status refresh
-/// in progress), the icon rotates continuously so the user sees the app
-/// is actually doing work. Driven off wall-clock time via TimelineView
-/// so there's no "animate from 0 to 360 and snap back" rocking — the
-/// angle is a pure function of `now`, always monotonic.
-struct RefreshIcon: View {
-    let isWorking: Bool
-
-    var body: some View {
-        if isWorking {
-            TimelineView(.animation) { context in
-                let seconds = context.date.timeIntervalSinceReferenceDate
-                let angle = (seconds * 360).truncatingRemainder(dividingBy: 360)
-                Image(systemName: "arrow.clockwise")
-                    .rotationEffect(.degrees(angle))
-            }
-        } else {
-            Image(systemName: "arrow.clockwise")
-        }
     }
 }
 

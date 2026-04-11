@@ -10,9 +10,6 @@ public enum InFlightAction {
 public final class RepoStore: ObservableObject {
     @Published public private(set) var repos: [Repo] = []
     @Published public private(set) var inFlight: [UUID: InFlightAction] = [:]
-    /// Number of status refreshes currently running. UI uses this to spin
-    /// the refresh icon when > 0 so the user sees the app is working.
-    @Published public private(set) var runningRefreshes: Int = 0
 
     private let configStore: ConfigStore
     private var cancellables = Set<AnyCancellable>()
@@ -140,12 +137,10 @@ public final class RepoStore: ObservableObject {
 
     private func refresh(repoAt index: Int) {
         let url = repos[index].url
-        runningRefreshes += 1
         statusQueue.async { [weak self] in
             let status = GitService.status(at: url)
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.runningRefreshes = max(0, self.runningRefreshes - 1)
                 // Preserve the previous status on failure — a nil result from
                 // GitService means we couldn't trust the output (git errored,
                 // or the parse didn't see a branch.oid). Overwriting the last
