@@ -32,7 +32,6 @@ struct SettingsView: View {
                 .tag(Tab.about)
         }
         .frame(width: width(for: selection), height: height(for: selection))
-        .animation(.easeInOut(duration: 0.18), value: selection)
     }
 
     private func width(for tab: Tab) -> CGFloat {
