@@ -11,3 +11,6 @@ build/
 
 # Signing credentials for release.sh (local only, never committed).
 .env.local
+
+# Claude Code project-local settings (per-device permissions).
+.claude/settings.local.json
