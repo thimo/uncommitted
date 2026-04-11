@@ -14,6 +14,15 @@ public final class RepoStore: ObservableObject {
     private let configStore: ConfigStore
     private var cancellables = Set<AnyCancellable>()
     private var watcher: RepoWatcher?
+    private var refreshTimer: Timer?
+
+    // Belt-and-suspenders backstop against missed updates. FSEvents handles
+    // the fast path, but its stream can drift after sleep/wake and other
+    // tools (IDE git plugins, cron-ish dependabot, background fetches) can
+    // make changes out-of-band. Running a full rebuild on a slow timer
+    // catches what FSEvents misses without being felt. Local git only, no
+    // network, so the cost is essentially zero.
+    private static let periodicRefreshInterval: TimeInterval = 10 * 60
     // Concurrent — `git status` is read-only and safe to run in parallel.
     // Serial here meant a full refresh of N repos took N × ~150ms, which
     // felt noticeably sluggish on the refresh button.
@@ -51,6 +60,39 @@ public final class RepoStore: ObservableObject {
                 self?.rebuild(from: sources)
             }
             .store(in: &cancellables)
+
+        // Rebuild from scratch when the machine wakes — the FSEvents stream
+        // can fall into an unusable state during sleep, and any in-band
+        // changes that happened while we were out are not replayed. This
+        // posts on NSWorkspace's own notification center, not the default
+        // one; easy to miss.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+
+        startPeriodicRefresh()
+    }
+
+    deinit {
+        refreshTimer?.invalidate()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    @objc private func handleSystemWake() {
+        rebuildFromConfig()
+    }
+
+    private func startPeriodicRefresh() {
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.periodicRefreshInterval,
+            repeats: true
+        ) { [weak self] _ in
+            self?.rebuildFromConfig()
+        }
     }
 
     public func refreshAll() {
