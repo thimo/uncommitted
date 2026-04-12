@@ -86,6 +86,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateStatusLabel()
         }
         .store(in: &cancellables)
+
+        // When repo data changes while the panel is open (e.g. after a
+        // push clears "unpushed" counts), re-fit the panel to the new
+        // SwiftUI content size.
+        repoStore.$repos
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.resizePanelIfVisible()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func resizePanelIfVisible() {
+        guard let panel, panel.isVisible, let hView = hostingController?.view else { return }
+        hView.invalidateIntrinsicContentSize()
+        hView.layoutSubtreeIfNeeded()
+        let fitting = hView.fittingSize
+        guard fitting != panel.frame.size else { return }
+        var frame = panel.frame
+        // Anchor the panel's top-left (below the menu bar) so it grows
+        // downward, not upward into the menu bar.
+        frame.origin.y += frame.size.height - fitting.height
+        frame.size = fitting
+        panel.setFrame(frame, display: true, animate: false)
     }
 
     // MARK: - Status item
