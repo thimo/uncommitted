@@ -68,7 +68,12 @@ struct MenuContentView: View {
                                 if hovering, let frame = rowFrameOnScreen {
                                     hoverDetail?.showDetail(
                                         for: repo,
-                                        rowFrameOnScreen: frame
+                                        rowFrameOnScreen: frame,
+                                        actions: configStore.config.actions,
+                                        onAction: { action in
+                                            ActionRunner.run(repoURL: repo.url, action: action)
+                                            dismissPopover()
+                                        }
                                     )
                                 } else {
                                     hoverDetail?.scheduleDismiss(for: repo.id)
@@ -280,6 +285,7 @@ struct RepoRow: View {
                     onPull: { store.pull(repo: repo) }
                 )
             }
+
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -301,29 +307,6 @@ struct RepoRow: View {
             // hover — SwiftUI layout callbacks don't fire reliably when
             // LazyVStack children shift, so any cached value goes stale.
             onHoverChange(hovering, hovering ? frameRef.currentFrameOnScreen : nil)
-        }
-        .contextMenu {
-            Section("Open with") {
-                ForEach(actions) { action in
-                    Button {
-                        onAlternate(action)
-                    } label: {
-                        Label {
-                            Text(action.name)
-                        } icon: {
-                            if let nsImage = AppIcons.icon(for: action) {
-                                // Resize the NSImage down to menu-icon dimensions
-                                // before handing it to SwiftUI — otherwise the
-                                // context menu renders at the app icon's natural
-                                // size, which is 32-64pt.
-                                Image(nsImage: resized(nsImage, to: 16))
-                            } else {
-                                Image(systemName: "terminal")
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -349,6 +332,8 @@ struct RepoRow: View {
 struct RepoDetailPopover: View {
     let repoName: String
     let status: RepoStatus
+    var actions: [Action] = []
+    var onAction: (Action) -> Void = { _ in }
 
     /// Max paths/commits to list per section before "+N more".
     private static let itemLimit = 12
@@ -603,4 +588,72 @@ private struct ActionBadge: View {
         .pointingHandCursor()
         .onHover { isHovered = $0 }
     }
+}
+
+// MARK: - Actions menu button
+
+/// A "⋯" button that shows the configured actions as a native NSMenu.
+/// Replaces SwiftUI's `.contextMenu` which doesn't work inside an
+/// NSMenu custom-view item (the menu's tracking loop swallows events).
+private struct ActionsMenuButton: View {
+    let actions: [Action]
+    let onAction: (Action) -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            showMenu()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body)
+                .foregroundStyle(.primary.opacity(isHovered ? 0.70 : 0.40))
+                .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .onHover { isHovered = $0 }
+    }
+
+    private func showMenu() {
+        let menu = NSMenu()
+        let header = NSMenuItem(title: "Open with", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        menu.addItem(.separator())
+
+        for action in actions {
+            let item = ActionMenuItem(title: action.name, callback: { onAction(action) })
+            if let nsImage = AppIcons.icon(for: action) {
+                let size: CGFloat = 16
+                let resized = NSImage(size: NSSize(width: size, height: size))
+                resized.lockFocus()
+                nsImage.draw(in: NSRect(origin: .zero, size: NSSize(width: size, height: size)),
+                             from: .zero, operation: .sourceOver, fraction: 1.0)
+                resized.unlockFocus()
+                item.image = resized
+            }
+            menu.addItem(item)
+        }
+
+        // Show at the mouse location.
+        if let event = NSApp.currentEvent {
+            NSMenu.popUpContextMenu(menu, with: event, for: NSApp.keyWindow?.contentView ?? NSView())
+        }
+    }
+}
+
+/// NSMenuItem subclass that holds a closure callback instead of
+/// relying on target-action with a stable `self` reference.
+private final class ActionMenuItem: NSMenuItem {
+    private let callback: () -> Void
+
+    init(title: String, callback: @escaping () -> Void) {
+        self.callback = callback
+        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        self.target = self
+    }
+
+    required init(coder: NSCoder) { fatalError() }
+
+    @objc private func fire() { callback() }
 }
