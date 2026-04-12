@@ -3,18 +3,20 @@ import SwiftUI
 import Combine
 import UncommittedCore
 
-/// Owns the AppKit menu-bar presence: an NSStatusItem that toggles an
-/// NSPopover hosting our SwiftUI content. We went AppKit-hosted (same shape
-/// as CodexBar) because SwiftUI's MenuBarExtra gives you no way to dismiss
-/// its popover programmatically — NSPopover exposes performClose() and
-/// supports `.transient` behavior for auto-dismiss on focus loss.
+/// Owns the AppKit menu-bar presence: an NSStatusItem that toggles a
+/// floating NSPanel hosting our SwiftUI content. We use a custom panel
+/// instead of NSPopover for full control: no arrow, left-aligned to the
+/// button, custom highlight, and no NSPopover private-API fighting.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let configStore: ConfigStore
     let repoStore: RepoStore
     let hoverDetail: HoverDetailController
 
     private var statusItem: NSStatusItem?
-    private var popover: NSPopover?
+    private var panel: NSPanel?
+    private var hostingController: NSHostingController<AnyView>?
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
 
     override init() {
@@ -26,11 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
-        setupPopover()
+        setupPanel()
         updateStatusLabel()
 
-        // Re-render the menu bar label whenever repos change OR when the
-        // user picks a different label style in Settings.
         Publishers.Merge(
             repoStore.$repos.map { _ in () }.eraseToAnyPublisher(),
             configStore.$config
@@ -52,25 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
             button.target = self
-            button.action = #selector(togglePopover(_:))
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.action = #selector(togglePopup(_:))
+            // mouseDown so Bartender doesn't trigger its hidden bar.
+            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
         }
         statusItem = item
     }
 
-    /// Cached menu bar icon — loaded once from the bundled SVG and sized
-    /// to match typical menu bar glyph proportions. Marked as template
-    /// so macOS inverts it for dark menu bar backgrounds automatically.
-    /// Uses Bundle.module because SPM puts declared resources there,
-    /// not in Bundle.main.
     private static let menuBarIcon: NSImage? = {
         guard let url = Bundle.module.url(forResource: "icon-glyph", withExtension: "svg"),
               let svg = NSImage(contentsOf: url) else {
             return nil
         }
-        // The SVG is tall (289×448). Scale to a menu bar-friendly height
-        // while preserving aspect ratio. 14pt matches the visual weight of
-        // neighbouring system menu bar icons like CodexBar's sparkle.
         let targetHeight: CGFloat = 14
         let aspect = svg.size.width / svg.size.height
         svg.size = NSSize(width: targetHeight * aspect, height: targetHeight)
@@ -89,11 +82,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let title = labelTitle(for: configStore.config.menuBarLabelStyle)
 
-        // NSStatusBarButton silently drops a plain `title` alongside an image
-        // in some macOS versions. `attributedTitle` with an explicit font is
-        // the reliable way to render icon + text in the menu bar.
-        // Paragraph style with zero head indent tightens the gap between
-        // the SF Symbol image and the leading character of the title.
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byClipping
         button.attributedTitle = NSAttributedString(
@@ -109,15 +97,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func labelTitle(for style: MenuBarLabelStyle) -> String {
         switch style {
         case .total:
-            // Everything that needs your attention: files to commit, commits
-            // to push, commits to pull.
             let total = repoStore.totalUncommitted + repoStore.totalUnpushed + repoStore.totalUnpulled
             return total > 0 ? "\(total)" : ""
-
         case .dirtyRepos:
             let count = repoStore.repos.filter { $0.status?.isClean == false }.count
             return count > 0 ? "\(count)" : ""
-
         case .split:
             var parts: [String] = []
             let uncommitted = repoStore.totalUncommitted
@@ -127,63 +111,149 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if unpushed > 0 { parts.append("↑\(unpushed)") }
             if unpulled > 0 { parts.append("↓\(unpulled)") }
             return parts.joined(separator: " ")
-
         case .iconOnly:
             return ""
         }
     }
 
-    // MARK: - Popover
+    // MARK: - Popup panel
 
-    private func setupPopover() {
+    private func setupPanel() {
         let contentView = MenuContentView()
             .environmentObject(configStore)
             .environmentObject(repoStore)
             .environment(\.dismissPopover) { [weak self] in
-                self?.closePopover()
+                self?.closePopup()
             }
             .environment(\.hoverDetail, hoverDetail)
 
-        let hosting = NSHostingController(rootView: contentView)
-        // Let the SwiftUI content drive the popover size — no more hardcoded frames.
-        hosting.sizingOptions = [.preferredContentSize]
+        let hosting = NSHostingController(rootView: AnyView(contentView))
+        self.hostingController = hosting
 
-        let popover = NSPopover()
-        popover.behavior = .transient
-        // Menu-bar popovers should feel instant. The default animation makes
-        // the app feel laggy on open/close for no benefit.
-        popover.animates = false
-        popover.contentViewController = hosting
-        self.popover = popover
+        let panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.nonactivatingPanel, .borderless],
+            backing: .buffered,
+            defer: true
+        )
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
+        panel.hasShadow = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
+
+        // NSVisualEffectView gives us proper vibrancy matching native
+        // menu bar popups. The hosting view is a subview inside it.
+        let visualEffect = NSVisualEffectView()
+        visualEffect.material = .popover
+        visualEffect.state = .active
+        visualEffect.blendingMode = .behindWindow
+        visualEffect.wantsLayer = true
+        visualEffect.layer?.cornerRadius = 10
+        visualEffect.layer?.masksToBounds = true
+
+        let hView = hosting.view
+        hView.translatesAutoresizingMaskIntoConstraints = false
+        visualEffect.addSubview(hView)
+        NSLayoutConstraint.activate([
+            hView.topAnchor.constraint(equalTo: visualEffect.topAnchor),
+            hView.bottomAnchor.constraint(equalTo: visualEffect.bottomAnchor),
+            hView.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor),
+            hView.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor),
+        ])
+
+        panel.contentView = visualEffect
+        self.panel = panel
     }
 
-    @objc private func togglePopover(_ sender: Any?) {
-        guard let popover, let button = statusItem?.button else { return }
-        if popover.isShown {
-            popover.performClose(sender)
+    @objc private func togglePopup(_ sender: Any?) {
+        guard let panel, let button = statusItem?.button else { return }
+        if panel.isVisible {
+            closePopup()
         } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            // Make the popover's window key so SwiftUI receives events normally.
-            popover.contentViewController?.view.window?.makeKey()
-            // Hand the hosting view to the hover controller so it can
-            // compute the visible content frame without guessing at
-            // NSPopover's private view hierarchy.
-            hoverDetail.popupHostingView = popover.contentViewController?.view
+            showPopup(from: button)
         }
     }
 
-    func closePopover() {
-        // Tear down any floating hover detail panel first, otherwise it
-        // outlives its parent popup.
+    private func showPopup(from button: NSStatusBarButton) {
+        guard let panel, let hostingController else { return }
+
+        // Size the panel to its SwiftUI content.
+        let hView = hostingController.view
+        hView.layoutSubtreeIfNeeded()
+        let fitting = hView.fittingSize
+        panel.setContentSize(fitting)
+
+        // Position: left-aligned to the button, 1pt below the menu bar.
+        guard let buttonWindow = button.window else { return }
+        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
+        let buttonFrameOnScreen = buttonWindow.convertToScreen(buttonFrameInWindow)
+
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(buttonFrameOnScreen.origin) })
+            ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        let panelX = buttonFrameOnScreen.minX
+        let panelY = visibleFrame.maxY - fitting.height - 1
+
+        // If the panel extends past the screen's right edge, shift left.
+        let maxX = visibleFrame.maxX - fitting.width
+        let clampedX = min(panelX, maxX)
+
+        panel.setFrameOrigin(NSPoint(x: clampedX, y: panelY))
+        panel.orderFrontRegardless()
+
+        hoverDetail.popupHostingView = hView
+
+        // Layer-based highlight — independent of the system's own
+        // highlight mechanism which resets on mouse-up.
+        button.wantsLayer = true
+        button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        button.layer?.cornerRadius = button.bounds.height / 2
+
+        installEventMonitors()
+    }
+
+    func closePopup() {
         hoverDetail.dismissImmediately()
-        popover?.performClose(nil)
+        statusItem?.button?.layer?.backgroundColor = nil
+        panel?.orderOut(nil)
+        removeEventMonitors()
+    }
+
+    // MARK: - Click-outside dismissal
+
+    private func installEventMonitors() {
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            self?.closePopup()
+        }
+
+        localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            guard let self, let panel = self.panel else { return event }
+
+            if event.window == panel { return event }
+            if event.window == self.statusItem?.button?.window { return event }
+            if event.window is HoverDetailPanel { return event }
+
+            self.closePopup()
+            return event
+        }
+    }
+
+    private func removeEventMonitors() {
+        if let m = globalMonitor { NSEvent.removeMonitor(m); globalMonitor = nil }
+        if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
     }
 }
 
 // MARK: - Environment key
 
-/// Environment hook that lets a SwiftUI view hosted in our NSPopover ask
-/// AppDelegate to close the popover.
 struct DismissPopoverKey: EnvironmentKey {
     static let defaultValue: () -> Void = {}
 }
