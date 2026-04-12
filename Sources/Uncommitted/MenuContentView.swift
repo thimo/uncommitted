@@ -81,7 +81,7 @@ struct MenuContentView: View {
                             }
                         )
                         if index < visible.count - 1 {
-                            Divider().padding(.horizontal, 12 - Self.menuInsetCompensation)
+                            Divider().padding(.horizontal, 10)
                         }
                     }
                 }
@@ -89,11 +89,6 @@ struct MenuContentView: View {
             .frame(maxHeight: maxListHeight)
         }
     }
-
-    /// NSMenu adds ~8pt horizontal padding around custom-view items.
-    /// Our internal padding is reduced accordingly so the total visual
-    /// padding matches what we had under NSPopover.
-    static let menuInsetCompensation: CGFloat = 8
 
     private var header: some View {
         HStack {
@@ -111,8 +106,8 @@ struct MenuContentView: View {
             .pointingHandCursor()
             .help("Rescan sources and refresh all")
         }
-        .padding(.horizontal, 14 - Self.menuInsetCompensation)
-        .padding(.top, 12 - Self.menuInsetCompensation)
+        .padding(.horizontal, 12)
+        .padding(.top, 14)
         .padding(.bottom, 10)
     }
 
@@ -173,9 +168,9 @@ struct MenuContentView: View {
             .keyboardShortcut("q")
             .pointingHandCursor()
         }
-        .padding(.horizontal, 14 - Self.menuInsetCompensation)
-        .padding(.top, 6)
-        .padding(.bottom, 1)
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 14)
     }
 }
 
@@ -297,16 +292,32 @@ struct RepoRow: View {
         // counts as part of the row for hover purposes. Without
         // contentShape the outer padding is empty space and the hover
         // flickers off when the cursor drifts into it.
-        .padding(.horizontal, max(0, 12 - MenuContentView.menuInsetCompensation))
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .background(RowFrameReader(reference: frameRef))
         .onHover { hovering in
             isHovered = hovering
-            // Grab the row's screen frame on demand at the moment of
-            // hover — SwiftUI layout callbacks don't fire reliably when
-            // LazyVStack children shift, so any cached value goes stale.
             onHoverChange(hovering, hovering ? frameRef.currentFrameOnScreen : nil)
+        }
+        .contextMenu {
+            Section("Open with") {
+                ForEach(actions) { action in
+                    Button {
+                        onAlternate(action)
+                    } label: {
+                        Label {
+                            Text(action.name)
+                        } icon: {
+                            if let nsImage = AppIcons.icon(for: action) {
+                                Image(nsImage: resized(nsImage, to: 16))
+                            } else {
+                                Image(systemName: "terminal")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
