@@ -41,17 +41,6 @@ struct GeneralSettingsView: View {
                 Toggle("Hide clean repositories", isOn: $configStore.config.hideCleanRepos)
             }
 
-            Section("Updates") {
-                Toggle("Check for updates automatically", isOn: $autoCheckForUpdates)
-                    .onChange(of: autoCheckForUpdates) { _, newValue in
-                        AppDelegate.shared?.updaterController.updater.automaticallyChecksForUpdates = newValue
-                    }
-                Toggle("Download and install automatically", isOn: $autoDownloadUpdates)
-                    .onChange(of: autoDownloadUpdates) { _, newValue in
-                        AppDelegate.shared?.updaterController.updater.automaticallyDownloadsUpdates = newValue
-                    }
-            }
-
             Section("Startup") {
                 Toggle("Open at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in
@@ -64,6 +53,17 @@ struct GeneralSettingsView: View {
                         } catch {
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
+                    }
+            }
+
+            Section("Updates") {
+                Toggle("Check for updates automatically", isOn: $autoCheckForUpdates)
+                    .onChange(of: autoCheckForUpdates) { _, newValue in
+                        AppDelegate.shared?.updaterController.updater.automaticallyChecksForUpdates = newValue
+                    }
+                Toggle("Download and install automatically", isOn: $autoDownloadUpdates)
+                    .onChange(of: autoDownloadUpdates) { _, newValue in
+                        AppDelegate.shared?.updaterController.updater.automaticallyDownloadsUpdates = newValue
                     }
             }
         }
