@@ -4,11 +4,12 @@ import Combine
 import Sparkle
 import UncommittedCore
 
-/// Owns the AppKit menu-bar presence. The popup is an NSMenu with a
-/// single custom-view NSMenuItem hosting our SwiftUI content — the same
-/// approach CodexBar and iStat Menus use. NSMenu gives us system-managed
-/// button highlight, proper dismissal of other status item menus, correct
-/// positioning, no arrow, and no Bartender interference.
+/// Owns the AppKit menu-bar presence: an NSStatusItem that toggles a
+/// floating NSPanel hosting our SwiftUI content. We use a custom panel
+/// instead of NSPopover for full control: no arrow, left-aligned to the
+/// button, custom highlight. We use an NSPanel instead of NSMenu so
+/// right-click context menus, scrolling, and other SwiftUI interactions
+/// work correctly — NSMenu's tracking loop breaks all of those.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Singleton accessor — SwiftUI's `@NSApplicationDelegateAdaptor`
     /// wraps the delegate so `NSApp.delegate as? AppDelegate` fails.
@@ -19,14 +20,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let repoStore: RepoStore
     let hoverDetail: HoverDetailController
     /// Sparkle auto-updater. Starts checking on launch; the "Check for
-    /// Updates" action in the popup calls through to it.
+    /// Updates" action in Settings calls through to it.
     let updaterController: SPUStandardUpdaterController
 
     private var statusItem: NSStatusItem?
-    private var popupMenu: NSMenu?
+    private var panel: NSPanel?
     private var hostingController: NSHostingController<AnyView>?
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
-    private var rightClickMonitor: Any?
+
+    private static let cornerRadius: CGFloat = 10
+
+    /// 9-slice resizable image fed to `NSVisualEffectView.maskImage`.
+    /// `layer.cornerRadius` alone doesn't work: NSVisualEffectView's
+    /// behind-window vibrancy bypasses normal CALayer compositing, so
+    /// the window shadow reads a rectangular backing and draws a
+    /// rectangular shadow. `maskImage` is the documented hook that
+    /// actually shapes the alpha channel so `panel.hasShadow = true`
+    /// produces a rounded shadow.
+    private static let roundedMaskImage: NSImage = {
+        let radius = cornerRadius
+        let edge = radius * 2 + 1
+        let image = NSImage(
+            size: NSSize(width: edge, height: edge),
+            flipped: false
+        ) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
+    }()
 
     override init() {
         self.configStore = ConfigStore()
@@ -43,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         setupStatusItem()
-        setupMenu()
+        setupPanel()
         updateStatusLabel()
 
         Publishers.Merge(
@@ -57,7 +84,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .receive(on: DispatchQueue.main)
         .sink { [weak self] _ in
             self?.updateStatusLabel()
-            self?.resizeMenuIfNeeded()
         }
         .store(in: &cancellables)
     }
@@ -66,6 +92,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = item.button {
+            button.target = self
+            button.action = #selector(togglePopup(_:))
+            // mouseDown so Bartender doesn't trigger its hidden bar.
+            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+        }
         statusItem = item
     }
 
@@ -126,9 +158,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - NSMenu-based popup
+    // MARK: - Popup panel
 
-    private func setupMenu() {
+    private func setupPanel() {
         let contentView = MenuContentView()
             .environmentObject(configStore)
             .environmentObject(repoStore)
@@ -136,146 +168,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closePopup()
             }
             .environment(\.hoverDetail, hoverDetail)
-            .environment(\.checkForUpdates) { [weak self] in
-                self?.updaterController.updater.checkForUpdates()
-            }
 
         let hosting = NSHostingController(rootView: AnyView(contentView))
         self.hostingController = hosting
 
-        let menu = NSMenu()
-        menu.delegate = self
+        let panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.nonactivatingPanel, .borderless],
+            backing: .buffered,
+            defer: true
+        )
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
+        panel.hasShadow = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
 
-        // Single menu item with our entire SwiftUI popup as its view.
-        let item = NSMenuItem()
-        item.view = hosting.view
-        menu.addItem(item)
+        let visualEffect = NSVisualEffectView()
+        visualEffect.material = .popover
+        visualEffect.state = .active
+        visualEffect.blendingMode = .behindWindow
+        visualEffect.maskImage = Self.roundedMaskImage
 
-        self.popupMenu = menu
-        statusItem?.menu = menu
+        let hView = hosting.view
+        hView.translatesAutoresizingMaskIntoConstraints = false
+        visualEffect.addSubview(hView)
+        NSLayoutConstraint.activate([
+            hView.topAnchor.constraint(equalTo: visualEffect.topAnchor),
+            hView.bottomAnchor.constraint(equalTo: visualEffect.bottomAnchor),
+            hView.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor),
+            hView.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor),
+        ])
+
+        panel.contentView = visualEffect
+        self.panel = panel
+    }
+
+    @objc private func togglePopup(_ sender: Any?) {
+        guard let panel, let button = statusItem?.button else { return }
+        if panel.isVisible {
+            closePopup()
+        } else {
+            showPopup(from: button)
+        }
+    }
+
+    private func showPopup(from button: NSStatusBarButton) {
+        guard let panel, let hostingController else { return }
+
+        // Size the panel to its SwiftUI content.
+        let hView = hostingController.view
+        hView.layoutSubtreeIfNeeded()
+        let fitting = hView.fittingSize
+        panel.setContentSize(fitting)
+
+        // Position: left-aligned to the button, 1pt below the menu bar.
+        guard let buttonWindow = button.window else { return }
+        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
+        let buttonFrameOnScreen = buttonWindow.convertToScreen(buttonFrameInWindow)
+
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(buttonFrameOnScreen.origin) })
+            ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        let panelX = buttonFrameOnScreen.minX
+        let panelY = visibleFrame.maxY - fitting.height - 1
+
+        // If the panel extends past the screen's right edge, shift left.
+        let maxX = visibleFrame.maxX - fitting.width
+        let clampedX = min(panelX, maxX)
+
+        panel.setFrameOrigin(NSPoint(x: clampedX, y: panelY))
+        panel.orderFrontRegardless()
+
+        hoverDetail.popupHostingView = hView
+
+        // Layer-based highlight — independent of the system's own
+        // highlight mechanism which resets on mouse-up.
+        button.wantsLayer = true
+        button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        button.layer?.cornerRadius = button.bounds.height / 2
+
+        installEventMonitors()
     }
 
     func closePopup() {
         hoverDetail.dismissImmediately()
-        popupMenu?.cancelTracking()
+        statusItem?.button?.layer?.backgroundColor = nil
+        panel?.orderOut(nil)
+        removeEventMonitors()
     }
 
-    /// Re-measure the SwiftUI content and update the menu item's view
-    /// frame so the menu window resizes when rows appear or disappear.
-    private func resizeMenuIfNeeded() {
-        guard let hView = hostingController?.view,
-              popupMenu?.highlightedItem != nil || popupMenu?.numberOfItems ?? 0 > 0
-        else { return }
-        hView.layoutSubtreeIfNeeded()
-        let fitting = hView.fittingSize
-        if hView.frame.size != fitting {
-            hView.frame.size = fitting
-            popupMenu?.update()
-        }
-    }
-}
+    // MARK: - Click-outside dismissal
 
-// MARK: - NSMenuDelegate
-
-extension AppDelegate: NSMenuDelegate {
-    func menuWillOpen(_ menu: NSMenu) {
-        hoverDetail.popupHostingView = hostingController?.view
-
-        // Size the menu item's view to its SwiftUI content so the
-        // menu window fits correctly.
-        if let hView = hostingController?.view {
-            hView.layoutSubtreeIfNeeded()
-            let fitting = hView.fittingSize
-            hView.frame.size = fitting
+    private func installEventMonitors() {
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            self?.closePopup()
         }
 
-        // Install a local event monitor to catch right-clicks. NSMenu's
-        // tracking loop swallows them otherwise. The monitor lets us
-        // show a context menu for the currently hovered repo row.
-        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
-            guard let self else { return event }
-            if self.showRepoContextMenu(for: event) {
-                return nil
-            }
+        localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            guard let self, let panel = self.panel else { return event }
+
+            if event.window == panel { return event }
+            if event.window == self.statusItem?.button?.window { return event }
+            if event.window is HoverDetailPanel { return event }
+
+            self.closePopup()
             return event
         }
     }
 
-    func menuDidClose(_ menu: NSMenu) {
-        hoverDetail.dismissImmediately()
-        if let monitor = rightClickMonitor {
-            NSEvent.removeMonitor(monitor)
-            rightClickMonitor = nil
-        }
-    }
-
-    /// Shows a context menu with the "Open with" actions for the
-    /// currently hovered repo. Returns true if a menu was shown (event
-    /// should be swallowed), false otherwise.
-    private func showRepoContextMenu(for event: NSEvent) -> Bool {
-        guard hoverDetail.hoveredRepoId != nil,
-              let onAction = hoverDetail.hoveredOnAction else { return false }
-        let actions = hoverDetail.hoveredActions
-        guard !actions.isEmpty else { return false }
-
-        let menu = NSMenu()
-        let header = NSMenuItem(title: "Open with", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        menu.addItem(.separator())
-
-        for action in actions {
-            let item = RepoActionMenuItem(
-                title: action.name,
-                action: action,
-                onAction: onAction
-            )
-            if let nsImage = AppIcons.icon(for: action) {
-                let size: CGFloat = 16
-                let resized = NSImage(size: NSSize(width: size, height: size))
-                resized.lockFocus()
-                nsImage.draw(
-                    in: NSRect(origin: .zero, size: NSSize(width: size, height: size)),
-                    from: .zero,
-                    operation: .sourceOver,
-                    fraction: 1.0
-                )
-                resized.unlockFocus()
-                item.image = resized
-            }
-            menu.addItem(item)
-        }
-
-        // popUp(positioning:at:in:) opens a nested tracking loop so
-        // this works while the parent menu is still tracking.
-        if let window = event.window {
-            menu.popUp(positioning: nil, at: event.locationInWindow, in: window.contentView)
-        } else {
-            NSMenu.popUpContextMenu(menu, with: event, for: NSApp.keyWindow?.contentView ?? NSView())
-        }
-        return true
-    }
-}
-
-// MARK: - Right-click context menu item
-
-/// NSMenuItem subclass that holds a closure and a repo action, used
-/// by the right-click handler in AppDelegate.
-final class RepoActionMenuItem: NSMenuItem {
-    private let onAction: (Action) -> Void
-    private let repoAction: Action
-
-    init(title: String, action: Action, onAction: @escaping (Action) -> Void) {
-        self.repoAction = action
-        self.onAction = onAction
-        super.init(title: title, action: #selector(fire), keyEquivalent: "")
-        self.target = self
-    }
-
-    required init(coder: NSCoder) { fatalError() }
-
-    @objc private func fire() {
-        onAction(repoAction)
+    private func removeEventMonitors() {
+        if let m = globalMonitor { NSEvent.removeMonitor(m); globalMonitor = nil }
+        if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
     }
 }
 
@@ -289,16 +300,5 @@ extension EnvironmentValues {
     var dismissPopover: () -> Void {
         get { self[DismissPopoverKey.self] }
         set { self[DismissPopoverKey.self] = newValue }
-    }
-}
-
-struct CheckForUpdatesKey: EnvironmentKey {
-    static let defaultValue: () -> Void = {}
-}
-
-extension EnvironmentValues {
-    var checkForUpdates: () -> Void {
-        get { self[CheckForUpdatesKey.self] }
-        set { self[CheckForUpdatesKey.self] = newValue }
     }
 }
