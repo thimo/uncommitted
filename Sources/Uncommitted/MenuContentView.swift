@@ -100,7 +100,7 @@ struct MenuContentView: View {
                 store.rebuildFromConfig()
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary.opacity(0.70))
             }
             .buttonStyle(GhostButtonStyle())
             .pointingHandCursor()
@@ -115,13 +115,13 @@ struct MenuContentView: View {
         VStack(spacing: 8) {
             Image(systemName: "folder.badge.questionmark")
                 .font(.largeTitle)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary.opacity(0.70))
             Text("No repositories configured")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary.opacity(0.70))
             Text("Open Settings to add a folder.")
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.primary.opacity(0.50))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
@@ -134,7 +134,7 @@ struct MenuContentView: View {
                 .foregroundStyle(.green)
             Text("You're fully committed")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary.opacity(0.70))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
@@ -152,7 +152,7 @@ struct MenuContentView: View {
                 dismissPopover()
             }
             .buttonStyle(GhostButtonStyle())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary.opacity(0.70))
             .font(.callout)
             .keyboardShortcut(",")
             .pointingHandCursor()
@@ -163,7 +163,7 @@ struct MenuContentView: View {
                 NSApplication.shared.terminate(nil)
             }
             .buttonStyle(GhostButtonStyle())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary.opacity(0.70))
             .font(.callout)
             .keyboardShortcut("q")
             .pointingHandCursor()
@@ -261,7 +261,7 @@ struct RepoRow: View {
                         .foregroundStyle(.primary)
                     Text(repo.status?.displayBranch ?? "Loading…")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary.opacity(0.70))
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -372,7 +372,7 @@ struct RepoDetailPopover: View {
                 .font(.headline)
             Text(status.displayBranch)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary.opacity(0.70))
                 .monospaced()
         }
     }
@@ -465,14 +465,14 @@ private struct DetailSection: View {
                     ForEach(Array(items.prefix(limit).enumerated()), id: \.offset) { _, text in
                         Text(text)
                             .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary.opacity(0.70))
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
                     if items.count > limit {
                         Text("+\(items.count - limit) more")
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.primary.opacity(0.50))
                     }
                 }
                 .padding(.leading, 18) // align under the header text, not the glyph

@@ -91,7 +91,7 @@ struct RepositoriesSettingsView: View {
             List(selection: $selection) {
                 if configStore.config.sources.isEmpty {
                     Text("No source folders. Click the + button below to add one.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary.opacity(0.70))
                         .font(.callout)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 28)
@@ -124,7 +124,7 @@ struct RepositoriesSettingsView: View {
 
                 Text("Scan depth = levels of subdirectories to search for `.git`. Scanning stops at each repo found.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary.opacity(0.70))
                     .multilineTextAlignment(.trailing)
                     .lineLimit(3)
             }
@@ -174,7 +174,7 @@ struct SourceRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: isRepo ? "arrow.triangle.branch" : "folder")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary.opacity(0.70))
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -186,7 +186,7 @@ struct SourceRow: View {
                      ? "Repository"
                      : "Source folder · scanning \(source.scanDepth) level\(source.scanDepth == 1 ? "" : "s") deep")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary.opacity(0.70))
             }
 
             Spacer()
@@ -241,7 +241,7 @@ struct ActionsSettingsView: View {
                     } else {
                         VStack {
                             Text("Select an action")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.primary.opacity(0.70))
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -277,7 +277,7 @@ struct ActionsSettingsView: View {
 
                 Text("Top action runs on click. Right-click shows all. Drag rows to reorder.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary.opacity(0.70))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -331,7 +331,7 @@ struct ActionRow: View {
                     .lineLimit(1)
                 Text(subtitle)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary.opacity(0.70))
                     .lineLimit(1)
             }
             Spacer()
@@ -355,7 +355,7 @@ struct ActionRow: View {
             Image(nsImage: nsImage).resizable()
         } else {
             Image(systemName: "terminal")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary.opacity(0.70))
         }
     }
 
@@ -383,7 +383,7 @@ struct ActionDetailView: View {
                 section(title: "Type") {
                     Text("Opens the repository in Finder.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary.opacity(0.70))
                 }
 
             case .app(let appName):
@@ -399,7 +399,7 @@ struct ActionDetailView: View {
                     }
                     Text("Uses `/usr/bin/open -a \"\(appName)\"`")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary.opacity(0.70))
                         .textSelection(.enabled)
                         .padding(.top, 2)
                 }
@@ -419,7 +419,7 @@ struct ActionDetailView: View {
 
                     Text("Runs with `/bin/zsh -l -c …`. Use `{path}` as the repository path.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary.opacity(0.70))
                         .padding(.top, 2)
                 }
             }
@@ -435,7 +435,7 @@ struct ActionDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary.opacity(0.70))
             content()
         }
     }
@@ -502,7 +502,7 @@ struct AboutSettingsView: View {
                 } else {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 56, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary.opacity(0.70))
                 }
             }
             .frame(width: 64, height: 88)
@@ -515,17 +515,17 @@ struct AboutSettingsView: View {
                     .font(.title.weight(.semibold))
                 Text("Version \(version)")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary.opacity(0.70))
                 Text(buildDateString)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.primary.opacity(0.50))
             }
 
             Spacer(minLength: 4)
 
-            Text("A native menubar app for tracking uncommitted and unpushed changes across your git repositories.")
+            Text("Helping developers with commitment issues since 2026.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary.opacity(0.70))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
 
@@ -543,16 +543,17 @@ struct AboutSettingsView: View {
                 .font(.callout)
             }
             .pointingHandCursor()
+            .padding(.top, 6)
 
             Button("Check for Updates…") {
                 AppDelegate.shared?.updaterController.updater.checkForUpdates()
             }
-            .padding(.top, 2)
+            .padding(.top, 6)
 
             Text("Built with ❤️ in the Netherlands by Thimo Jansen. MIT License.")
-                .padding(.top, 2)
+                .padding(.top, 6)
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.primary.opacity(0.50))
                 .padding(.bottom, 16)
         }
         .frame(width: 560)
