@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import Sparkle
 import UncommittedCore
 
 /// Owns the AppKit menu-bar presence. The popup is an NSMenu with a
@@ -9,9 +10,17 @@ import UncommittedCore
 /// button highlight, proper dismissal of other status item menus, correct
 /// positioning, no arrow, and no Bartender interference.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Singleton accessor — SwiftUI's `@NSApplicationDelegateAdaptor`
+    /// wraps the delegate so `NSApp.delegate as? AppDelegate` fails.
+    /// Set in `applicationDidFinishLaunching`.
+    static weak var shared: AppDelegate?
+
     let configStore: ConfigStore
     let repoStore: RepoStore
     let hoverDetail: HoverDetailController
+    /// Sparkle auto-updater. Starts checking on launch; the "Check for
+    /// Updates" action in the popup calls through to it.
+    let updaterController: SPUStandardUpdaterController
 
     private var statusItem: NSStatusItem?
     private var popupMenu: NSMenu?
@@ -22,10 +31,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.configStore = ConfigStore()
         self.repoStore = RepoStore(configStore: configStore)
         self.hoverDetail = HoverDetailController()
+        self.updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
         super.init()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppDelegate.shared = self
         setupStatusItem()
         setupMenu()
         updateStatusLabel()
@@ -119,6 +134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closePopup()
             }
             .environment(\.hoverDetail, hoverDetail)
+            .environment(\.checkForUpdates) { [weak self] in
+                self?.updaterController.updater.checkForUpdates()
+            }
 
         let hosting = NSHostingController(rootView: AnyView(contentView))
         self.hostingController = hosting
@@ -171,5 +189,16 @@ extension EnvironmentValues {
     var dismissPopover: () -> Void {
         get { self[DismissPopoverKey.self] }
         set { self[DismissPopoverKey.self] = newValue }
+    }
+}
+
+struct CheckForUpdatesKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
+extension EnvironmentValues {
+    var checkForUpdates: () -> Void {
+        get { self[CheckForUpdatesKey.self] }
+        set { self[CheckForUpdatesKey.self] = newValue }
     }
 }

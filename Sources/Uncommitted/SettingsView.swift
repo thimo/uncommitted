@@ -27,6 +27,8 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @EnvironmentObject var configStore: ConfigStore
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    @State private var autoCheckForUpdates: Bool = true
+    @State private var autoDownloadUpdates: Bool = false
 
     var body: some View {
         Form {
@@ -37,6 +39,17 @@ struct GeneralSettingsView: View {
                     }
                 }
                 Toggle("Hide clean repositories", isOn: $configStore.config.hideCleanRepos)
+            }
+
+            Section("Updates") {
+                Toggle("Check for updates automatically", isOn: $autoCheckForUpdates)
+                    .onChange(of: autoCheckForUpdates) { _, newValue in
+                        AppDelegate.shared?.updaterController.updater.automaticallyChecksForUpdates = newValue
+                    }
+                Toggle("Download and install automatically", isOn: $autoDownloadUpdates)
+                    .onChange(of: autoDownloadUpdates) { _, newValue in
+                        AppDelegate.shared?.updaterController.updater.automaticallyDownloadsUpdates = newValue
+                    }
             }
 
             Section("Startup") {
@@ -58,6 +71,12 @@ struct GeneralSettingsView: View {
         .scrollContentBackground(.hidden)
         .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
+        .onAppear {
+            if let updater = AppDelegate.shared?.updaterController.updater {
+                autoCheckForUpdates = updater.automaticallyChecksForUpdates
+                autoDownloadUpdates = updater.automaticallyDownloadsUpdates
+            }
+        }
     }
 }
 
@@ -426,7 +445,20 @@ struct ActionDetailView: View {
 
 struct AboutSettingsView: View {
     private var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
+    }
+
+    private var buildDateString: String {
+        guard let execURL = Bundle.main.executableURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
+              let date = attrs[.modificationDate] as? Date else {
+            return ""
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM yyyy 'at' HH:mm"
+        return "Built \(formatter.string(from: date))"
     }
 
     private static let gradientStops: [Gradient.Stop] = [
@@ -454,7 +486,7 @@ struct AboutSettingsView: View {
     }()
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             Group {
                 if let glyph = Self.glyph {
                     LinearGradient(
@@ -476,18 +508,20 @@ struct AboutSettingsView: View {
             .frame(width: 64, height: 88)
             .padding(.top, 28)
 
-            Text("Uncommitted")
-                .font(.title.weight(.semibold))
+            // Title block — tighter internal spacing than the
+            // VStack default so it reads as one unit.
+            VStack(spacing: 2) {
+                Text("Uncommitted")
+                    .font(.title.weight(.semibold))
+                Text("Version \(version)")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Text(buildDateString)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
 
-            Text("Version \(version)")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-
-            Text("Thimo Jansen")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
 
             Text("A native menubar app for tracking uncommitted and unpushed changes across your git repositories.")
                 .font(.callout)
@@ -509,9 +543,14 @@ struct AboutSettingsView: View {
                 .font(.callout)
             }
             .pointingHandCursor()
-            .padding(.top, 4)
 
-            Text("Built with ❤️ in the Netherlands")
+            Button("Check for Updates…") {
+                AppDelegate.shared?.updaterController.updater.checkForUpdates()
+            }
+            .padding(.top, 2)
+
+            Text("Built with ❤️ in the Netherlands by Thimo Jansen. MIT License.")
+                .padding(.top, 2)
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 16)

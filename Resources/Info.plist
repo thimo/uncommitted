@@ -2,29 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleExecutable</key>
-    <string>uncommitted</string>
-    <key>CFBundleIdentifier</key>
-    <string>nl.thimo.uncommitted</string>
-    <key>CFBundleName</key>
-    <string>Uncommitted</string>
-    <key>CFBundleDisplayName</key>
-    <string>Uncommitted</string>
-    <key>CFBundleVersion</key>
-    <string>4</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.4.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleIconFile</key>
-    <string>Uncommitted</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
+	<key>CFBundleDisplayName</key>
+	<string>Uncommitted</string>
+	<key>CFBundleExecutable</key>
+	<string>uncommitted</string>
+	<key>CFBundleIconFile</key>
+	<string>Uncommitted</string>
+	<key>CFBundleIdentifier</key>
+	<string>nl.thimo.uncommitted</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Uncommitted</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.4.0</string>
+	<key>CFBundleVersion</key>
+	<string>4</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/thimo/uncommitted/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>NlywPcap2FbeNZLKoe8aPtZrE7KiDZikSarj6ORR12M=</string>
 </dict>
 </plist>

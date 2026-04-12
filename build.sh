@@ -23,6 +23,10 @@ echo "==> Assembling $APP_STAGING"
 rm -rf "$APP_STAGING"
 mkdir -p "$APP_STAGING/Contents/MacOS" "$APP_STAGING/Contents/Resources"
 cp "$BIN_SRC" "$APP_STAGING/Contents/MacOS/uncommitted"
+# SPM doesn't add @executable_path/../Frameworks to the rpath, which
+# Sparkle.framework needs to be found at runtime.
+install_name_tool -add_rpath @executable_path/../Frameworks \
+  "$APP_STAGING/Contents/MacOS/uncommitted" 2>/dev/null || true
 cp Resources/Info.plist "$APP_STAGING/Contents/Info.plist"
 cp build/Uncommitted.icns "$APP_STAGING/Contents/Resources/Uncommitted.icns"
 printf "APPL????" > "$APP_STAGING/Contents/PkgInfo"
@@ -33,6 +37,13 @@ printf "APPL????" > "$APP_STAGING/Contents/PkgInfo"
 SPM_BUNDLE=".build/release/Uncommitted_Uncommitted.bundle"
 if [ -d "$SPM_BUNDLE" ]; then
   cp -R "$SPM_BUNDLE" "$APP_STAGING/Contents/Resources/"
+fi
+
+# Sparkle framework (SPM binary artifact, inside an xcframework).
+SPARKLE_FW=".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+  mkdir -p "$APP_STAGING/Contents/Frameworks"
+  cp -R "$SPARKLE_FW" "$APP_STAGING/Contents/Frameworks/"
 fi
 
 echo "==> Ad-hoc signing"
