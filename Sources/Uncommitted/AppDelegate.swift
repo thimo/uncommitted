@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var popupMenu: NSMenu?
     private var hostingController: NSHostingController<AnyView>?
     private var cancellables = Set<AnyCancellable>()
+    private var rightClickMonitor: Any?
 
     override init() {
         self.configStore = ConfigStore()
@@ -187,10 +188,94 @@ extension AppDelegate: NSMenuDelegate {
             let fitting = hView.fittingSize
             hView.frame.size = fitting
         }
+
+        // Install a local event monitor to catch right-clicks. NSMenu's
+        // tracking loop swallows them otherwise. The monitor lets us
+        // show a context menu for the currently hovered repo row.
+        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            guard let self else { return event }
+            if self.showRepoContextMenu(for: event) {
+                return nil
+            }
+            return event
+        }
     }
 
     func menuDidClose(_ menu: NSMenu) {
         hoverDetail.dismissImmediately()
+        if let monitor = rightClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            rightClickMonitor = nil
+        }
+    }
+
+    /// Shows a context menu with the "Open with" actions for the
+    /// currently hovered repo. Returns true if a menu was shown (event
+    /// should be swallowed), false otherwise.
+    private func showRepoContextMenu(for event: NSEvent) -> Bool {
+        guard hoverDetail.hoveredRepoId != nil,
+              let onAction = hoverDetail.hoveredOnAction else { return false }
+        let actions = hoverDetail.hoveredActions
+        guard !actions.isEmpty else { return false }
+
+        let menu = NSMenu()
+        let header = NSMenuItem(title: "Open with", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        menu.addItem(.separator())
+
+        for action in actions {
+            let item = RepoActionMenuItem(
+                title: action.name,
+                action: action,
+                onAction: onAction
+            )
+            if let nsImage = AppIcons.icon(for: action) {
+                let size: CGFloat = 16
+                let resized = NSImage(size: NSSize(width: size, height: size))
+                resized.lockFocus()
+                nsImage.draw(
+                    in: NSRect(origin: .zero, size: NSSize(width: size, height: size)),
+                    from: .zero,
+                    operation: .sourceOver,
+                    fraction: 1.0
+                )
+                resized.unlockFocus()
+                item.image = resized
+            }
+            menu.addItem(item)
+        }
+
+        // popUp(positioning:at:in:) opens a nested tracking loop so
+        // this works while the parent menu is still tracking.
+        if let window = event.window {
+            menu.popUp(positioning: nil, at: event.locationInWindow, in: window.contentView)
+        } else {
+            NSMenu.popUpContextMenu(menu, with: event, for: NSApp.keyWindow?.contentView ?? NSView())
+        }
+        return true
+    }
+}
+
+// MARK: - Right-click context menu item
+
+/// NSMenuItem subclass that holds a closure and a repo action, used
+/// by the right-click handler in AppDelegate.
+final class RepoActionMenuItem: NSMenuItem {
+    private let onAction: (Action) -> Void
+    private let repoAction: Action
+
+    init(title: String, action: Action, onAction: @escaping (Action) -> Void) {
+        self.repoAction = action
+        self.onAction = onAction
+        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        self.target = self
+    }
+
+    required init(coder: NSCoder) { fatalError() }
+
+    @objc private func fire() {
+        onAction(repoAction)
     }
 }
 

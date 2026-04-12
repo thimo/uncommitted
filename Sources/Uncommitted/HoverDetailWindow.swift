@@ -34,6 +34,16 @@ final class HoverDetailController {
     private var dismissWorkItem: DispatchWorkItem?
     private var currentRepoId: UUID?
     private var isPanelHovered = false
+    private var currentActions: [Action] = []
+    private var currentOnAction: ((Action) -> Void)?
+
+    /// The repo ID currently being displayed. Used by the right-click
+    /// handler in AppDelegate to show a context menu for the right row.
+    var hoveredRepoId: UUID? { currentRepoId }
+    /// Actions and callback for the currently hovered repo, exposed
+    /// for the right-click context menu.
+    var hoveredActions: [Action] { currentActions }
+    var hoveredOnAction: ((Action) -> Void)? { currentOnAction }
     /// Which side of the popup the panel is currently sitting on.
     /// Determines which edge the arrow renders on.
     private var currentSide: PanelSide = .right
@@ -51,9 +61,16 @@ final class HoverDetailController {
     /// Called by a `RepoRow` on hover-in. Shows the panel after a short
     /// delay (debounced). When called while another panel is already
     /// visible, switches content instantly without re-running the delay.
-    func showDetail(for repo: Repo, rowFrameOnScreen: NSRect) {
+    func showDetail(
+        for repo: Repo,
+        rowFrameOnScreen: NSRect,
+        actions: [Action],
+        onAction: @escaping (Action) -> Void
+    ) {
         guard let status = repo.status else { return }
 
+        currentActions = actions
+        currentOnAction = onAction
         dismissWorkItem?.cancel()
 
         // Already visible → swap content and reposition instantly.
@@ -93,7 +110,7 @@ final class HoverDetailController {
 
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if self.isPanelHovered { return }
+            if self.isCursorOverPanel { return }
             self.dismiss()
         }
         dismissWorkItem = item
@@ -125,10 +142,9 @@ final class HoverDetailController {
         if hovering {
             dismissWorkItem?.cancel()
         } else {
-            // Schedule dismiss with the same grace period.
             let item = DispatchWorkItem { [weak self] in
                 guard let self else { return }
-                if self.isPanelHovered { return }
+                if self.isCursorOverPanel { return }
                 self.dismiss()
             }
             dismissWorkItem = item
@@ -137,6 +153,13 @@ final class HoverDetailController {
                 execute: item
             )
         }
+    }
+
+    /// Checks cursor position directly via NSEvent rather than relying
+    /// on SwiftUI's `.onHover` which doesn't fire during NSMenu tracking.
+    private var isCursorOverPanel: Bool {
+        guard let panel, panel.isVisible else { return false }
+        return panel.frame.contains(NSEvent.mouseLocation)
     }
 
     // MARK: - Internals
@@ -187,10 +210,14 @@ final class HoverDetailController {
         // a stale value for a different row/row frame.
         currentSide = preferredSide(for: rowFrameOnScreen)
 
+        let actions = currentActions
+        let onAction = currentOnAction
         let content = HoverDetailContent(
             repoName: repo.name,
             status: status,
             arrowSide: currentSide,
+            actions: actions,
+            onAction: { action in onAction?(action) },
             onHoverChange: { [weak self] in self?.panelHover($0) }
         )
         if let hostingView {
@@ -331,13 +358,12 @@ final class HoverDetailController {
     }
 }
 
-/// Borderless NSPanel that hosts the SwiftUI detail content. Subclass is
-/// needed because an NSPanel with .borderless style defaults to
-/// `canBecomeKey = false`, which is what we want (don't steal keyboard
-/// focus from whatever's active), but we also want `acceptsMouseMovedEvents`
-/// so hover tracking on the SwiftUI content fires.
+/// Borderless NSPanel that hosts the SwiftUI detail content. Must allow
+/// `canBecomeKey = true` so SwiftUI buttons inside can receive clicks;
+/// the `.nonactivatingPanel` style mask prevents the app from being
+/// activated and keeps the main menu popup from losing focus.
 final class HoverDetailPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
@@ -356,6 +382,8 @@ struct HoverDetailContent: View {
     let repoName: String
     let status: RepoStatus
     let arrowSide: PanelSide
+    let actions: [Action]
+    let onAction: (Action) -> Void
     let onHoverChange: (Bool) -> Void
 
     /// Arrow dimensions. 8pt wide, 14pt tall is a system-popover-ish feel.
@@ -367,7 +395,12 @@ struct HoverDetailContent: View {
     static let cornerRadius: CGFloat = 10
 
     var body: some View {
-        RepoDetailPopover(repoName: repoName, status: status)
+        RepoDetailPopover(
+            repoName: repoName,
+            status: status,
+            actions: actions,
+            onAction: onAction
+        )
             .frame(width: 260)
             .fixedSize(horizontal: false, vertical: true)
             // Reserve space for the arrow on the appropriate side. The
