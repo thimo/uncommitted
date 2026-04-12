@@ -110,15 +110,34 @@ public enum GitService {
         var stdoutData = Data()
         var stderrData = Data()
 
+        // Drain via `read(upToCount:)` which is the Swift-throwing API.
+        // `readDataToEndOfFile()` goes through Obj-C `readDataOfLength:`
+        // and raises an NSException (not a Swift error) when the kernel
+        // returns an error on the pending read — e.g. after we SIGKILL
+        // the process group to clean up stuck ssh helpers. NSExceptions
+        // can't be caught from Swift and propagate out as app crashes.
+        func drain(_ handle: FileHandle) -> Data {
+            var data = Data()
+            do {
+                while let chunk = try handle.read(upToCount: 4096), !chunk.isEmpty {
+                    data.append(chunk)
+                }
+            } catch {
+                // Reader was force-closed or the remote end errored —
+                // return whatever we managed to collect.
+            }
+            return data
+        }
+
         group.enter()
         concurrentQueue.async {
-            stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            stdoutData = drain(stdoutPipe.fileHandleForReading)
             group.leave()
         }
 
         group.enter()
         concurrentQueue.async {
-            stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            stderrData = drain(stderrPipe.fileHandleForReading)
             group.leave()
         }
 
