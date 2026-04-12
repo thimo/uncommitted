@@ -79,6 +79,15 @@ no hosting bill. Sparkle reads XML from GitHub raw just fine.
 
 These are worth doing when the mood strikes. Not blocked on anything.
 
+- **Error reporting & crash logging.** Two parts: (1) surface git errors,
+  parse failures, and watcher problems to the user instead of silently
+  swallowing them — a small "last error" indicator, notification, or log
+  viewer in Settings. (2) Crash/diagnostic reporting so users can share
+  logs or they're uploaded automatically — something like Sentry, or
+  Apple's MetricKit + `MXCrashDiagnostic`, or a lightweight custom
+  solution that writes to `~/Library/Logs/Uncommitted/` with an "Export
+  diagnostics…" button in Settings that bundles the last N log files
+  for sharing.
 - **FSEvents safety net.** The watcher can drift after sleep/wake. Listen
   for `NSWorkspace.didWakeNotification` and rebuild the stream. Cheap
   belt-and-suspenders against silent drift.

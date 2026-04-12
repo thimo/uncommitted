@@ -42,11 +42,14 @@ Three SPM targets:
 Read this before wondering why a choice looks weird. These are deliberate
 and usually fix a specific pitfall:
 
-1. **AppKit-hosted menu bar, not SwiftUI `MenuBarExtra`.** SwiftUI's
-   `MenuBarExtra` gives no way to programmatically dismiss its popover —
-   we need that (alt-click actions, failure alerts). `AppDelegate` owns an
-   `NSStatusItem` toggling an `NSPopover` with `animates = false` (open/
-   close should feel instant).
+1. **NSMenu with custom-view item, not SwiftUI `MenuBarExtra`.** The
+   popup is an NSMenu containing one NSMenuItem whose `view` is an
+   NSHostingView with our SwiftUI content — the same approach CodexBar
+   and iStat Menus use. NSMenu gives us system-managed button highlight,
+   proper dismissal of other status item menus, correct positioning, and
+   no arrow. Earlier iterations used NSPopover (arrow can't be hidden on
+   macOS 15) and a custom NSPanel (couldn't get reliable button highlight
+   or cross-menu dismiss). Code in `AppDelegate.swift`.
 
 2. **FSEvents with a retained context.** `RepoWatcher.swift` uses
    `Unmanaged.passRetained(self)` as the stream's info pointer plus a
@@ -84,7 +87,7 @@ and usually fix a specific pitfall:
 
 ## Key files
 
-- `Sources/Uncommitted/AppDelegate.swift` — menu bar + main NSPopover setup
+- `Sources/Uncommitted/AppDelegate.swift` — menu bar + NSMenu-based popup
 - `Sources/Uncommitted/MenuContentView.swift` — main popup SwiftUI, repo
   rows, badges, context menu, hover detail wiring
 - `Sources/Uncommitted/HoverDetailWindow.swift` — custom NSPanel, positioning,
