@@ -521,13 +521,13 @@ struct AboutSettingsView: View {
                     .foregroundStyle(.primary.opacity(0.50))
             }
 
-            Spacer(minLength: 4)
-
             Text("Helping developers with commitment issues since 2026.")
                 .font(.callout)
                 .foregroundStyle(.primary.opacity(0.70))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
+
+            Spacer(minLength: 4)
 
             Link(destination: URL(string: "https://github.com/thimo/uncommitted")!) {
                 HStack(spacing: 6) {
