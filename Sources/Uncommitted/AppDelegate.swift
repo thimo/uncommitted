@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .receive(on: DispatchQueue.main)
         .sink { [weak self] _ in
             self?.updateStatusLabel()
+            self?.resizeMenuIfNeeded()
         }
         .store(in: &cancellables)
     }
@@ -156,6 +157,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func closePopup() {
         hoverDetail.dismissImmediately()
         popupMenu?.cancelTracking()
+    }
+
+    /// Re-measure the SwiftUI content and update the menu item's view
+    /// frame so the menu window resizes when rows appear or disappear.
+    private func resizeMenuIfNeeded() {
+        guard let hView = hostingController?.view,
+              popupMenu?.highlightedItem != nil || popupMenu?.numberOfItems ?? 0 > 0
+        else { return }
+        hView.layoutSubtreeIfNeeded()
+        let fitting = hView.fittingSize
+        if hView.frame.size != fitting {
+            hView.frame.size = fitting
+            popupMenu?.update()
+        }
     }
 }
 
