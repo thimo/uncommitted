@@ -107,7 +107,7 @@ struct MenuContentView: View {
             .help("Rescan sources and refresh all")
         }
         .padding(.horizontal, 12)
-        .padding(.top, 14)
+        .padding(.top, 12)
         .padding(.bottom, 10)
     }
 
@@ -170,7 +170,7 @@ struct MenuContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 10)
-        .padding(.bottom, 14)
+        .padding(.bottom, 12)
     }
 }
 

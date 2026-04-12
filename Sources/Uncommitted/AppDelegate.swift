@@ -212,7 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hidesOnDeactivate = false
 
         let visualEffect = NSVisualEffectView()
-        visualEffect.material = .popover
+        visualEffect.material = .headerView
         visualEffect.state = .active
         visualEffect.blendingMode = .behindWindow
         visualEffect.maskImage = Self.roundedMaskImage
@@ -270,18 +270,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         hoverDetail.popupHostingView = hView
 
-        // Layer-based highlight — independent of the system's own
-        // highlight mechanism which resets on mouse-up.
-        button.wantsLayer = true
-        button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.18).cgColor
-        button.layer?.cornerRadius = button.bounds.height / 2
+        // Native status item highlight while the panel is open.
+        // `highlight(true/false)` uses the button's own state machine,
+        // which doesn't fight mouseDown/mouseUp the way a custom
+        // layer overlay does.
+        button.highlight(true)
 
         installEventMonitors()
     }
 
     func closePopup() {
         hoverDetail.dismissImmediately()
-        statusItem?.button?.layer?.backgroundColor = nil
+        statusItem?.button?.highlight(false)
         panel?.orderOut(nil)
         removeEventMonitors()
     }
