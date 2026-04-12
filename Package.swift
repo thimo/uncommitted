@@ -10,18 +10,26 @@ let package = Package(
         .executable(name: "uncommitted", targets: ["Uncommitted"]),
         .executable(name: "UncommittedTests", targets: ["UncommittedTests"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+    ],
     targets: [
         // Model, services, stores. Everything testable lives here.
+        // No Sparkle dependency — core stays framework-free.
         .target(
             name: "UncommittedCore",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]
         ),
-        // Thin SwiftUI + AppKit shell that depends on the Core library.
+        // Thin SwiftUI + AppKit shell that depends on the Core library
+        // and Sparkle for auto-updates.
         .executableTarget(
             name: "Uncommitted",
-            dependencies: ["UncommittedCore"],
+            dependencies: [
+                "UncommittedCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             resources: [
                 .copy("Resources/icon-glyph.svg"),
                 .copy("Resources/github-mark.svg"),
