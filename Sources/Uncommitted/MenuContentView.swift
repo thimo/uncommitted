@@ -76,7 +76,7 @@ struct MenuContentView: View {
                             }
                         )
                         if index < visible.count - 1 {
-                            Divider().padding(.horizontal, 12)
+                            Divider().padding(.horizontal, 12 - Self.menuInsetCompensation)
                         }
                     }
                 }
@@ -85,11 +85,16 @@ struct MenuContentView: View {
         }
     }
 
+    /// NSMenu adds ~8pt horizontal padding around custom-view items.
+    /// Our internal padding is reduced accordingly so the total visual
+    /// padding matches what we had under NSPopover.
+    static let menuInsetCompensation: CGFloat = 8
+
     private var header: some View {
         HStack {
             Text("Uncommitted")
                 .font(.headline)
-                .padding(.horizontal, 6) // match GhostButtonStyle internal padding
+                .padding(.horizontal, 6)
             Spacer()
             Button {
                 store.rebuildFromConfig()
@@ -101,8 +106,8 @@ struct MenuContentView: View {
             .pointingHandCursor()
             .help("Rescan sources and refresh all")
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 14)
+        .padding(.horizontal, 14 - Self.menuInsetCompensation)
+        .padding(.top, 12 - Self.menuInsetCompensation)
         .padding(.bottom, 10)
     }
 
@@ -163,9 +168,9 @@ struct MenuContentView: View {
             .keyboardShortcut("q")
             .pointingHandCursor()
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .padding(.bottom, 14)
+        .padding(.horizontal, 14 - Self.menuInsetCompensation)
+        .padding(.top, 6)
+        .padding(.bottom, 1)
     }
 }
 
@@ -188,6 +193,11 @@ extension View {
 
 // MARK: - Ghost button style
 
+/// Shared corner radius for interactive elements (ghost buttons, action
+/// badges, row hover highlights). Kept in one place so adjusting the
+/// overall "roundness" is a single-constant change.
+let interactiveCornerRadius: CGFloat = 6
+
 /// A compact button style with a rounded-rect hover fill and a pressed
 /// state — used for the popover's chrome (Settings, Quit, Refresh).
 /// Adds 6pt horizontal / 3pt vertical internal padding so the fill has
@@ -208,7 +218,7 @@ private struct GhostButtonBody<Label: View>: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
                     .fill(fill)
                     // Animate ONLY on press state changes so the click
                     // fades in/out instead of snapping. Scoping to
@@ -216,7 +226,7 @@ private struct GhostButtonBody<Label: View>: View {
                     // bleeding into other properties.
                     .animation(.easeOut(duration: 0.35), value: isPressed)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 5))
+            .contentShape(RoundedRectangle(cornerRadius: interactiveCornerRadius))
             .onHover { isHovered = $0 }
     }
 
@@ -274,14 +284,14 @@ struct RepoRow: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: interactiveCornerRadius)
                 .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
         )
         // Outer padding: the "gap" between rows at the popup edge still
         // counts as part of the row for hover purposes. Without
         // contentShape the outer padding is empty space and the hover
         // flickers off when the cursor drifts into it.
-        .padding(.horizontal, 12)
+        .padding(.horizontal, max(0, 12 - MenuContentView.menuInsetCompensation))
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .background(RowFrameReader(reference: frameRef))
@@ -579,14 +589,14 @@ private struct ActionBadge: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
                     .fill(isHovered ? color.opacity(0.18) : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
                     .strokeBorder(color.opacity(isHovered ? 0.0 : 0.35), lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 5))
+            .contentShape(RoundedRectangle(cornerRadius: interactiveCornerRadius))
         }
         .buttonStyle(.plain)
         .disabled(isInFlight)

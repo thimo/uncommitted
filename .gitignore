@@ -14,3 +14,6 @@ build/
 
 # Claude Code project-local settings (per-device permissions).
 .claude/settings.local.json
+
+# Peekaboo screenshots dumped during dev sessions.
+screen0_*.png
