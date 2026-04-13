@@ -35,6 +35,18 @@ public final class FetchScheduler: ObservableObject {
 
     private var timer: Timer?
     private var cancellables = Set<AnyCancellable>()
+    /// True once `stop()` has been called. In-flight fetch operations
+    /// check this before talking to git AND before posting their main-
+    /// thread completion blocks, so disabling the toggle while fetches
+    /// are running can't write stale state into FetchStateStore.
+    private var stopped: Bool = true
+    /// URLs whose `hasRemote` has been verified during this app run.
+    /// Spec says noRemote is re-checked once per launch — we use a
+    /// per-launch Set so the check fires exactly once per repo per
+    /// launch rather than being tied to whether `lastAttemptAt` is nil
+    /// (which silently skips repos whose remote was added or removed
+    /// between sessions). Mutated only on the main thread.
+    private var remoteCheckedThisLaunch = Set<String>()
     /// Bounded by `parallelLimit` via `maxConcurrentOperationCount`. We
     /// don't reuse the existing GitService dispatch queues because the
     /// fetch operation needs strict parallelism limits and a separate
@@ -88,6 +100,7 @@ public final class FetchScheduler: ObservableObject {
 
     public func start() {
         stop()
+        stopped = false
         // Schedule a one-shot timer for the startup delay, then switch to
         // the recurring tick. This avoids firing immediately when the app
         // launches with the toggle on.
@@ -101,8 +114,13 @@ public final class FetchScheduler: ObservableObject {
     }
 
     public func stop() {
+        stopped = true
         timer?.invalidate()
         timer = nil
+        // cancelAllOperations only marks queued operations; running
+        // ones must self-check `stopped` (they do, via the closures
+        // captured in enqueueFetch). Cancelling here just prevents
+        // anything sitting in the queue from spawning a git process.
         fetchQueue.cancelAllOperations()
     }
 
@@ -147,18 +165,25 @@ public final class FetchScheduler: ObservableObject {
     /// True if this repo is overdue based on its tier (active vs idle)
     /// and any back-off from prior failures.
     private func shouldFetch(repo: Repo, state: FetchState, now: Date) -> Bool {
+        Self.shouldFetch(active: isActive(repo: repo), state: state, now: now)
+    }
+
+    /// Pure-function counterpart of `shouldFetch(repo:state:now:)`.
+    /// Public so unit tests can drive it without a real Repo on disk.
+    public static func shouldFetch(active: Bool, state: FetchState, now: Date) -> Bool {
         guard let last = state.lastAttemptAt else {
             // Never tried — fetch on the first eligible tick.
             return true
         }
-        let interval = nextInterval(for: repo, state: state)
+        let interval = nextInterval(active: active, state: state)
         return now.timeIntervalSince(last) >= interval
     }
 
     /// Returns the wait interval before the next attempt: the tier base
     /// interval, doubled for each consecutive failure, capped at maxBackoff.
-    private func nextInterval(for repo: Repo, state: FetchState) -> TimeInterval {
-        let base = isActive(repo: repo) ? Self.activeInterval : Self.idleInterval
+    /// Public so unit tests can verify the back-off ladder directly.
+    public static func nextInterval(active: Bool, state: FetchState) -> TimeInterval {
+        let base = active ? Self.activeInterval : Self.idleInterval
         let failures = state.consecutiveFailures
         guard failures > 0 else { return base }
         let multiplier = pow(2.0, Double(failures - 1))
@@ -218,29 +243,52 @@ public final class FetchScheduler: ObservableObject {
 
     private func enqueueFetch(repo: Repo, manual: Bool) {
         let url = repo.url
-        fetchQueue.addOperation { [weak self] in
-            guard let self else { return }
+        let key = url.standardizedFileURL.path
+        // Decide on the main thread whether we need to verify the remote
+        // configuration this launch. Reading and updating the
+        // `remoteCheckedThisLaunch` set on a background thread would race
+        // with the rebuild() pruning path.
+        let shouldVerifyRemote = !remoteCheckedThisLaunch.contains(key)
+        let operation = BlockOperation()
+        operation.addExecutionBlock { [weak self, weak operation] in
+            guard let self, let operation, !operation.isCancelled else { return }
+            if self.stopped && !manual { return }
 
-            // First call ever for this repo? Cache `noRemote` so the
-            // tick filter can skip it forever (re-checked on app launch
-            // because FetchStateStore loads from disk fresh each launch).
+            // Skip silently if we already know this repo has no remote
+            // — but only once per launch. `remoteCheckedThisLaunch` is
+            // populated below as soon as a verification finishes, so we
+            // don't repeatedly hit `git remote` for the same repo.
             let cachedState = self.fetchStateStore.state(for: url)
-            if cachedState.noRemote && !manual {
+            if cachedState.noRemote && !shouldVerifyRemote && !manual {
                 return
             }
-            if cachedState.lastAttemptAt == nil && !manual {
-                if !GitService.hasRemote(at: url) {
-                    DispatchQueue.main.async {
-                        self.fetchStateStore.update(url) { $0.noRemote = true }
-                    }
-                    return
+
+            // First check this launch (or a manual fetch) — verify the
+            // remote configuration. If absent, mark noRemote and bail
+            // without counting it as a failure. This makes manual
+            // fetches on local-only repos quiet instead of surfacing
+            // the orange row glyph.
+            if shouldVerifyRemote || manual {
+                let hasRemote = GitService.hasRemote(at: url)
+                DispatchQueue.main.async {
+                    self.remoteCheckedThisLaunch.insert(key)
+                    self.fetchStateStore.update(url) { $0.noRemote = !hasRemote }
                 }
+                if !hasRemote { return }
             }
 
+            if operation.isCancelled || (self.stopped && !manual) { return }
             let result = GitService.fetch(at: url)
             let now = Date()
 
             DispatchQueue.main.async {
+                // Bail if the user disabled the feature while this
+                // operation was running, OR if the repo was removed
+                // from sources between scheduling and completion. In
+                // either case writing state would surprise the user.
+                if self.stopped && !manual { return }
+                guard self.repoStore.repos.contains(where: { $0.url == url }) else { return }
+
                 self.fetchStateStore.update(url) { state in
                     state.lastAttemptAt = now
                     state.lastAttemptWasManual = manual
@@ -260,5 +308,6 @@ public final class FetchScheduler: ObservableObject {
                 }
             }
         }
+        fetchQueue.addOperation(operation)
     }
 }

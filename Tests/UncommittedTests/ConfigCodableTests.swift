@@ -70,6 +70,32 @@ enum ConfigCodableTests {
             try expect(decoded.actions.isEmpty == false)
         }
 
+        test("Config/fetchFromRemotes_defaultsToFalse") {
+            try expect(Config().fetchFromRemotes == false)
+        }
+
+        test("Config/fetchFromRemotes_roundTrips") {
+            let original = Config(fetchFromRemotes: true)
+            let data = try JSONEncoder().encode(original)
+            let decoded = try JSONDecoder().decode(Config.self, from: data)
+            try expect(decoded.fetchFromRemotes)
+        }
+
+        test("Config/legacyConfig_withoutFetchFromRemotes_decodesAsFalse") {
+            // A config saved before the field existed must still decode
+            // cleanly with the field defaulting to false.
+            let json = """
+            {
+              "sources": [],
+              "actions": [],
+              "hideCleanRepos": false,
+              "menuBarLabelStyle": "total"
+            }
+            """.data(using: .utf8)!
+            let decoded = try JSONDecoder().decode(Config.self, from: json)
+            try expect(decoded.fetchFromRemotes == false)
+        }
+
         test("Config/menuBarLabelStyle_rawValuesAreStable") {
             // The raw values are what lands in config.json on disk — changing
             // them silently would orphan every existing user's setting.

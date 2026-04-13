@@ -15,19 +15,25 @@ public final class FetchStateStore: ObservableObject {
     private let fileURL: URL
     private var saveWorkItem: DispatchWorkItem?
 
-    public init() {
+    /// Custom initializer used by tests to redirect persistence away
+    /// from the user's real Application Support directory. Production
+    /// code uses the parameter-less `init()` below.
+    public init(fileURL: URL) {
+        self.fileURL = fileURL
+        if let data = try? Data(contentsOf: fileURL),
+           let loaded = try? JSONDecoder().decode([String: FetchState].self, from: data) {
+            self.states = loaded
+        }
+    }
+
+    public convenience init() {
         let support = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first!
         let dir = support.appendingPathComponent("Uncommitted", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.fileURL = dir.appendingPathComponent("fetch-state.json")
-
-        if let data = try? Data(contentsOf: fileURL),
-           let loaded = try? JSONDecoder().decode([String: FetchState].self, from: data) {
-            self.states = loaded
-        }
+        self.init(fileURL: dir.appendingPathComponent("fetch-state.json"))
     }
 
     public func state(for url: URL) -> FetchState {
@@ -35,7 +41,10 @@ public final class FetchStateStore: ObservableObject {
     }
 
     /// Mutate the state for `url` via a closure. Persists asynchronously.
+    /// Must be called on the main thread — the underlying `@Published`
+    /// dict is not safe to mutate concurrently with SwiftUI reads.
     public func update(_ url: URL, _ transform: (inout FetchState) -> Void) {
+        dispatchPrecondition(condition: .onQueue(.main))
         let key = Self.key(for: url)
         var current = states[key] ?? .initial
         transform(&current)
@@ -44,8 +53,9 @@ public final class FetchStateStore: ObservableObject {
     }
 
     /// Drop entries for repos that no longer exist (e.g. removed sources)
-    /// so the file doesn't grow unboundedly.
+    /// so the file doesn't grow unboundedly. Main thread only.
     public func prune(to keepURLs: [URL]) {
+        dispatchPrecondition(condition: .onQueue(.main))
         let keepKeys = Set(keepURLs.map { Self.key(for: $0) })
         let before = states.count
         states = states.filter { keepKeys.contains($0.key) }
