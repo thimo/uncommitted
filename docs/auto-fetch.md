@@ -10,7 +10,7 @@ Status: **proposed, not implemented.**
 
 A single new toggle in Settings → General → Refresh:
 
-- **Fetch from remotes** — default **off**
+- **Auto-fetch from remotes** — default **off**
 
 No exposed cadence knobs in v1. Sensible defaults are hardcoded;
 preferences come later only if real usage shows we need them.
