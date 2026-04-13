@@ -461,10 +461,21 @@ struct AboutSettingsView: View {
         return "Built \(formatter.string(from: date))"
     }
 
-    private static let gradientStops: [Gradient.Stop] = [
-        .init(color: Color(red: 1.00, green: 0.20, blue: 0.58), location: 0.0),
-        .init(color: Color(red: 0.55, green: 0.28, blue: 0.92), location: 0.55),
-        .init(color: Color(red: 0.22, green: 0.56, blue: 1.00), location: 1.0),
+    // Datadog-sampled palette (#E00090 pink, #8900D2 purple, #4F00FF
+    // blue-violet), swept around the glyph so each of the three ring
+    // nodes lands in its own color: pink top-left, purple top-right,
+    // blue bottom. Angular positions (SwiftUI: 0° = right, clockwise):
+    //   90°  = bottom node  → blue
+    //   210° = top-left     → pink
+    //   330° = top-right    → purple
+    // The seam is placed at 0° (right side of center), which is empty
+    // space in the glyph, with purple on both ends so the seam is invisible.
+    private static let angularStops: [Gradient.Stop] = [
+        .init(color: Color(red: 0.537, green: 0.000, blue: 0.824), location: 0.000), // purple (seam)
+        .init(color: Color(red: 0.310, green: 0.000, blue: 1.000), location: 0.250), // blue @ 90°
+        .init(color: Color(red: 0.878, green: 0.000, blue: 0.565), location: 0.583), // pink @ 210°
+        .init(color: Color(red: 0.537, green: 0.000, blue: 0.824), location: 0.917), // purple @ 330°
+        .init(color: Color(red: 0.537, green: 0.000, blue: 0.824), location: 1.000), // purple (seam)
     ]
 
     private static let glyph: NSImage? = {
@@ -489,10 +500,11 @@ struct AboutSettingsView: View {
         VStack(spacing: 12) {
             Group {
                 if let glyph = Self.glyph {
-                    LinearGradient(
-                        stops: Self.gradientStops,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                    AngularGradient(
+                        gradient: Gradient(stops: Self.angularStops),
+                        center: .center,
+                        startAngle: .degrees(0),
+                        endAngle: .degrees(360)
                     )
                     .mask {
                         Image(nsImage: glyph)
