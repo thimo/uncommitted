@@ -17,7 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static weak var shared: AppDelegate?
 
     let configStore: ConfigStore
+    let fetchStateStore: FetchStateStore
     let repoStore: RepoStore
+    let fetchScheduler: FetchScheduler
     let hoverDetail: HoverDetailController
     /// Sparkle auto-updater. Starts checking on launch; the "Check for
     /// Updates" action in Settings calls through to it.
@@ -57,8 +59,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         self.configStore = ConfigStore()
-        self.repoStore = RepoStore(configStore: configStore)
+        self.fetchStateStore = FetchStateStore()
+        self.repoStore = RepoStore(configStore: configStore, fetchStateStore: fetchStateStore)
+        self.fetchScheduler = FetchScheduler(
+            configStore: configStore,
+            repoStore: repoStore,
+            fetchStateStore: fetchStateStore
+        )
         self.hoverDetail = HoverDetailController()
+        self.hoverDetail.fetchStateStore = fetchStateStore
+        self.hoverDetail.fetchEnabled = configStore.config.fetchFromRemotes
         self.updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
@@ -86,6 +96,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateStatusLabel()
         }
         .store(in: &cancellables)
+
+        // Keep the hover detail controller's fetch flag in sync with the
+        // setting so the detail panel stops showing the fetch line as
+        // soon as the user disables auto-fetch.
+        configStore.$config
+            .map(\.fetchFromRemotes)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] enabled in
+                self?.hoverDetail.fetchEnabled = enabled
+            }
+            .store(in: &cancellables)
 
         // When repo data changes while the panel is open (e.g. after a
         // push clears "unpushed" counts), re-fit the panel to the new
@@ -189,6 +211,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let contentView = MenuContentView()
             .environmentObject(configStore)
             .environmentObject(repoStore)
+            .environmentObject(fetchStateStore)
+            .environmentObject(fetchScheduler)
             .environment(\.dismissPopover) { [weak self] in
                 self?.closePopup()
             }

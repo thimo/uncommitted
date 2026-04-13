@@ -52,6 +52,29 @@ public enum GitService {
         action(["pull", "--ff-only"], at: url)
     }
 
+    /// Background fetch from `origin`. `--quiet --no-tags --prune` keeps
+    /// chatter low and removes server-side gone branches. Used by the
+    /// `FetchScheduler`; goes through the same execute() pipeline as
+    /// push/pull so SIGKILL-on-timeout still applies for stuck ssh helpers.
+    public static func fetch(at url: URL) -> ActionResult {
+        action(["fetch", "--quiet", "--no-tags", "--prune", "origin"], at: url)
+    }
+
+    /// Returns true if the repo has at least one remote configured. Used
+    /// by the FetchScheduler to skip local-only repos forever (re-checked
+    /// once per app launch). Empty stdout from `git remote` ⇒ no remotes.
+    public static func hasRemote(at url: URL) -> Bool {
+        let result = execute(["remote"], at: url)
+        guard result.exitStatus == 0,
+              let output = String(data: result.stdout, encoding: .utf8) else {
+            // On error, assume yes — we'd rather attempt a fetch and let
+            // it fail than silently disable a real repo because a single
+            // `git remote` invocation hiccupped.
+            return true
+        }
+        return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     // MARK: - Shared process runner
 
     private struct ExecuteResult {

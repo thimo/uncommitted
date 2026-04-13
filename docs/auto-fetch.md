@@ -93,7 +93,7 @@ Layered, so healthy repos stay quiet but real problems surface:
 | 1–2 failures | Hover detail panel shows `Last fetch failed` + next retry time |
 | 3+ failures | `exclamationmark.triangle` glyph next to the repo name in the row, tooltip explains |
 | Disabled (≥30d failing) | Same glyph in a muted colour, tooltip: `Fetch disabled — Option-click refresh to retry` |
-| Manual fetch error | Brief toast at the bottom of the popup listing the repos that failed |
+| Manual fetch failure | Row glyph appears immediately (threshold lowers to 1 when the most recent attempt was user-initiated) |
 
 ## Repos with no remote
 
@@ -118,8 +118,12 @@ version of the same action" (Apple uses it for *About This Mac* →
 *System Information*, *Close* → *Close All*, etc.). Refresh = read
 local; Option-refresh = also talk to the network. That fits exactly.
 
-A user-initiated fetch always clears `consecutiveFetchFailures` on
-success and runs even from the disabled state.
+**Manual fetch is always available, regardless of the "Fetch from
+remotes" toggle.** The toggle only gates the background scheduler;
+Option-click and the right-click action are useful one-shot operations
+even for users who don't want background fetching. A user-initiated
+fetch always clears `consecutiveFetchFailures` on success and runs
+even from the per-repo disabled state.
 
 ## Storage
 

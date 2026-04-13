@@ -48,17 +48,23 @@ public struct Config: Codable, Equatable {
     public var actions: [Action]
     public var hideCleanRepos: Bool
     public var menuBarLabelStyle: MenuBarLabelStyle
+    /// When true, the FetchScheduler runs `git fetch` on tracked repos
+    /// at a tiered cadence (daily for active, weekly for idle). See
+    /// docs/auto-fetch.md.
+    public var fetchFromRemotes: Bool
 
     public init(
         sources: [Source] = [],
         actions: [Action] = Self.defaultActions,
         hideCleanRepos: Bool = false,
-        menuBarLabelStyle: MenuBarLabelStyle = .total
+        menuBarLabelStyle: MenuBarLabelStyle = .total,
+        fetchFromRemotes: Bool = false
     ) {
         self.sources = sources
         self.actions = actions
         self.hideCleanRepos = hideCleanRepos
         self.menuBarLabelStyle = menuBarLabelStyle
+        self.fetchFromRemotes = fetchFromRemotes
     }
 
     public static var defaultActions: [Action] {
@@ -74,6 +80,7 @@ public struct Config: Codable, Equatable {
         case actions
         case hideCleanRepos
         case menuBarLabelStyle
+        case fetchFromRemotes
     }
 
     public init(from decoder: Decoder) throws {
@@ -82,5 +89,6 @@ public struct Config: Codable, Equatable {
         self.actions = try container.decodeIfPresent([Action].self, forKey: .actions) ?? Self.defaultActions
         self.hideCleanRepos = try container.decodeIfPresent(Bool.self, forKey: .hideCleanRepos) ?? false
         self.menuBarLabelStyle = try container.decodeIfPresent(MenuBarLabelStyle.self, forKey: .menuBarLabelStyle) ?? .total
+        self.fetchFromRemotes = try container.decodeIfPresent(Bool.self, forKey: .fetchFromRemotes) ?? false
     }
 }

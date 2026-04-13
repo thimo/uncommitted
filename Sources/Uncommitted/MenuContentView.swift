@@ -5,9 +5,16 @@ import UncommittedCore
 struct MenuContentView: View {
     @EnvironmentObject var store: RepoStore
     @EnvironmentObject var configStore: ConfigStore
+    @EnvironmentObject var fetchScheduler: FetchScheduler
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismissPopover) private var dismissPopover
     @Environment(\.hoverDetail) private var hoverDetail
+
+    /// Tracks whether the Option modifier is currently held. Updated by
+    /// a long-lived NSEvent monitor owned by the StateObject below — a
+    /// plain @State + closure approach would capture a stale view value
+    /// and stop working after the popup is closed and reopened.
+    @StateObject private var modifierTracker = ModifierTracker()
 
     private var visibleRepos: [Repo] {
         guard configStore.config.hideCleanRepos else { return store.repos }
@@ -97,14 +104,27 @@ struct MenuContentView: View {
                 .padding(.horizontal, 6)
             Spacer()
             Button {
-                store.rebuildFromConfig()
+                if modifierTracker.optionHeld {
+                    fetchScheduler.manualFetch(repos: store.repos)
+                } else {
+                    store.rebuildFromConfig()
+                }
             } label: {
-                Image(systemName: "arrow.clockwise")
+                // Lock the frame so swapping between the two SF Symbols
+                // (which have slightly different intrinsic heights) can't
+                // shift the header by a pixel or two.
+                Image(systemName: modifierTracker.optionHeld
+                      ? "arrow.triangle.2.circlepath"
+                      : "arrow.clockwise")
+                    .font(.system(size: 13, weight: .regular))
+                    .frame(width: 16, height: 16)
                     .foregroundStyle(.primary.opacity(0.70))
             }
             .buttonStyle(GhostButtonStyle())
             .pointingHandCursor()
-            .help("Rescan sources and refresh all")
+            .help(modifierTracker.optionHeld
+                  ? "Fetch from remotes and refresh"
+                  : "Rescan sources and refresh all (Option-click to also fetch)")
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -191,6 +211,35 @@ extension View {
     }
 }
 
+// MARK: - Modifier tracking
+
+/// Polls the system modifier state at 20Hz so SwiftUI views can react to
+/// Option being held. We can't use `NSEvent.addLocalMonitor(.flagsChanged)`
+/// because the popup is hosted in a `.nonactivatingPanel` — local
+/// monitors only fire while the app is `.active`, which our popup is
+/// careful to avoid. Polling `NSEvent.modifierFlags` (a static system
+/// query) works regardless of activation state at negligible cost.
+final class ModifierTracker: ObservableObject {
+    @Published var optionHeld: Bool
+
+    private var timer: Timer?
+
+    init() {
+        self.optionHeld = NSEvent.modifierFlags.contains(.option)
+        self.timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let held = NSEvent.modifierFlags.contains(.option)
+            if self.optionHeld != held {
+                self.optionHeld = held
+            }
+        }
+    }
+
+    deinit {
+        timer?.invalidate()
+    }
+}
+
 // MARK: - Ghost button style
 
 /// Shared corner radius for interactive elements (ghost buttons, action
@@ -248,17 +297,30 @@ struct RepoRow: View {
     let onHoverChange: (Bool, NSRect?) -> Void
 
     @EnvironmentObject var store: RepoStore
+    @EnvironmentObject var fetchStateStore: FetchStateStore
+    @EnvironmentObject var fetchScheduler: FetchScheduler
     @State private var isHovered = false
     @StateObject private var frameRef = RowFrameReference()
 
     var body: some View {
+        let fetchState = fetchStateStore.states[repo.url.standardizedFileURL.path]
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             // Name + branch. Clickable area for the default action.
             Button(action: onDefault) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(repo.name)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 5) {
+                        Text(repo.name)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.primary)
+                        if let fetchState, FetchScheduler.shouldSurfaceFailure(fetchState) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(FetchScheduler.isDisabled(fetchState)
+                                                 ? Color.primary.opacity(0.40)
+                                                 : Color.orange)
+                                .help(fetchFailureTooltip(fetchState))
+                        }
+                    }
                     Text(repo.status?.displayBranch ?? "Loading…")
                         .font(.caption)
                         .foregroundStyle(.primary.opacity(0.70))
@@ -318,7 +380,23 @@ struct RepoRow: View {
                     }
                 }
             }
+            Section {
+                Button {
+                    fetchScheduler.manualFetch(repos: [repo])
+                } label: {
+                    Label("Fetch from remote", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
         }
+    }
+
+    private func fetchFailureTooltip(_ state: FetchState) -> String {
+        if FetchScheduler.isDisabled(state) {
+            return "Fetch disabled — Option-click refresh to retry"
+        }
+        let n = state.consecutiveFailures
+        let attempts = n == 1 ? "1 attempt" : "\(n) attempts"
+        return "Fetch failed (\(attempts))"
     }
 
     private func resized(_ image: NSImage, to size: CGFloat) -> NSImage {
@@ -344,6 +422,7 @@ struct RepoDetailPopover: View {
     let repoName: String
     let status: RepoStatus
     var actions: [Action] = []
+    var fetchState: FetchState? = nil
     var onAction: (Action) -> Void = { _ in }
 
     /// Max paths/commits to list per section before "+N more".
@@ -357,10 +436,54 @@ struct RepoDetailPopover: View {
             } else {
                 sections
             }
+            if let fetchState {
+                fetchStatusLine(fetchState)
+            }
         }
         .padding(14)
         .frame(minWidth: 260, idealWidth: 320, maxWidth: 420, alignment: .leading)
     }
+
+    @ViewBuilder
+    private func fetchStatusLine(_ state: FetchState) -> some View {
+        if state.noRemote {
+            // Don't waste a row on no-remote repos in the detail panel.
+            EmptyView()
+        } else {
+            Divider()
+            HStack(spacing: 6) {
+                Image(systemName: state.consecutiveFailures == 0
+                      ? "arrow.triangle.2.circlepath"
+                      : "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(state.consecutiveFailures == 0
+                                     ? .primary.opacity(0.50)
+                                     : Color.orange)
+                Text(fetchStatusText(state))
+                    .font(.caption)
+                    .foregroundStyle(.primary.opacity(0.70))
+            }
+        }
+    }
+
+    private func fetchStatusText(_ state: FetchState) -> String {
+        if state.consecutiveFailures > 0 {
+            if let last = state.lastAttemptAt {
+                return "Last fetch failed \(Self.relativeFormatter.localizedString(for: last, relativeTo: Date()))"
+            }
+            return "Last fetch failed"
+        }
+        if let success = state.lastSuccessAt {
+            return "Last fetched \(Self.relativeFormatter.localizedString(for: success, relativeTo: Date()))"
+        }
+        return "Not fetched yet"
+    }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
