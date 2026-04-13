@@ -15,6 +15,7 @@ struct MenuContentView: View {
     /// plain @State + closure approach would capture a stale view value
     /// and stop working after the popup is closed and reopened.
     @StateObject private var modifierTracker = ModifierTracker()
+    @StateObject private var busyIndicator = BusyIndicator()
 
     private var visibleRepos: [Repo] {
         guard configStore.config.hideCleanRepos else { return store.repos }
@@ -40,6 +41,9 @@ struct MenuContentView: View {
             footer
         }
         .frame(width: 360)
+        .onChange(of: fetchScheduler.inFlightFetches) { _, newValue in
+            busyIndicator.update(busy: newValue > 0)
+        }
         .onDisappear {
             // Popup closed — drop any lingering hover detail panel.
             hoverDetail?.dismissImmediately()
@@ -104,21 +108,38 @@ struct MenuContentView: View {
                 .padding(.horizontal, 6)
             Spacer()
             Button {
+                // Pulse the spinner as click feedback — a plain status
+                // refresh often finishes in <150ms so the real busy
+                // counter would never surface one. The Option-click
+                // fetch path's own inFlightFetches counter takes over
+                // for the longer-running network work.
+                busyIndicator.pulse()
                 if modifierTracker.optionHeld {
                     fetchScheduler.manualFetch(repos: store.repos)
                 } else {
                     store.rebuildFromConfig()
                 }
             } label: {
-                // Lock the frame so swapping between the two SF Symbols
-                // (which have slightly different intrinsic heights) can't
-                // shift the header by a pixel or two.
-                Image(systemName: modifierTracker.optionHeld
-                      ? "arrow.triangle.2.circlepath"
-                      : "arrow.clockwise")
-                    .font(.system(size: 13, weight: .regular))
-                    .frame(width: 16, height: 16)
-                    .foregroundStyle(.primary.opacity(0.70))
+                // Lock the frame so swapping between icons (or to the
+                // spinner) can't shift the header height by a pixel or two.
+                Group {
+                    if busyIndicator.visible {
+                        // Same pattern as ActionBadge uses for push/pull
+                        // in-flight: a scaled-down system ProgressView.
+                        // Built-in animation, no custom rotation math to
+                        // fight with the button's own hover/press states.
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                    } else {
+                        Image(systemName: modifierTracker.optionHeld
+                              ? "arrow.triangle.2.circlepath"
+                              : "arrow.clockwise")
+                            .font(.system(size: 13, weight: .regular))
+                    }
+                }
+                .frame(width: 16, height: 16)
+                .foregroundStyle(.primary.opacity(0.70))
             }
             .buttonStyle(GhostButtonStyle())
             .pointingHandCursor()
@@ -207,6 +228,81 @@ extension View {
             } else {
                 NSCursor.pop()
             }
+        }
+    }
+}
+
+// MARK: - Busy indicator
+
+/// Debounced "is the app doing work right now?" signal for the header
+/// refresh button's spinner. Raw counter changes from RepoStore and
+/// FetchScheduler blink rapidly during FSEvents-driven status refreshes,
+/// so we wrap them in a leading-edge delay (brief bursts under 150ms
+/// never surface a spinner) and a minimum visible duration (once shown,
+/// the spinner holds for at least 400ms so it doesn't flicker off as
+/// quick refreshes finish). Together these match the "was there sustained
+/// activity worth showing" heuristic we actually want.
+final class BusyIndicator: ObservableObject {
+    @Published var visible = false
+
+    private var showWork: DispatchWorkItem?
+    private var hideWork: DispatchWorkItem?
+    private var shownAt: Date?
+
+    private static let leadingDelay: TimeInterval = 0.15
+    private static let minDuration: TimeInterval = 0.40
+
+    /// Forces the spinner visible for at least `duration` seconds,
+    /// regardless of whether any underlying work is actually running.
+    /// Used as "click feedback" for the refresh button — the refresh
+    /// itself is often faster than the eye can register, so we pulse
+    /// the spinner for a fixed window just to confirm the click.
+    func pulse(duration: TimeInterval = 0.5) {
+        showWork?.cancel()
+        showWork = nil
+        hideWork?.cancel()
+        visible = true
+        shownAt = Date()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.visible = false
+            self.shownAt = nil
+            self.hideWork = nil
+        }
+        hideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
+    }
+
+    func update(busy: Bool) {
+        if busy {
+            // Cancel any pending hide — work picked back up.
+            hideWork?.cancel()
+            hideWork = nil
+            if visible || showWork != nil { return }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.visible = true
+                self.shownAt = Date()
+                self.showWork = nil
+            }
+            showWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.leadingDelay, execute: work)
+        } else {
+            // Cancel any pending show — burst ended before the leading
+            // delay elapsed, so we skip rendering the spinner entirely.
+            showWork?.cancel()
+            showWork = nil
+            if !visible || hideWork != nil { return }
+            let elapsed = shownAt.map { Date().timeIntervalSince($0) } ?? 0
+            let delay = max(0, Self.minDuration - elapsed)
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.visible = false
+                self.shownAt = nil
+                self.hideWork = nil
+            }
+            hideWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
     }
 }
