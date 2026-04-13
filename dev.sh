@@ -27,5 +27,10 @@ install_name_tool -add_rpath @executable_path/../Frameworks "$BIN_DST" 2>/dev/nu
 echo "==> Re-signing"
 codesign --force --deep --sign - "$APP" 2>&1 | tail -1
 
+# Touch the bundle so Finder shows a fresh modification date. macOS
+# does not propagate child-file mtimes up to the directory, so without
+# this the .app keeps whatever mtime it had from the last build.sh run.
+touch "$APP"
+
 echo
 echo "Done. Launch $APP."
