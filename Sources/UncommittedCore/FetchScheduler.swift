@@ -10,6 +10,12 @@ private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "fetch-sch
 /// off exponentially up to a 30-day cap, then the repo is treated as
 /// disabled until a manual fetch revives it. See docs/auto-fetch.md.
 public final class FetchScheduler: ObservableObject {
+    /// Number of `git fetch` operations currently running. Drives the
+    /// header refresh button's spinner so Option-click manual fetches
+    /// surface as "busy." Incremented before dispatch, decremented on
+    /// completion (both on the main thread).
+    @Published public private(set) var inFlightFetches: Int = 0
+
     /// How often the scheduler wakes up to look for work. Each tick is
     /// cheap when there's nothing to do.
     public static let tickInterval: TimeInterval = 5 * 60
@@ -249,10 +255,24 @@ public final class FetchScheduler: ObservableObject {
         // `remoteCheckedThisLaunch` set on a background thread would race
         // with the rebuild() pruning path.
         let shouldVerifyRemote = !remoteCheckedThisLaunch.contains(key)
+        // Bump the in-flight counter immediately on the main thread so
+        // the header spinner fires as soon as the user kicks off work —
+        // don't wait for the OperationQueue to schedule the block.
+        inFlightFetches += 1
         let operation = BlockOperation()
         operation.addExecutionBlock { [weak self, weak operation] in
-            guard let self, let operation, !operation.isCancelled else { return }
-            if self.stopped && !manual { return }
+            // Always decrement on every exit path. Local helper so we
+            // can't forget an early-return path.
+            let finish: () -> Void = {
+                guard let self else { return }
+                DispatchQueue.main.async {
+                    self.inFlightFetches = max(0, self.inFlightFetches - 1)
+                }
+            }
+            guard let self, let operation, !operation.isCancelled else {
+                finish(); return
+            }
+            if self.stopped && !manual { finish(); return }
 
             // Skip silently if we already know this repo has no remote
             // — but only once per launch. `remoteCheckedThisLaunch` is
@@ -260,7 +280,7 @@ public final class FetchScheduler: ObservableObject {
             // don't repeatedly hit `git remote` for the same repo.
             let cachedState = self.fetchStateStore.state(for: url)
             if cachedState.noRemote && !shouldVerifyRemote && !manual {
-                return
+                finish(); return
             }
 
             // First check this launch (or a manual fetch) — verify the
@@ -274,14 +294,19 @@ public final class FetchScheduler: ObservableObject {
                     self.remoteCheckedThisLaunch.insert(key)
                     self.fetchStateStore.update(url) { $0.noRemote = !hasRemote }
                 }
-                if !hasRemote { return }
+                if !hasRemote { finish(); return }
             }
 
-            if operation.isCancelled || (self.stopped && !manual) { return }
+            if operation.isCancelled || (self.stopped && !manual) {
+                finish(); return
+            }
             let result = GitService.fetch(at: url)
             let now = Date()
 
             DispatchQueue.main.async {
+                // Decrement is the last thing we do on this path so the
+                // spinner stays up until the state write lands.
+                defer { self.inFlightFetches = max(0, self.inFlightFetches - 1) }
                 // Bail if the user disabled the feature while this
                 // operation was running, OR if the repo was removed
                 // from sources between scheduling and completion. In
