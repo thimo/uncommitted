@@ -78,11 +78,14 @@ func render(size: CGFloat) -> NSImage {
     ctx.addPath(path)
     ctx.clip()
 
-    // Pink → purple → blue linear gradient as the base fill.
+    // Pink → purple → blue-violet linear gradient. Values sampled from
+    // Datadog's brand gradient: #E00090 → #8900D2 → #4F00FF. All three
+    // points have green ≈ 0, which keeps the palette highly saturated
+    // and avoids the cyan tint the previous gradient had at its blue end.
     let colors = [
-        NSColor(srgbRed: 1.00, green: 0.20, blue: 0.58, alpha: 1).cgColor, // hot pink
-        NSColor(srgbRed: 0.55, green: 0.28, blue: 0.92, alpha: 1).cgColor, // purple
-        NSColor(srgbRed: 0.22, green: 0.56, blue: 1.00, alpha: 1).cgColor, // blue
+        NSColor(srgbRed: 0.878, green: 0.000, blue: 0.565, alpha: 1).cgColor, // #E00090
+        NSColor(srgbRed: 0.537, green: 0.000, blue: 0.824, alpha: 1).cgColor, // #8900D2
+        NSColor(srgbRed: 0.310, green: 0.000, blue: 1.000, alpha: 1).cgColor, // #4F00FF
     ]
     let gradient = CGGradient(
         colorsSpace: CGColorSpaceCreateDeviceRGB(),
@@ -96,11 +99,12 @@ func render(size: CGFloat) -> NSImage {
         options: []
     )
 
-    // Warm radial hotspot in the upper-left of the inner rect. Screen-
-    // blended so it adds luminance without washing out the base saturation.
+    // Vivid magenta radial hotspot in the upper-left of the inner rect.
+    // Screen-blended so it adds luminance without washing out the base
+    // saturation. Keeps green low to stay on-palette with the gradient.
     let hotspotColors = [
-        NSColor(srgbRed: 1.00, green: 0.45, blue: 0.75, alpha: 0.70).cgColor,
-        NSColor(srgbRed: 1.00, green: 0.45, blue: 0.75, alpha: 0.00).cgColor,
+        NSColor(srgbRed: 1.00, green: 0.10, blue: 0.70, alpha: 0.70).cgColor,
+        NSColor(srgbRed: 1.00, green: 0.10, blue: 0.70, alpha: 0.00).cgColor,
     ]
     let hotspot = CGGradient(
         colorsSpace: CGColorSpaceCreateDeviceRGB(),
@@ -172,9 +176,9 @@ func render(size: CGFloat) -> NSImage {
     )
     let glowOuterRadius = innerHoleRadius * svgScale * 3.5
     let glowColors = [
-        NSColor(srgbRed: 1.00, green: 0.35, blue: 0.70, alpha: 1.0).cgColor,
-        NSColor(srgbRed: 1.00, green: 0.55, blue: 0.82, alpha: 0.9).cgColor,
-        NSColor(srgbRed: 1.00, green: 0.55, blue: 0.82, alpha: 0.0).cgColor,
+        NSColor(srgbRed: 1.00, green: 0.00, blue: 0.60, alpha: 1.0).cgColor,
+        NSColor(srgbRed: 1.00, green: 0.15, blue: 0.75, alpha: 0.9).cgColor,
+        NSColor(srgbRed: 1.00, green: 0.15, blue: 0.75, alpha: 0.0).cgColor,
     ]
     let glow = CGGradient(
         colorsSpace: CGColorSpaceCreateDeviceRGB(),
