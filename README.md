@@ -74,9 +74,9 @@ of completion, no explicit refresh needed.
 ## Auto-fetch from remotes
 
 By default Uncommitted only reads what's already on disk — the unpulled
-count reflects whatever was last fetched manually. Turn on **Fetch from
-remotes** in Settings → General to have Uncommitted run `git fetch` in
-the background on a tiered cadence:
+count reflects whatever was last fetched manually. Turn on **Auto-fetch
+from remotes** in Settings → General to have Uncommitted run `git fetch`
+in the background on a tiered cadence:
 
 - Repos with activity in the last week: every **24 hours**
 - Older repos: every **7 days**
@@ -147,8 +147,8 @@ bar popover to pick any of the others. Drag to reorder.
 
 - **Hide repositories with no changes** — only show repos that need attention
 - **Launch Uncommitted at login** — via `SMAppService`
-- **Fetch from remotes** — periodic background `git fetch` so the unpulled
-  count stays current without manual intervention. See [Auto-fetch
+- **Auto-fetch from remotes** — periodic background `git fetch` so the
+  unpulled count stays current without manual intervention. See [Auto-fetch
   from remotes](#auto-fetch-from-remotes).
 
 ### Config file

@@ -57,11 +57,11 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                Toggle("Fetch from remotes", isOn: $configStore.config.fetchFromRemotes)
+                Toggle("Auto-fetch from remotes", isOn: $configStore.config.fetchFromRemotes)
             } header: {
                 Text("Refresh")
             } footer: {
-                Text("Periodically run `git fetch` so the unpulled count stays current. Active repos refresh daily, idle repos weekly. Failures back off automatically; chronically failing repos are marked in the popup.")
+                Text("Periodically run `git fetch` in the background so the unpulled count stays current. Active repos refresh daily, idle repos weekly. Failures back off automatically; chronically failing repos are marked in the popup. Manual fetches via Option-click or right-click work regardless of this setting.")
                     .font(.caption)
                     .foregroundStyle(.primary.opacity(0.60))
             }
