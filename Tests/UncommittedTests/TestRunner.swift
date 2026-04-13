@@ -74,6 +74,8 @@ struct TestRunnerMain {
         GitStatusParserTests.register()
         ConfigCodableTests.register()
         RepoResolutionTests.register()
+        FetchSchedulerTests.register()
+        FetchStateStoreTests.register()
 
         var passed = 0
         var failed = 0
