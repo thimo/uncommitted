@@ -612,7 +612,7 @@ struct StatusBadges: View {
     let onPull: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             if status.isClean {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.body.weight(.medium))
@@ -669,7 +669,7 @@ private struct ReadOnlyBadge: View {
         }
         .font(.body.weight(.medium).monospacedDigit())
         .foregroundStyle(color)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 4)
         .padding(.vertical, 2)
     }
 }
@@ -705,7 +705,7 @@ private struct ActionBadge: View {
             }
             .font(.body.weight(.medium).monospacedDigit())
             .foregroundStyle(color)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(
                 RoundedRectangle(cornerRadius: interactiveCornerRadius)
