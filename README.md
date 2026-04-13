@@ -71,6 +71,28 @@ they run, and the `.git/refs` changes they produce get picked up by
 the FSEvents watcher automatically — the count updates within a second
 of completion, no explicit refresh needed.
 
+## Auto-fetch from remotes
+
+By default Uncommitted only reads what's already on disk — the unpulled
+count reflects whatever was last fetched manually. Turn on **Fetch from
+remotes** in Settings → General to have Uncommitted run `git fetch` in
+the background on a tiered cadence:
+
+- Repos with activity in the last week: every **24 hours**
+- Older repos: every **7 days**
+
+Fetches run silently in the background. Repos that fail to fetch back
+off exponentially up to 30 days, then go dormant; a small warning glyph
+next to the repo name surfaces problems before they get there. Repos
+without a remote are skipped entirely.
+
+To fetch on demand, **Option-click** the refresh button in the popup
+header (the icon swaps to indicate the alternate action), or use the
+"Fetch from remote" item on a repo row's right-click menu. A manual
+fetch always runs, even on dormant repos.
+
+Full details: [docs/auto-fetch.md](docs/auto-fetch.md).
+
 ## Requirements
 
 - macOS 14 (Sonoma) or later
@@ -125,6 +147,9 @@ bar popover to pick any of the others. Drag to reorder.
 
 - **Hide repositories with no changes** — only show repos that need attention
 - **Launch Uncommitted at login** — via `SMAppService`
+- **Fetch from remotes** — periodic background `git fetch` so the unpulled
+  count stays current without manual intervention. See [Auto-fetch
+  from remotes](#auto-fetch-from-remotes).
 
 ### Config file
 
