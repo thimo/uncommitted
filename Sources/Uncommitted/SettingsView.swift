@@ -56,6 +56,16 @@ struct GeneralSettingsView: View {
                     }
             }
 
+            Section {
+                Toggle("Fetch from remotes", isOn: $configStore.config.fetchFromRemotes)
+            } header: {
+                Text("Refresh")
+            } footer: {
+                Text("Periodically run `git fetch` so the unpulled count stays current. Active repos refresh daily, idle repos weekly. Failures back off automatically; chronically failing repos are marked in the popup.")
+                    .font(.caption)
+                    .foregroundStyle(.primary.opacity(0.60))
+            }
+
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: $autoCheckForUpdates)
                     .onChange(of: autoCheckForUpdates) { _, newValue in

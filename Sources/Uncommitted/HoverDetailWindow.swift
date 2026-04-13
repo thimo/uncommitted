@@ -18,6 +18,12 @@ import UncommittedCore
 /// the annotation makes `closePopover()` need to hop through the actor
 /// boundary which cascades into `AppDelegate` requiring isolation.
 final class HoverDetailController {
+    /// Optional fetch state lookup. Set by AppDelegate at construction time
+    /// so the detail panel can show "Last fetched X ago" / failure status.
+    weak var fetchStateStore: FetchStateStore?
+    /// Whether the auto-fetch feature is on. The detail panel only shows
+    /// fetch info when this is true — there's nothing to report otherwise.
+    var fetchEnabled: Bool = false
     /// Fade-in / fade-out duration. Tweak this to change the feel.
     private static let fadeDuration: TimeInterval = 0.1
     /// How long the cursor must sit on a row before the panel appears.
@@ -212,11 +218,13 @@ final class HoverDetailController {
 
         let actions = currentActions
         let onAction = currentOnAction
+        let fetchState = fetchEnabled ? fetchStateStore?.state(for: repo.url) : nil
         let content = HoverDetailContent(
             repoName: repo.name,
             status: status,
             arrowSide: currentSide,
             actions: actions,
+            fetchState: fetchState,
             onAction: { action in onAction?(action) },
             onHoverChange: { [weak self] in self?.panelHover($0) }
         )
@@ -383,6 +391,7 @@ struct HoverDetailContent: View {
     let status: RepoStatus
     let arrowSide: PanelSide
     let actions: [Action]
+    let fetchState: FetchState?
     let onAction: (Action) -> Void
     let onHoverChange: (Bool) -> Void
 
@@ -399,6 +408,7 @@ struct HoverDetailContent: View {
             repoName: repoName,
             status: status,
             actions: actions,
+            fetchState: fetchState,
             onAction: onAction
         )
             .frame(width: 260)

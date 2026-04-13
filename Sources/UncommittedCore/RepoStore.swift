@@ -12,6 +12,7 @@ public final class RepoStore: ObservableObject {
     @Published public private(set) var inFlight: [UUID: InFlightAction] = [:]
 
     private let configStore: ConfigStore
+    public let fetchStateStore: FetchStateStore
     private var cancellables = Set<AnyCancellable>()
     private var watcher: RepoWatcher?
     private var refreshTimer: Timer?
@@ -45,8 +46,9 @@ public final class RepoStore: ObservableObject {
         repos.reduce(0) { $0 + ($1.status?.behind ?? 0) }
     }
 
-    public init(configStore: ConfigStore) {
+    public init(configStore: ConfigStore, fetchStateStore: FetchStateStore) {
         self.configStore = configStore
+        self.fetchStateStore = fetchStateStore
 
         self.watcher = RepoWatcher { [weak self] changedURL in
             self?.handleFileChange(at: changedURL)
@@ -99,6 +101,14 @@ public final class RepoStore: ObservableObject {
         for index in repos.indices {
             refresh(repoAt: index)
         }
+    }
+
+    /// Refresh a single repo by URL. Used by the `FetchScheduler` after a
+    /// successful background fetch so the unpulled count updates without
+    /// waiting for the next periodic refresh tick.
+    public func refresh(url: URL) {
+        guard let index = repos.firstIndex(where: { $0.url == url }) else { return }
+        refresh(repoAt: index)
     }
 
     /// Runs `git push` on the given repo. Marks it in-flight so the UI can
@@ -172,6 +182,10 @@ public final class RepoStore: ObservableObject {
         self.repos = resolvedURLs.map { url in
             existing[url] ?? Repo(id: UUID(), url: url, status: nil)
         }
+
+        // Drop fetch state entries for repos that no longer exist so the
+        // persisted file doesn't grow without bound.
+        fetchStateStore.prune(to: resolvedURLs)
 
         watcher?.watch(resolvedURLs)
         refreshAll()
