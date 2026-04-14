@@ -42,14 +42,25 @@ public enum GitService {
             .map(String.init)
     }
 
+    /// Prepended to any command that talks to a remote so a broken
+    /// network fails fast instead of hanging on libcurl's default
+    /// retry timeline. If the transfer drops below 1 KB/s for 20
+    /// continuous seconds, git aborts with a "transfer closed" error.
+    /// A healthy pull/push even on a weak wifi link stays well above
+    /// this; a disconnected machine dies in ~20s.
+    private static let lowSpeedGuard: [String] = [
+        "-c", "http.lowSpeedLimit=1000",
+        "-c", "http.lowSpeedTime=20",
+    ]
+
     public static func push(at url: URL) -> ActionResult {
-        action(["push"], at: url)
+        action(Self.lowSpeedGuard + ["push"], at: url)
     }
 
     /// Uses `--ff-only` so a diverged branch fails loudly rather than creating
     /// a merge commit or rebasing local work without user intent.
     public static func pull(at url: URL) -> ActionResult {
-        action(["pull", "--ff-only"], at: url)
+        action(Self.lowSpeedGuard + ["pull", "--ff-only"], at: url)
     }
 
     /// Background fetch from `origin`. `--quiet --no-tags --prune` keeps
@@ -57,7 +68,7 @@ public enum GitService {
     /// `FetchScheduler`; goes through the same execute() pipeline as
     /// push/pull so SIGKILL-on-timeout still applies for stuck ssh helpers.
     public static func fetch(at url: URL) -> ActionResult {
-        action(["fetch", "--quiet", "--no-tags", "--prune", "origin"], at: url)
+        action(Self.lowSpeedGuard + ["fetch", "--quiet", "--no-tags", "--prune", "origin"], at: url)
     }
 
     /// Returns true if the repo has at least one remote configured. Used
