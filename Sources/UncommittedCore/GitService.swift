@@ -139,11 +139,32 @@ public enum GitService {
     /// After git exits, how long we wait for the stdout/stderr pipes to
     /// drain to EOF. Should be near-instant in the normal case — git is
     /// the only writer, so EOF fires the moment the process dies. If a
-    /// child subprocess (ssh ControlMaster, credential helper) inherited
-    /// our pipe FDs and stays alive past git's exit, EOF is blocked on
-    /// that child, so we bail after this timeout, kill the process group,
-    /// and return a stale-state-refresh error.
+    /// child subprocess (credential helper, etc) inherited our pipe FDs
+    /// and stays alive past git's exit, EOF is blocked on that child, so
+    /// we bail after this timeout and kill the process group. The real
+    /// termination status still comes from git itself — the drain timeout
+    /// just caps how long we wait to collect its stderr text.
     private static let pipeDrainTimeoutSeconds: Int = 2
+
+    /// Baseline environment for every git invocation. Disables ssh
+    /// ControlMaster multiplexing so that the ssh child git spawns for
+    /// network ops (fetch/pull/push) exits cleanly with git instead of
+    /// forking a long-lived master process that inherits — and holds
+    /// open — our stdout/stderr pipes past git's own exit. Without this,
+    /// the drain loop stalls until `pipeDrainTimeoutSeconds`, the process
+    /// group gets SIGKILL'd, and a successful pull gets reported as a
+    /// "background helper kept pipes open" failure.
+    ///
+    /// Honours an existing `GIT_SSH_COMMAND` if the user has one set —
+    /// we only inject defaults when nothing is configured, so a custom
+    /// ssh wrapper still wins.
+    private static func buildEnvironment() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        if env["GIT_SSH_COMMAND"] == nil {
+            env["GIT_SSH_COMMAND"] = "ssh -o ControlMaster=no -o ControlPath=none"
+        }
+        return env
+    }
 
     /// Runs `/usr/bin/git <args>` in `url` with stdout and stderr captured
     /// concurrently on background queues.
@@ -165,6 +186,7 @@ public enum GitService {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.currentDirectoryURL = url
         process.arguments = args
+        process.environment = buildEnvironment()
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -227,7 +249,9 @@ public enum GitService {
         if drained == .timedOut {
             // Sever any surviving children from the pipes by killing the
             // process group. git itself is already gone; this only targets
-            // ssh helpers and the like.
+            // credential helpers or other subprocesses that inherited our
+            // pipe FDs. ssh ControlMaster is disabled via GIT_SSH_COMMAND
+            // so that specific offender shouldn't reach us any more.
             let pgid = getpgid(process.processIdentifier)
             if pgid > 0 {
                 Foundation.kill(-pgid, SIGKILL)
@@ -238,10 +262,17 @@ public enum GitService {
             try? stdoutPipe.fileHandleForReading.close()
             try? stderrPipe.fileHandleForReading.close()
 
+            // Trust git's own termination status — the drain timeout only
+            // tells us "we couldn't collect all of stderr," not "the command
+            // failed." Returning whatever stderr we did manage to buffer
+            // before the timeout keeps any classified-error messages intact
+            // on a genuine failure, and lets a successful exit flow straight
+            // through to the success path on the caller side without a
+            // spurious "Pull failed" dialog.
             return ExecuteResult(
-                exitStatus: -1,
-                stdout: Data(),
-                stderr: "A background helper (ssh ControlMaster, credential cache) kept stdout/stderr open after git exited. Git probably succeeded — refresh to confirm.".data(using: .utf8) ?? Data(),
+                exitStatus: process.terminationStatus,
+                stdout: stdoutData,
+                stderr: stderrData,
                 launchFailure: nil
             )
         }
