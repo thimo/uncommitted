@@ -76,6 +76,7 @@ struct TestRunnerMain {
         RepoResolutionTests.register()
         FetchSchedulerTests.register()
         FetchStateStoreTests.register()
+        GitErrorClassifierTests.register()
 
         var passed = 0
         var failed = 0

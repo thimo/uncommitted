@@ -146,9 +146,15 @@ public final class RepoStore: ObservableObject {
                 guard let self else { return }
                 self.inFlight[id] = nil
                 if !result.success {
+                    // Prefer the classified friendly message when we
+                    // have one, falling back to raw stderr for cases
+                    // we haven't classified yet.
+                    let friendly = result.kind?.userMessage
+                    let message = friendly ?? result.errorOutput ?? "Unknown error"
                     Self.presentError(
                         title: "\(kind == .push ? "Push" : "Pull") failed — \(repoName)",
-                        message: result.errorOutput ?? "Unknown error"
+                        message: message,
+                        detail: friendly != nil ? result.errorOutput : nil
                     )
                 }
                 if let index = self.repos.firstIndex(where: { $0.id == id }) {
@@ -158,13 +164,30 @@ public final class RepoStore: ObservableObject {
         }
     }
 
-    private static func presentError(title: String, message: String) {
+    private static func presentError(title: String, message: String, detail: String? = nil) {
         // NSAlert.runModal() takes focus on its own — don't yank the whole
         // app forward just to display a warning sheet.
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
+        if let detail, !detail.isEmpty {
+            // Raw git stderr available via a disclosure so the friendly
+            // message can stay short but power users can still read
+            // git's own output.
+            let accessory = NSTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 120))
+            accessory.string = detail
+            accessory.isEditable = false
+            accessory.isSelectable = true
+            accessory.font = NSFont.monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+            accessory.textContainerInset = NSSize(width: 4, height: 4)
+            let scroll = NSScrollView(frame: accessory.frame)
+            scroll.documentView = accessory
+            scroll.hasVerticalScroller = true
+            scroll.autohidesScrollers = true
+            scroll.borderType = .lineBorder
+            alert.accessoryView = scroll
+        }
         alert.runModal()
     }
 

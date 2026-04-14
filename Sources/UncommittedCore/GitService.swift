@@ -1,10 +1,51 @@
 import Foundation
+import os.log
+
+private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "git")
+
+/// Classified representation of a git command failure. Cases are added
+/// as we encounter real examples — unrecognised stderr falls through to
+/// `.unknown` which preserves today's behaviour (raw stderr in the alert).
+/// The point of classification is layered: a friendlier user-facing
+/// message, an audit trail via os.log, and a hook for future smart
+/// responses (auto-retry for transient failures, recovery buttons, etc).
+public enum GitError: Equatable {
+    /// `git pull --ff-only` refused because the local branch has commits
+    /// the remote doesn't, and vice versa — not a fast-forward.
+    case divergedFFOnly
+    /// `git push` rejected because the local branch is behind the remote.
+    case pushRejectedNonFastForward
+    /// Fallback: git exited non-zero but we didn't recognise the stderr
+    /// pattern. The raw text is preserved so the alert can still show it.
+    case unknown(stderr: String, exitStatus: Int32)
+
+    /// Short, user-facing explanation suitable for an alert body. For
+    /// `.unknown` the caller falls back to the raw stderr.
+    public var userMessage: String? {
+        switch self {
+        case .divergedFFOnly:
+            return "Your branch and the remote have both moved on independently. Git won't auto-merge or rebase them from the menu bar — resolve it in your editor or terminal and try again."
+        case .pushRejectedNonFastForward:
+            return "The remote has commits your branch doesn't. Pull first, resolve any conflicts, then push again."
+        case .unknown:
+            return nil
+        }
+    }
+}
 
 public enum GitService {
     public struct ActionResult {
         public let success: Bool
         /// Captured stderr for use in error alerts. Nil on success.
         public let errorOutput: String?
+        /// Classified failure kind. Nil on success.
+        public let kind: GitError?
+
+        public init(success: Bool, errorOutput: String?, kind: GitError? = nil) {
+            self.success = success
+            self.errorOutput = errorOutput
+            self.kind = kind
+        }
     }
 
     // MARK: - Entry points
@@ -220,18 +261,50 @@ public enum GitService {
         let result = execute(args, at: url)
 
         if let launchFailure = result.launchFailure {
-            return ActionResult(success: false, errorOutput: launchFailure.localizedDescription)
+            log.error("launch failed at \(url.path, privacy: .public): \(launchFailure.localizedDescription, privacy: .public)")
+            return ActionResult(
+                success: false,
+                errorOutput: launchFailure.localizedDescription,
+                kind: nil
+            )
         }
 
         if result.exitStatus == 0 {
-            return ActionResult(success: true, errorOutput: nil)
+            return ActionResult(success: true, errorOutput: nil, kind: nil)
         }
 
         let text = String(data: result.stderr, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let message = (text?.isEmpty == false ? text : nil)
-            ?? "git exited with status \(result.exitStatus)"
-        return ActionResult(success: false, errorOutput: message)
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let message = !text.isEmpty ? text : "git exited with status \(result.exitStatus)"
+        let kind = classify(exitStatus: result.exitStatus, stderr: text)
+        log.error("git \(args.joined(separator: " "), privacy: .public) failed at \(url.path, privacy: .public): \(String(describing: kind), privacy: .public) — \(text, privacy: .public)")
+        return ActionResult(success: false, errorOutput: message, kind: kind)
+    }
+
+    /// Pattern-match known failure modes from stderr. Conservative on
+    /// purpose: anything unrecognised stays `.unknown` and the alert
+    /// shows the raw output unchanged. Add new cases as we meet them.
+    /// Public so tests can exercise the patterns directly.
+    public static func classify(exitStatus: Int32, stderr: String) -> GitError {
+        let lower = stderr.lowercased()
+
+        // `git pull --ff-only` failure. Git phrases this two different
+        // ways depending on version and locale, so we check both.
+        if lower.contains("not possible to fast-forward")
+            || lower.contains("diverging branches can't be fast-forwarded")
+            || lower.contains("non-fast-forward") && lower.contains("pull") {
+            return .divergedFFOnly
+        }
+
+        // `git push` rejection. The canonical signal is a "[rejected]"
+        // ref line followed by "(non-fast-forward)" in the same block,
+        // plus "failed to push some refs to" as a secondary hint.
+        if lower.contains("(non-fast-forward)")
+            || (lower.contains("[rejected]") && lower.contains("failed to push some refs")) {
+            return .pushRejectedNonFastForward
+        }
+
+        return .unknown(stderr: stderr, exitStatus: exitStatus)
     }
 
     // MARK: - Parser
