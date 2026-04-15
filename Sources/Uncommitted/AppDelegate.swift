@@ -127,11 +127,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hView.layoutSubtreeIfNeeded()
         let fitting = hView.fittingSize
         guard fitting != panel.frame.size else { return }
+
+        // Unconditionally re-pin the top edge 1pt below the menu bar rather
+        // than preserving the panel's old top: Auto Layout can auto-grow
+        // the panel upward when intrinsic content expands, which displaces
+        // the top into the menu bar. Re-deriving the origin from
+        // `visibleFrame.maxY` every resize makes us robust to that.
+        let screen = panel.screen ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame ?? panel.frame
         var frame = panel.frame
-        // Anchor the panel's top-left (below the menu bar) so it grows
-        // downward, not upward into the menu bar.
-        frame.origin.y += frame.size.height - fitting.height
         frame.size = fitting
+        frame.origin.y = visibleFrame.maxY - fitting.height - 1
         panel.setFrame(frame, display: true, animate: false)
     }
 
@@ -216,6 +222,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(\.dismissPopover) { [weak self] in
                 self?.closePopup()
             }
+            .environment(\.resizePanel) { [weak self] in
+                self?.resizePanelIfVisible()
+            }
             .environment(\.hoverDetail, hoverDetail)
 
         let hosting = NSHostingController(rootView: AnyView(contentView))
@@ -253,6 +262,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panel.contentView = visualEffect
         self.panel = panel
+
+        // Auto Layout auto-resizes the panel whenever the hosting view's
+        // intrinsic content size changes (e.g. Option-hold reveals clean
+        // repos). NSWindow grows upward by default — origin stays, height
+        // increases — which pushes the top past the menu bar. Re-anchor
+        // the top whenever the panel resizes. The notification fires on
+        // any size change, including our own setFrame calls, so the guard
+        // inside re-anchor skips when nothing needs moving.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(panelDidResize(_:)),
+            name: NSWindow.didResizeNotification,
+            object: panel
+        )
+    }
+
+    @objc private func panelDidResize(_ note: Notification) {
+        guard let panel, panel.isVisible else { return }
+        let screen = panel.screen ?? NSScreen.main
+        guard let visibleFrame = screen?.visibleFrame else { return }
+        let desiredY = visibleFrame.maxY - panel.frame.size.height - 1
+        guard panel.frame.origin.y != desiredY else { return }
+        var frame = panel.frame
+        frame.origin.y = desiredY
+        panel.setFrame(frame, display: true, animate: false)
     }
 
     @objc private func togglePopup(_ sender: Any?) {
@@ -345,9 +379,18 @@ struct DismissPopoverKey: EnvironmentKey {
     static let defaultValue: () -> Void = {}
 }
 
+struct ResizePanelKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
 extension EnvironmentValues {
     var dismissPopover: () -> Void {
         get { self[DismissPopoverKey.self] }
         set { self[DismissPopoverKey.self] = newValue }
+    }
+
+    var resizePanel: () -> Void {
+        get { self[ResizePanelKey.self] }
+        set { self[ResizePanelKey.self] = newValue }
     }
 }

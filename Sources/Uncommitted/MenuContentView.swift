@@ -8,6 +8,7 @@ struct MenuContentView: View {
     @EnvironmentObject var fetchScheduler: FetchScheduler
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismissPopover) private var dismissPopover
+    @Environment(\.resizePanel) private var resizePanel
     @Environment(\.hoverDetail) private var hoverDetail
 
     /// Tracks whether the Option modifier is currently held. Updated by
@@ -18,7 +19,11 @@ struct MenuContentView: View {
     @StateObject private var busyIndicator = BusyIndicator()
 
     private var visibleRepos: [Repo] {
-        guard configStore.config.hideCleanRepos else { return store.repos }
+        // Holding Option temporarily reveals clean repos even when the filter
+        // is on — a peek, not a state change. The header toggle is for the
+        // persisted preference.
+        let hide = configStore.config.hideCleanRepos && !modifierTracker.optionHeld
+        guard hide else { return store.repos }
         return store.repos.filter { !($0.status?.isClean ?? false) }
     }
 
@@ -43,6 +48,18 @@ struct MenuContentView: View {
         .frame(width: 360)
         .onChange(of: fetchScheduler.inFlightFetches) { _, newValue in
             busyIndicator.update(busy: newValue > 0)
+        }
+        .onChange(of: modifierTracker.optionHeld) { _, _ in
+            // Dispatch to the next runloop so SwiftUI has committed the
+            // updated body before we read the hosting view's fitting size
+            // — reading it synchronously inside onChange sometimes returns
+            // the stale size, leaving the resize a no-op until Auto
+            // Layout's own cadence kicks in 100–300ms later. The panel's
+            // resize notification handler in AppDelegate re-anchors the
+            // top edge whenever the panel actually changes size.
+            DispatchQueue.main.async {
+                resizePanel()
+            }
         }
         .onDisappear {
             // Popup closed — drop any lingering hover detail panel.
@@ -309,7 +326,7 @@ final class BusyIndicator: ObservableObject {
 
 // MARK: - Modifier tracking
 
-/// Polls the system modifier state at 20Hz so SwiftUI views can react to
+/// Polls the system modifier state at ~60Hz so SwiftUI views can react to
 /// Option being held. We can't use `NSEvent.addLocalMonitor(.flagsChanged)`
 /// because the popup is hosted in a `.nonactivatingPanel` — local
 /// monitors only fire while the app is `.active`, which our popup is
@@ -322,7 +339,7 @@ final class ModifierTracker: ObservableObject {
 
     init() {
         self.optionHeld = NSEvent.modifierFlags.contains(.option)
-        self.timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+        self.timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             let held = NSEvent.modifierFlags.contains(.option)
             if self.optionHeld != held {
