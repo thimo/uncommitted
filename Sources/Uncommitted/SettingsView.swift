@@ -39,6 +39,9 @@ struct GeneralSettingsView: View {
                     }
                 }
                 Toggle("Hide clean repositories", isOn: $configStore.config.hideCleanRepos)
+                Text("Hold Option to peek at hidden repos without toggling this off.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Startup") {
