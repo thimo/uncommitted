@@ -68,8 +68,13 @@ public enum GitService {
     /// nil if git fails or the output can't be parsed as a valid status.
     /// When the branch is ahead of or behind its upstream, follows up with
     /// `git log` to capture commit subjects for the tooltips.
+    ///
+    /// Uses `--no-optional-locks` so we never grab `index.lock`. Without
+    /// this, every FSEvents-triggered status poll takes a brief lock that
+    /// collides with concurrent git operations (other tools, CI, Claude
+    /// Code instances running `git add`/`git commit` in the same repo).
     public static func status(at url: URL) -> RepoStatus? {
-        let result = execute(["status", "--porcelain=v2", "--branch"], at: url)
+        let result = execute(["--no-optional-locks", "status", "--porcelain=v2", "--branch"], at: url)
         guard result.exitStatus == 0 else { return nil }
         guard let output = String(data: result.stdout, encoding: .utf8) else { return nil }
         guard var parsed = parse(output) else { return nil }
