@@ -69,6 +69,10 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.primary.opacity(0.60))
             }
 
+            Section("Keyboard shortcut") {
+                ShortcutRecorderRow(shortcut: $configStore.config.globalShortcut)
+            }
+
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: $autoCheckForUpdates)
                     .onChange(of: autoCheckForUpdates) { _, newValue in
@@ -573,15 +577,138 @@ struct AboutSettingsView: View {
             Button("Check for Updates…") {
                 AppDelegate.shared?.updaterController.updater.checkForUpdates()
             }
-            .padding(.top, 6)
+            .padding(.top, 2)
+
+            Spacer(minLength: 4)
 
             Text("Built with ❤️ in the Netherlands by Thimo Jansen. MIT License.")
-                .padding(.top, 6)
                 .font(.caption)
                 .foregroundStyle(.primary.opacity(0.50))
                 .padding(.bottom, 16)
         }
         .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+// MARK: - Shortcut recorder
+
+/// Inline shortcut recorder: click to start recording, press a key combo
+/// to set it, Escape to cancel. Uses `addLocalMonitorForEvents` which
+/// works in the active Settings window without extra permissions.
+private struct ShortcutRecorderRow: View {
+    @Binding var shortcut: GlobalShortcut?
+    @StateObject private var recorder = ShortcutRecorderState()
+
+    var body: some View {
+        HStack {
+            Text("Toggle popup")
+            Spacer()
+            Button(action: { recorder.startRecording() }) {
+                Text(recorder.isRecording ? "Press shortcut…" : displayText)
+                    .frame(minWidth: 100, alignment: .center)
+                    .foregroundStyle(recorder.isRecording ? .secondary : .primary)
+            }
+            .buttonStyle(.bordered)
+            if shortcut != nil && !recorder.isRecording {
+                Button(action: { shortcut = nil }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .onChange(of: recorder.recorded) { _, newValue in
+            if let newValue {
+                shortcut = newValue
+                recorder.recorded = nil
+            }
+        }
+    }
+
+    private var displayText: String {
+        shortcut?.displayString ?? "None"
+    }
+}
+
+private final class ShortcutRecorderState: ObservableObject {
+    @Published var isRecording = false
+    @Published var recorded: GlobalShortcut?
+    private var monitor: Any?
+
+    func startRecording() {
+        guard !isRecording else { return }
+        isRecording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+
+            // Escape cancels recording.
+            if event.keyCode == 53 {
+                self.stopRecording()
+                return nil
+            }
+
+            // Require at least one "real" modifier (not just Shift alone).
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let hasModifier = mods.contains(.command)
+                || mods.contains(.control)
+                || mods.contains(.option)
+            guard hasModifier else { return nil }
+
+            let character = Self.displayCharacter(
+                for: event.keyCode,
+                fallback: event.charactersIgnoringModifiers
+            )
+            self.recorded = GlobalShortcut(
+                keyCode: Int(event.keyCode),
+                character: character,
+                command: mods.contains(.command),
+                shift: mods.contains(.shift),
+                option: mods.contains(.option),
+                control: mods.contains(.control)
+            )
+            self.stopRecording()
+            return nil // consume the event
+        }
+    }
+
+    private func stopRecording() {
+        isRecording = false
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+
+    /// Best-effort display string for a virtual key code. Falls back to
+    /// the event's `charactersIgnoringModifiers` for regular keys.
+    static func displayCharacter(for keyCode: UInt16, fallback: String?) -> String {
+        switch Int(keyCode) {
+        // F-keys
+        case 0x7A: return "F1"
+        case 0x78: return "F2"
+        case 0x63: return "F3"
+        case 0x76: return "F4"
+        case 0x60: return "F5"
+        case 0x61: return "F6"
+        case 0x62: return "F7"
+        case 0x64: return "F8"
+        case 0x65: return "F9"
+        case 0x6D: return "F10"
+        case 0x67: return "F11"
+        case 0x6F: return "F12"
+        // Special keys
+        case 0x31: return "Space"
+        case 0x24: return "Return"
+        case 0x30: return "Tab"
+        case 0x33: return "Delete"
+        case 0x75: return "Fwd Del"
+        case 0x7E: return "↑"
+        case 0x7D: return "↓"
+        case 0x7B: return "←"
+        case 0x7C: return "→"
+        default:
+            return fallback?.uppercased() ?? "?"
+        }
     }
 }

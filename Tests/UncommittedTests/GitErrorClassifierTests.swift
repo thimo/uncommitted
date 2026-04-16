@@ -58,6 +58,30 @@ enum GitErrorClassifierTests {
             )
         }
 
+        // MARK: - lockFileExists
+
+        test("GitError/lockFile_indexLock") {
+            let stderr = """
+            error: Unable to create '/Users/thimo/src/sportcity/electrolyte-calcium/.git/index.lock': File exists.
+
+            Another git process seems to be running in this repository, e.g.
+            an editor opened by 'git commit'. Please make sure all processes
+            are terminated then and try again.
+            """
+            try expectEqual(
+                GitService.classify(exitStatus: 128, stderr: stderr),
+                .lockFileExists
+            )
+        }
+
+        test("GitError/lockFile_refLock") {
+            let stderr = "error: Unable to create '/path/to/repo/.git/refs/heads/main.lock': File exists."
+            try expectEqual(
+                GitService.classify(exitStatus: 128, stderr: stderr),
+                .lockFileExists
+            )
+        }
+
         // MARK: - unknown fallback
 
         test("GitError/networkFailure_fallsThroughToUnknown") {

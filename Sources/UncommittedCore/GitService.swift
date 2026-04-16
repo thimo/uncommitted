@@ -15,6 +15,10 @@ public enum GitError: Equatable {
     case divergedFFOnly
     /// `git push` rejected because the local branch is behind the remote.
     case pushRejectedNonFastForward
+    /// A `.git/*.lock` file blocked the operation — another git process
+    /// is (or was) running. Transient in the common case; retried
+    /// automatically before surfacing to the user.
+    case lockFileExists
     /// Fallback: git exited non-zero but we didn't recognise the stderr
     /// pattern. The raw text is preserved so the alert can still show it.
     case unknown(stderr: String, exitStatus: Int32)
@@ -27,8 +31,18 @@ public enum GitError: Equatable {
             return "Your branch and the remote have both moved on independently. Git won't auto-merge or rebase them from the menu bar — resolve it in your editor or terminal and try again."
         case .pushRejectedNonFastForward:
             return "The remote has commits your branch doesn't. Pull first, resolve any conflicts, then push again."
+        case .lockFileExists:
+            return "Another git process is using this repo. If nothing else is running, the lock file may be stale — delete the .lock file inside .git/ to clear it."
         case .unknown:
             return nil
+        }
+    }
+
+    /// Whether this error is transient and worth retrying automatically.
+    public var isRetryable: Bool {
+        switch self {
+        case .lockFileExists: return true
+        default: return false
         }
     }
 }
@@ -288,7 +302,71 @@ public enum GitService {
         )
     }
 
+    /// How long to watch a lock file before giving up.
+    private static let lockWatchTimeout: TimeInterval = 5.0
+
     private static func action(_ args: [String], at url: URL) -> ActionResult {
+        let firstResult = singleAttempt(args, at: url)
+        guard !firstResult.success, case .lockFileExists = firstResult.kind else {
+            return firstResult
+        }
+
+        // Try to watch the lock file for deletion rather than sleeping
+        // blindly. Falls back to a short sleep if we can't parse the
+        // path or open the file.
+        let lockPath = Self.lockFilePath(from: firstResult.errorOutput ?? "")
+        if let lockPath {
+            let cleared = waitForLockRelease(path: lockPath, timeout: lockWatchTimeout)
+            if cleared {
+                log.info("lock file released, retrying at \(url.path, privacy: .public)")
+            } else {
+                log.info("lock file still present after \(lockWatchTimeout)s at \(url.path, privacy: .public)")
+            }
+        } else {
+            // Couldn't parse lock path — short sleep as fallback.
+            log.info("could not parse lock path, sleeping before retry at \(url.path, privacy: .public)")
+            Thread.sleep(forTimeInterval: 1.0)
+        }
+
+        return singleAttempt(args, at: url)
+    }
+
+    /// Extracts the `.lock` file path from git's stderr.
+    /// Pattern: `Unable to create '<path>.lock': File exists.`
+    private static func lockFilePath(from stderr: String) -> String? {
+        guard let range = stderr.range(of: "'[^']+\\.lock'", options: .regularExpression) else {
+            return nil
+        }
+        return String(stderr[range].dropFirst().dropLast())
+    }
+
+    /// Watches a lock file using a GCD file-system source (`O_EVTONLY`)
+    /// and returns `true` as soon as the file is deleted, or `false` if
+    /// the timeout expires. If the file is already gone when we try to
+    /// open it, returns `true` immediately.
+    private static func waitForLockRelease(path: String, timeout: TimeInterval) -> Bool {
+        let fd = open(path, O_EVTONLY)
+        guard fd >= 0 else {
+            // File already gone — retry right away.
+            return true
+        }
+        defer { close(fd) }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: .delete,
+            queue: DispatchQueue.global(qos: .utility)
+        )
+        source.setEventHandler { semaphore.signal() }
+        source.resume()
+
+        let result = semaphore.wait(timeout: .now() + timeout)
+        source.cancel()
+        return result == .success
+    }
+
+    private static func singleAttempt(_ args: [String], at url: URL) -> ActionResult {
         let result = execute(args, at: url)
 
         if let launchFailure = result.launchFailure {
@@ -333,6 +411,13 @@ public enum GitService {
         if lower.contains("(non-fast-forward)")
             || (lower.contains("[rejected]") && lower.contains("failed to push some refs")) {
             return .pushRejectedNonFastForward
+        }
+
+        // Lock file collision: another git process holds a lock on the
+        // index or a ref. Matches both `.git/index.lock` and ref-level
+        // locks like `.git/refs/heads/main.lock`.
+        if lower.contains("unable to create") && lower.contains(".lock") && lower.contains("file exists") {
+            return .lockFileExists
         }
 
         return .unknown(stderr: stderr, exitStatus: exitStatus)

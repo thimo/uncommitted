@@ -52,19 +52,23 @@ public struct Config: Codable, Equatable {
     /// at a tiered cadence (daily for active, weekly for idle). See
     /// docs/auto-fetch.md.
     public var fetchFromRemotes: Bool
+    /// Global hotkey to open/close the popup. Nil means no hotkey registered.
+    public var globalShortcut: GlobalShortcut?
 
     public init(
         sources: [Source] = [],
         actions: [Action] = Self.defaultActions,
         hideCleanRepos: Bool = false,
         menuBarLabelStyle: MenuBarLabelStyle = .total,
-        fetchFromRemotes: Bool = false
+        fetchFromRemotes: Bool = false,
+        globalShortcut: GlobalShortcut? = .defaultShortcut
     ) {
         self.sources = sources
         self.actions = actions
         self.hideCleanRepos = hideCleanRepos
         self.menuBarLabelStyle = menuBarLabelStyle
         self.fetchFromRemotes = fetchFromRemotes
+        self.globalShortcut = globalShortcut
     }
 
     public static var defaultActions: [Action] {
@@ -81,6 +85,7 @@ public struct Config: Codable, Equatable {
         case hideCleanRepos
         case menuBarLabelStyle
         case fetchFromRemotes
+        case globalShortcut
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,5 +95,11 @@ public struct Config: Codable, Equatable {
         self.hideCleanRepos = try container.decodeIfPresent(Bool.self, forKey: .hideCleanRepos) ?? false
         self.menuBarLabelStyle = try container.decodeIfPresent(MenuBarLabelStyle.self, forKey: .menuBarLabelStyle) ?? .total
         self.fetchFromRemotes = try container.decodeIfPresent(Bool.self, forKey: .fetchFromRemotes) ?? false
+        // Absent key → default shortcut (new installs). Explicit null → no shortcut (user cleared it).
+        if container.contains(.globalShortcut) {
+            self.globalShortcut = try container.decodeIfPresent(GlobalShortcut.self, forKey: .globalShortcut)
+        } else {
+            self.globalShortcut = .defaultShortcut
+        }
     }
 }
