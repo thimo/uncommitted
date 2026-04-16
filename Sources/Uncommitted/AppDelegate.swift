@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
+    private let hotkeyManager = HotkeyManager()
 
     private static let cornerRadius: CGFloat = 10
 
@@ -79,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
+        installMinimalMenu()
         setupStatusItem()
         setupPanel()
         updateStatusLabel()
@@ -106,6 +108,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] enabled in
                 self?.hoverDetail.fetchEnabled = enabled
+            }
+            .store(in: &cancellables)
+
+        // Global hotkey: register on launch, re-register when config changes.
+        hotkeyManager.onTrigger = { [weak self] in
+            self?.togglePopup(nil)
+        }
+        configStore.$config
+            .map(\.globalShortcut)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] shortcut in
+                if let shortcut {
+                    self?.hotkeyManager.register(shortcut)
+                } else {
+                    self?.hotkeyManager.unregister()
+                }
             }
             .store(in: &cancellables)
 
@@ -139,6 +158,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         frame.size = fitting
         frame.origin.y = visibleFrame.maxY - fitting.height - 1
         panel.setFrame(frame, display: true, animate: false)
+    }
+
+    // MARK: - Menu bar (LSUIElement fix)
+
+    /// LSUIElement apps have no menu bar, which breaks `performClose:`
+    /// (the red traffic-light button) because it needs a `close:` action
+    /// in the responder chain. Install a minimal hidden menu so the
+    /// Settings window can close normally. Bonus: Cmd+W works too.
+    private func installMinimalMenu() {
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Close Window",
+                        action: #selector(NSWindow.performClose(_:)),
+                        keyEquivalent: "w")
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+        NSApp.mainMenu = mainMenu
     }
 
     // MARK: - Status item

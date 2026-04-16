@@ -96,6 +96,43 @@ enum ConfigCodableTests {
             try expect(decoded.fetchFromRemotes == false)
         }
 
+        test("Config/globalShortcut_defaultIsCmdShiftU") {
+            let config = Config()
+            let s = try requireNotNil(config.globalShortcut)
+            try expectEqual(s.keyCode, 0x20)
+            try expect(s.command)
+            try expect(s.shift)
+            try expect(!s.option)
+            try expect(!s.control)
+        }
+
+        test("Config/globalShortcut_roundTrips") {
+            let original = Config(globalShortcut: GlobalShortcut(
+                keyCode: 0x12, character: "1", command: true, shift: false, option: true, control: false
+            ))
+            let data = try JSONEncoder().encode(original)
+            let decoded = try JSONDecoder().decode(Config.self, from: data)
+            try expectEqual(decoded.globalShortcut, original.globalShortcut)
+        }
+
+        test("Config/globalShortcut_absentKey_defaultsToDefault") {
+            // Existing config without the key → gets the default shortcut.
+            let json = """
+            { "sources": [], "actions": [] }
+            """.data(using: .utf8)!
+            let decoded = try JSONDecoder().decode(Config.self, from: json)
+            try expectEqual(decoded.globalShortcut, .defaultShortcut)
+        }
+
+        test("Config/globalShortcut_explicitNull_decodesToNil") {
+            // User explicitly cleared the shortcut → null in JSON → nil.
+            let json = """
+            { "sources": [], "actions": [], "globalShortcut": null }
+            """.data(using: .utf8)!
+            let decoded = try JSONDecoder().decode(Config.self, from: json)
+            try expectNil(decoded.globalShortcut)
+        }
+
         test("Config/menuBarLabelStyle_rawValuesAreStable") {
             // The raw values are what lands in config.json on disk — changing
             // them silently would orphan every existing user's setting.
