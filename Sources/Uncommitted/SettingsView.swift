@@ -322,7 +322,7 @@ struct ActionsSettingsView: View {
     }
 
     private func addCommand() {
-        let action = Action(name: "New command", kind: .command("open -a Terminal {path}"))
+        let action = Action(name: "New command", kind: .command("code {path}"))
         configStore.config.actions.append(action)
         selection = action.id
     }
@@ -434,7 +434,7 @@ struct ActionDetailView: View {
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(3, reservesSpace: true)
 
-                    Text("Runs with `/bin/zsh -l -c …`. Use `{path}` as the repository path.")
+                    Text("Runs with `/bin/zsh -l -c …` using your login shell's PATH. Use `{path}` as the repository path.")
                         .font(.caption)
                         .foregroundStyle(.primary.opacity(0.70))
                         .padding(.top, 2)

@@ -30,11 +30,31 @@ public enum ActionRunner {
             NSWorkspace.shared.open(repoURL)
 
         case .app(let appName):
-            run(executable: "/usr/bin/open", args: ["-a", appName, repoURL.path])
+            openInApp(name: appName, url: repoURL)
 
         case .command(let command):
             let expanded = command.replacingOccurrences(of: "{path}", with: repoURL.path)
             run(executable: "/bin/zsh", args: ["-l", "-c", expanded], environment: Self.shellEnvironment)
+        }
+    }
+
+    /// Opens a URL in a named app using NSWorkspace's modern API. This
+    /// properly activates the app (switching Spaces / raising fullscreen
+    /// windows) instead of shelling out to `open -a` which can leave
+    /// fullscreen apps in the background. Falls back to `open -a` if
+    /// we can't find the .app bundle on disk.
+    private static func openInApp(name: String, url: URL) {
+        if let appURL = AppLocator.url(forApp: name) {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config) { _, error in
+                if let error {
+                    log.error("NSWorkspace.open failed for \(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        } else {
+            // Fallback: can't find the .app, let `open -a` try.
+            run(executable: "/usr/bin/open", args: ["-a", name, url.path])
         }
     }
 
@@ -92,11 +112,13 @@ public enum ActionRunner {
     }
 }
 
-public enum AppIcons {
-    /// Returns the icon for a macOS application looked up by display name.
+/// Finds .app bundles by display name. Used by both ActionRunner (to
+/// open apps via NSWorkspace) and AppIcons (to grab their icons).
+public enum AppLocator {
+    /// Returns the URL of a macOS application looked up by display name.
     /// Checks common install locations plus one level of /Applications
     /// subdirectories (Setapp, Toolbox, etc.).
-    public static func icon(forApp name: String) -> NSImage? {
+    public static func url(forApp name: String) -> URL? {
         let fm = FileManager.default
         let primaryCandidates = [
             "/Applications/\(name).app",
@@ -104,18 +126,24 @@ public enum AppIcons {
             "\(NSHomeDirectory())/Applications/\(name).app",
         ]
         for path in primaryCandidates where fm.fileExists(atPath: path) {
-            return NSWorkspace.shared.icon(forFile: path)
+            return URL(fileURLWithPath: path)
         }
-        // Fall back to scanning /Applications one level deep for nested containers.
         if let children = try? fm.contentsOfDirectory(atPath: "/Applications") {
             for child in children where !child.hasSuffix(".app") {
                 let nested = "/Applications/\(child)/\(name).app"
                 if fm.fileExists(atPath: nested) {
-                    return NSWorkspace.shared.icon(forFile: nested)
+                    return URL(fileURLWithPath: nested)
                 }
             }
         }
         return nil
+    }
+}
+
+public enum AppIcons {
+    public static func icon(forApp name: String) -> NSImage? {
+        guard let url = AppLocator.url(forApp: name) else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
     }
 
     public static func icon(for action: Action) -> NSImage? {
