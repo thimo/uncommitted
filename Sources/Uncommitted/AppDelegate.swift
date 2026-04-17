@@ -136,16 +136,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.resizePanelIfVisible()
+                // SwiftUI may not have re-rendered yet (e.g. clean repos
+                // being filtered out after status loads). Follow up on
+                // the next runloop so fittingSize reflects the new content.
+                DispatchQueue.main.async {
+                    self?.resizePanelIfVisible()
+                }
             }
             .store(in: &cancellables)
     }
 
     private func resizePanelIfVisible() {
         guard let panel, panel.isVisible, let hView = hostingController?.view else { return }
-        hView.invalidateIntrinsicContentSize()
-        hView.layoutSubtreeIfNeeded()
-        let fitting = hView.fittingSize
-        guard fitting != panel.frame.size else { return }
+        let fitting = hView.intrinsicContentSize
+        guard fitting.width > 0, fitting.height > 0,
+              fitting != panel.frame.size else { return }
 
         // Unconditionally re-pin the top edge 1pt below the menu bar rather
         // than preserving the panel's old top: Auto Layout can auto-grow
@@ -265,6 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(\.hoverDetail, hoverDetail)
 
         let hosting = NSHostingController(rootView: AnyView(contentView))
+        hosting.sizingOptions = .intrinsicContentSize
         self.hostingController = hosting
 
         let panel = NSPanel(
@@ -341,7 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Size the panel to its SwiftUI content.
         let hView = hostingController.view
         hView.layoutSubtreeIfNeeded()
-        let fitting = hView.fittingSize
+        let fitting = hView.intrinsicContentSize
         panel.setContentSize(fitting)
 
         // Position: left-aligned to the button, 1pt below the menu bar.
