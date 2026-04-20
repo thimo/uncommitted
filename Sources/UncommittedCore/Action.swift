@@ -63,6 +63,11 @@ public enum ActionRunner {
     /// (fish config, .zprofile, .bash_profile — whatever the user has)
     /// and gives us the real PATH including Homebrew, rbenv, etc.
     /// Cached because PATH is stable within a process lifetime.
+    /// Timeout for the login-shell PATH resolution. Fish with heavy
+    /// plugins or a broken network mount can stall — don't let a static
+    /// initializer hang the app forever.
+    private static let shellPathTimeout: TimeInterval = 3.0
+
     private static let shellEnvironment: [String: String] = {
         var env = ProcessInfo.processInfo.environment
         let shell = env["SHELL"] ?? "/bin/zsh"
@@ -73,13 +78,23 @@ public enum ActionRunner {
         process.standardOutput = pipe
         process.standardInput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        if let _ = try? process.run() {
+        guard let _ = try? process.run() else { return env }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
             process.waitUntilExit()
-            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !output.isEmpty {
-                env["PATH"] = output
-            }
+            semaphore.signal()
+        }
+        if semaphore.wait(timeout: .now() + shellPathTimeout) == .timedOut {
+            process.terminate()
+            log.warning("$SHELL PATH resolution timed out after \(shellPathTimeout)s — using inherited PATH")
+            return env
+        }
+
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !output.isEmpty {
+            env["PATH"] = output
         }
         return env
     }()

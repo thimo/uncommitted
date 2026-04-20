@@ -49,9 +49,14 @@ public final class RepoWatcher {
             }
         }
 
+        // kFSEventStreamCreateFlagFileEvents is intentionally omitted —
+        // we only need to know WHICH REPO changed, not which file. Directory-
+        // level events are far fewer (one per changed directory per latency
+        // window vs. one per file write). kFSEventStreamCreateFlagNoDefer
+        // fires the first event immediately for responsiveness; subsequent
+        // events coalesce over the 2s latency window.
         let flags = UInt32(
             kFSEventStreamCreateFlagNoDefer
-            | kFSEventStreamCreateFlagFileEvents
             | kFSEventStreamCreateFlagUseCFTypes
         )
 
@@ -61,7 +66,7 @@ public final class RepoWatcher {
             &context,
             paths,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.5, // built-in latency: coalesces rapid file bursts
+            2.0, // kernel-level coalescing; per-repo debounce in RepoStore adds another 1s
             flags
         ) else {
             // FSEventStreamCreate keeps the retain on failure only if it

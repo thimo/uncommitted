@@ -53,6 +53,9 @@ public final class FetchScheduler: ObservableObject {
     /// (which silently skips repos whose remote was added or removed
     /// between sessions). Mutated only on the main thread.
     private var remoteCheckedThisLaunch = Set<String>()
+    /// In-flight fetch operations keyed by repo URL so push/pull can
+    /// cancel a running fetch before starting its own git operation.
+    private var inFlightOperations: [URL: Operation] = [:]
     /// Bounded by `parallelLimit` via `maxConcurrentOperationCount`. We
     /// don't reuse the existing GitService dispatch queues because the
     /// fetch operation needs strict parallelism limits and a separate
@@ -255,6 +258,10 @@ public final class FetchScheduler: ObservableObject {
         // `remoteCheckedThisLaunch` set on a background thread would race
         // with the rebuild() pruning path.
         let shouldVerifyRemote = !remoteCheckedThisLaunch.contains(key)
+        // Capture state we need on the main thread so the background
+        // block doesn't race on main-thread-only properties.
+        let cachedNoRemote = fetchStateStore.state(for: url).noRemote
+        let isStopped = stopped
         // Bump the in-flight counter immediately on the main thread so
         // the header spinner fires as soon as the user kicks off work —
         // don't wait for the OperationQueue to schedule the block.
@@ -267,19 +274,19 @@ public final class FetchScheduler: ObservableObject {
                 guard let self else { return }
                 DispatchQueue.main.async {
                     self.inFlightFetches = max(0, self.inFlightFetches - 1)
+                    self.inFlightOperations.removeValue(forKey: url)
                 }
             }
             guard let self, let operation, !operation.isCancelled else {
                 finish(); return
             }
-            if self.stopped && !manual { finish(); return }
+            if isStopped && !manual { finish(); return }
 
             // Skip silently if we already know this repo has no remote
             // — but only once per launch. `remoteCheckedThisLaunch` is
             // populated below as soon as a verification finishes, so we
             // don't repeatedly hit `git remote` for the same repo.
-            let cachedState = self.fetchStateStore.state(for: url)
-            if cachedState.noRemote && !shouldVerifyRemote && !manual {
+            if cachedNoRemote && !shouldVerifyRemote && !manual {
                 finish(); return
             }
 
@@ -297,7 +304,7 @@ public final class FetchScheduler: ObservableObject {
                 if !hasRemote { finish(); return }
             }
 
-            if operation.isCancelled || (self.stopped && !manual) {
+            if operation.isCancelled || (isStopped && !manual) {
                 finish(); return
             }
             let result = GitService.fetch(at: url)
@@ -333,6 +340,16 @@ public final class FetchScheduler: ObservableObject {
                 }
             }
         }
+        inFlightOperations[url] = operation
         fetchQueue.addOperation(operation)
+    }
+
+    /// Cancel any in-flight fetch for a repo. Called by RepoStore before
+    /// starting a push or pull so the two git operations don't collide
+    /// on index.lock.
+    public func cancelFetch(for url: URL) {
+        if let op = inFlightOperations.removeValue(forKey: url) {
+            op.cancel()
+        }
     }
 }

@@ -73,11 +73,22 @@ public enum GitService {
     /// this, every FSEvents-triggered status poll takes a brief lock that
     /// collides with concurrent git operations (other tools, CI, Claude
     /// Code instances running `git add`/`git commit` in the same repo).
+    /// Uses `--untracked-files=all` so individual files inside untracked
+    /// directories are counted, matching what other git tools show.
     public static func status(at url: URL) -> RepoStatus? {
-        let result = execute(["--no-optional-locks", "status", "--porcelain=v2", "--branch"], at: url)
-        guard result.exitStatus == 0 else { return nil }
-        guard let output = String(data: result.stdout, encoding: .utf8) else { return nil }
-        guard var parsed = parse(output) else { return nil }
+        let result = execute(["--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=all"], at: url)
+        guard result.exitStatus == 0 else {
+            log.error("status failed at \(url.path, privacy: .public): exit \(result.exitStatus)")
+            return nil
+        }
+        guard let output = String(data: result.stdout, encoding: .utf8) else {
+            log.error("status: non-UTF8 stdout at \(url.path, privacy: .public)")
+            return nil
+        }
+        guard var parsed = parse(output) else {
+            log.error("status: parse returned nil at \(url.path, privacy: .public)")
+            return nil
+        }
 
         if parsed.ahead > 0 {
             parsed.aheadCommits = commitSubjects(range: "@{u}..HEAD", at: url)
@@ -405,8 +416,7 @@ public enum GitService {
         // `git pull --ff-only` failure. Git phrases this two different
         // ways depending on version and locale, so we check both.
         if lower.contains("not possible to fast-forward")
-            || lower.contains("diverging branches can't be fast-forwarded")
-            || lower.contains("non-fast-forward") && lower.contains("pull") {
+            || lower.contains("diverging branches can't be fast-forwarded") {
             return .divergedFFOnly
         }
 

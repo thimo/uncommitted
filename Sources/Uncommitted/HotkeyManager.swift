@@ -28,7 +28,7 @@ final class HotkeyManager {
         )
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(
+        let handlerStatus = InstallEventHandler(
             GetApplicationEventTarget(),
             { (_, inEvent, userData) -> OSStatus in
                 guard let userData else { return OSStatus(eventNotHandledErr) }
@@ -41,11 +41,15 @@ final class HotkeyManager {
             selfPtr,
             &handlerRef
         )
+        guard handlerStatus == noErr else {
+            handlerRef = nil
+            return
+        }
 
         // 2. Register the specific key combo.
         let hotkeyID = EventHotKeyID(signature: Self.signature, id: 1)
         let modifiers = carbonModifiers(for: shortcut)
-        RegisterEventHotKey(
+        let hotkeyStatus = RegisterEventHotKey(
             UInt32(shortcut.keyCode),
             modifiers,
             hotkeyID,
@@ -53,6 +57,9 @@ final class HotkeyManager {
             0,
             &hotkeyRef
         )
+        if hotkeyStatus != noErr {
+            hotkeyRef = nil
+        }
     }
 
     func unregister() {

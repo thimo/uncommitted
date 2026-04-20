@@ -67,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             repoStore: repoStore,
             fetchStateStore: fetchStateStore
         )
+        self.repoStore.onCancelFetch = { [weak fetchScheduler] url in
+            fetchScheduler?.cancelFetch(for: url)
+        }
         self.hoverDetail = HoverDetailController()
         self.hoverDetail.fetchStateStore = fetchStateStore
         self.hoverDetail.fetchEnabled = configStore.config.fetchFromRemotes

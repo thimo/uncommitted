@@ -44,6 +44,23 @@ enum GitErrorClassifierTests {
             )
         }
 
+        test("GitError/pushRejected_fullHintMentioningPull") {
+            // Full git output includes "git pull" in the hint. Must NOT
+            // match divergedFFOnly just because "pull" appears in the text.
+            let stderr = """
+            To https://github.com/example/repo.git
+             ! [rejected]        develop -> develop (non-fast-forward)
+            error: failed to push some refs to 'https://github.com/example/repo.git'
+            hint: Updates were rejected because the tip of your current branch is behind
+            hint: its remote counterpart. If you want to integrate the remote changes,
+            hint: use 'git pull' before pushing again.
+            """
+            try expectEqual(
+                GitService.classify(exitStatus: 1, stderr: stderr),
+                .pushRejectedNonFastForward
+            )
+        }
+
         test("GitError/pushRejected_rejectedAndFailedToPush") {
             // Some git versions emit "[rejected]" without the "(non-fast-forward)"
             // suffix when config.push.default is "simple" — fall back to the

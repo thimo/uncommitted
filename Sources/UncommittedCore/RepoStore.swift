@@ -13,9 +13,19 @@ public final class RepoStore: ObservableObject {
 
     private let configStore: ConfigStore
     public let fetchStateStore: FetchStateStore
+    /// Wired up by AppDelegate after init to cancel in-flight fetches
+    /// before push/pull (avoids circular RepoStore ↔ FetchScheduler dep).
+    public var onCancelFetch: ((URL) -> Void)?
     private var cancellables = Set<AnyCancellable>()
     private var watcher: RepoWatcher?
     private var refreshTimer: Timer?
+    /// Per-repo debounce for FSEvents-triggered refreshes. Rapid file
+    /// changes (build output, scripts writing data) can fire hundreds of
+    /// events per second — without debounce each one spawns a `git status`.
+    /// The work item is keyed by repo URL; replacing it within the window
+    /// coalesces the burst into a single refresh.
+    private var pendingRefresh: [URL: DispatchWorkItem] = [:]
+    private static let refreshDebounce: TimeInterval = 1.0
 
     // Belt-and-suspenders backstop against missed updates. FSEvents handles
     // the fast path, but its stream can drift after sleep/wake and other
@@ -135,6 +145,9 @@ public final class RepoStore: ObservableObject {
         command: @escaping (URL) -> GitService.ActionResult
     ) {
         guard inFlight[repo.id] == nil else { return }
+        // Cancel any in-flight background fetch for this repo so the
+        // push/pull doesn't collide on index.lock.
+        onCancelFetch?(repo.url)
         inFlight[repo.id] = kind
         let url = repo.url
         let id = repo.id
@@ -232,8 +245,20 @@ public final class RepoStore: ObservableObject {
         }
     }
 
+    /// Paths inside `.git/` that don't affect `git status` output.
+    /// Changes here (gc, reflog, loose object writes) are noise.
+    private static let ignoredGitSubdirs = ["/.git/objects/", "/.git/logs/"]
+
     private func handleFileChange(at url: URL) {
         let changed = url.standardizedFileURL.path
+
+        // Skip .git internals that don't affect status (object packing,
+        // reflog writes, etc.). Changes in .git/refs/, .git/HEAD, and
+        // .git/index DO matter and are NOT filtered.
+        if Self.ignoredGitSubdirs.contains(where: { changed.contains($0) }) {
+            return
+        }
+
         // Require a trailing separator after the repo path so a change inside
         // `/repos/foobar/x.txt` doesn't accidentally match a repo at
         // `/repos/foo`. Also allow the exact repo path itself.
@@ -241,7 +266,21 @@ public final class RepoStore: ObservableObject {
             let repoPath = repo.url.standardizedFileURL.path
             return changed == repoPath || changed.hasPrefix(repoPath + "/")
         }) else { return }
-        refresh(repoAt: index)
+
+        // Debounce: cancel any pending refresh for this repo and schedule
+        // a new one. Rapid FSEvents (build output, scripts) coalesce into
+        // a single git-status instead of one per file event.
+        let repoURL = repos[index].url
+        pendingRefresh[repoURL]?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingRefresh.removeValue(forKey: repoURL)
+            if let i = self.repos.firstIndex(where: { $0.url == repoURL }) {
+                self.refresh(repoAt: i)
+            }
+        }
+        pendingRefresh[repoURL] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.refreshDebounce, execute: work)
     }
 
     /// Resolve user-configured sources to concrete repo URLs, honouring each
@@ -285,10 +324,9 @@ public final class RepoStore: ObservableObject {
         ) else { return }
 
         for child in children {
-            var isDir: ObjCBool = false
-            if fm.fileExists(atPath: child.path, isDirectory: &isDir), isDir.boolValue {
-                scan(url: child.standardizedFileURL, remainingDepth: remainingDepth - 1, into: &urls, fm: fm)
-            }
+            guard let vals = try? child.resourceValues(forKeys: [.isDirectoryKey]),
+                  vals.isDirectory == true else { continue }
+            scan(url: child.standardizedFileURL, remainingDepth: remainingDepth - 1, into: &urls, fm: fm)
         }
     }
 }
