@@ -8,11 +8,16 @@ public struct Action: Codable, Identifiable, Hashable {
     public var id: UUID
     public var name: String
     public var kind: ActionKind
+    /// App name to derive the icon from. Used by command actions that
+    /// wrap a specific app's CLI (e.g. "Tower" for `gittower {path}`).
+    /// Ignored for `.app` and `.finder` kinds which derive their own.
+    public var iconApp: String?
 
-    public init(id: UUID = UUID(), name: String, kind: ActionKind) {
+    public init(id: UUID = UUID(), name: String, kind: ActionKind, iconApp: String? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
+        self.iconApp = iconApp
     }
 }
 
@@ -162,6 +167,9 @@ public enum AppIcons {
     }
 
     public static func icon(for action: Action) -> NSImage? {
+        if let iconApp = action.iconApp {
+            return icon(forApp: iconApp)
+        }
         switch action.kind {
         case .finder:
             return NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app")

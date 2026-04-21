@@ -439,6 +439,22 @@ struct ActionDetailView: View {
                         .foregroundStyle(.primary.opacity(0.70))
                         .padding(.top, 2)
                 }
+
+                section(title: "Icon") {
+                    TextField(
+                        "App name (e.g. Tower)",
+                        text: Binding(
+                            get: { action.iconApp ?? "" },
+                            set: { action.iconApp = $0.isEmpty ? nil : $0 }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+
+                    Text("Show this app's icon next to the action. Leave empty for no icon.")
+                        .font(.caption)
+                        .foregroundStyle(.primary.opacity(0.70))
+                        .padding(.top, 2)
+                }
             }
 
             Spacer()
