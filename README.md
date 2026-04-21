@@ -115,6 +115,10 @@ icon programmatically via `Resources/make-icon.swift`, wraps the binary in a
 proper `.app` with `Info.plist`, ad-hoc codesigns, quits any running instance,
 and installs to `~/Applications/Uncommitted.app`.
 
+> **Note:** The app is currently ad-hoc signed, not notarized. macOS
+> Gatekeeper may block it on first launch — right-click → Open to bypass.
+> Proper Developer ID signing is pending Apple Developer Program enrollment.
+
 The app is `LSUIElement`, so there's no Dock icon — look for it in the menu
 bar.
 
@@ -142,6 +146,13 @@ is Finder + VS Code + Terminal; add more with the **+** menu:
 
 The **top** action runs on left-click. Right-click the repo row in the menu
 bar popover to pick any of the others. Drag to reorder.
+
+**Tip:** Some apps work better as custom commands than as application actions.
+For example, `gittower -n {path}` opens Tower in a new tab (or focuses the
+repo if already open), while the application action replaces the current tab.
+Similarly, `code {path}` uses VS Code's IPC to reuse the existing window
+across desktops. Set the **Icon** field to the app name (e.g. "Tower") to
+keep the app icon in the action list.
 
 ### General (Cmd+, → General)
 
