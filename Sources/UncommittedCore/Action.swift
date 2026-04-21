@@ -40,6 +40,13 @@ public enum ActionRunner {
         case .command(let command):
             let expanded = command.replacingOccurrences(of: "{path}", with: repoURL.path)
             run(executable: "/bin/zsh", args: ["-l", "-c", expanded], environment: Self.shellEnvironment)
+            // If the command wraps an app (iconApp set), activate it
+            // after a short delay so macOS switches to its Space/desktop.
+            // The command handles opening the folder; this just brings
+            // the window forward. LSUIElement apps can't trigger desktop
+            // switches on their own — NSRunningApplication.activate can.
+
+
         }
     }
 
