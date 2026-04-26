@@ -52,6 +52,15 @@ public struct Config: Codable, Equatable {
     /// at a tiered cadence (daily for active, weekly for idle). See
     /// docs/auto-fetch.md.
     public var fetchFromRemotes: Bool
+    /// When true, the GitHubStatusScheduler polls the GitHub API for PR
+    /// counts and CI status per repo. Requires `gh` CLI installed and
+    /// authenticated; the scheduler stays inert otherwise.
+    public var showGitHubStatus: Bool
+    /// Absolute paths of repos for which the GitHub status badges are
+    /// suppressed. Local git state still renders normally; only the
+    /// PR/CI signals (and their menubar contribution) are hidden. Use
+    /// for repos the user doesn't own and can't act on.
+    public var gitHubMutedRepos: [String]
     /// Global hotkey to open/close the popup. Nil means no hotkey registered.
     public var globalShortcut: GlobalShortcut?
 
@@ -61,6 +70,8 @@ public struct Config: Codable, Equatable {
         hideCleanRepos: Bool = false,
         menuBarLabelStyle: MenuBarLabelStyle = .total,
         fetchFromRemotes: Bool = false,
+        showGitHubStatus: Bool = true,
+        gitHubMutedRepos: [String] = [],
         globalShortcut: GlobalShortcut? = .defaultShortcut
     ) {
         self.sources = sources
@@ -68,6 +79,8 @@ public struct Config: Codable, Equatable {
         self.hideCleanRepos = hideCleanRepos
         self.menuBarLabelStyle = menuBarLabelStyle
         self.fetchFromRemotes = fetchFromRemotes
+        self.showGitHubStatus = showGitHubStatus
+        self.gitHubMutedRepos = gitHubMutedRepos
         self.globalShortcut = globalShortcut
     }
 
@@ -85,6 +98,8 @@ public struct Config: Codable, Equatable {
         case hideCleanRepos
         case menuBarLabelStyle
         case fetchFromRemotes
+        case showGitHubStatus
+        case gitHubMutedRepos
         case globalShortcut
     }
 
@@ -95,6 +110,8 @@ public struct Config: Codable, Equatable {
         self.hideCleanRepos = try container.decodeIfPresent(Bool.self, forKey: .hideCleanRepos) ?? false
         self.menuBarLabelStyle = try container.decodeIfPresent(MenuBarLabelStyle.self, forKey: .menuBarLabelStyle) ?? .total
         self.fetchFromRemotes = try container.decodeIfPresent(Bool.self, forKey: .fetchFromRemotes) ?? false
+        self.showGitHubStatus = try container.decodeIfPresent(Bool.self, forKey: .showGitHubStatus) ?? true
+        self.gitHubMutedRepos = try container.decodeIfPresent([String].self, forKey: .gitHubMutedRepos) ?? []
         // Absent key → default shortcut (new installs). Explicit null → no shortcut (user cleared it).
         if container.contains(.globalShortcut) {
             self.globalShortcut = try container.decodeIfPresent(GlobalShortcut.self, forKey: .globalShortcut)

@@ -6,6 +6,7 @@ struct MenuContentView: View {
     @EnvironmentObject var store: RepoStore
     @EnvironmentObject var configStore: ConfigStore
     @EnvironmentObject var fetchScheduler: FetchScheduler
+    @EnvironmentObject var githubScheduler: GitHubStatusScheduler
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismissPopover) private var dismissPopover
     @Environment(\.resizePanel) private var resizePanel
@@ -24,7 +25,24 @@ struct MenuContentView: View {
         // persisted preference.
         let hide = configStore.config.hideCleanRepos && !modifierTracker.optionHeld
         guard hide else { return store.repos }
-        return store.repos.filter { !($0.status?.isClean ?? false) }
+        let muted = Set(configStore.config.gitHubMutedRepos)
+        return store.repos.filter { repo in
+            // Local git state needs attention…
+            if !(repo.status?.isClean ?? false) { return true }
+            // …or GitHub side does, but only if the user hasn't muted
+            // this repo's GitHub status — a muted row is "I don't want
+            // to see this", which has to extend to the visibility
+            // filter, not just the badges.
+            let isMuted = muted.contains(repo.url.standardizedFileURL.path)
+            guard !isMuted else { return false }
+            guard let gh = githubScheduler.statuses[repo.url] else { return false }
+            // Failing or running CI — keep visible.
+            if gh.ciStatus == .failure || gh.ciStatus == .pending { return true }
+            // Open PRs (any author) — keep visible too. Dependabot pile-ups
+            // are still "something to deal with", just at lower urgency.
+            if gh.prCount?.isEmpty == false { return true }
+            return false
+        }
     }
 
     /// Cap the repo list at ~55% of the current screen's visible height
@@ -57,6 +75,17 @@ struct MenuContentView: View {
             // Layout's own cadence kicks in 100–300ms later. The panel's
             // resize notification handler in AppDelegate re-anchors the
             // top edge whenever the panel actually changes size.
+            DispatchQueue.main.async {
+                resizePanel()
+            }
+        }
+        .onChange(of: visibleRepos.count) { _, _ in
+            // A repo dropping off the visible list (e.g. push cleared
+            // its unpushed count and "hide clean repos" is on) has to
+            // shrink the panel too — the controller's $repos sink fires
+            // before SwiftUI commits the new layout, so it'd read the
+            // old fittingSize. Hopping to the next runloop after we
+            // already saw the count change gives layout a beat to land.
             DispatchQueue.main.async {
                 resizePanel()
             }
@@ -125,20 +154,22 @@ struct MenuContentView: View {
                 .padding(.horizontal, 6)
             Spacer()
             Button {
-                // Pulse the spinner as click feedback — a plain status
-                // refresh often finishes in <150ms so the real busy
-                // counter would never surface one. The Option-click
-                // fetch path's own inFlightFetches counter takes over
-                // for the longer-running network work.
-                busyIndicator.pulse()
-                if modifierTracker.optionHeld {
-                    fetchScheduler.manualFetch(repos: store.repos)
-                } else {
-                    store.rebuildFromConfig()
-                }
+                // One-click "refresh everything": rescan source folders
+                // (catches just-cloned repos), kick a manual `git fetch`
+                // on every repo (bypasses cadence + back-off), and
+                // poke the GitHub scheduler so CI/PR badges aren't
+                // stuck on the last cadence tick.
+                //
+                // No pulse() here: manualFetch synchronously bumps
+                // FetchScheduler.inFlightFetches on the main thread,
+                // which drives the spinner via .onChange. Pulsing on
+                // top of that produced a visible flicker (pulse hides
+                // at 0.5s, then the real fetch counter shows the
+                // spinner again).
+                store.rebuildFromConfig()
+                fetchScheduler.manualFetch(repos: store.repos)
+                githubScheduler.eagerRefresh(store.repos)
             } label: {
-                // Lock the frame so swapping between icons (or to the
-                // spinner) can't shift the header height by a pixel or two.
                 Group {
                     if busyIndicator.visible {
                         // Same pattern as ActionBadge uses for push/pull
@@ -149,9 +180,7 @@ struct MenuContentView: View {
                             .controlSize(.small)
                             .scaleEffect(0.7)
                     } else {
-                        Image(systemName: modifierTracker.optionHeld
-                              ? "arrow.triangle.2.circlepath"
-                              : "arrow.clockwise")
+                        Image(systemName: "arrow.clockwise")
                             .font(.system(size: 13, weight: .regular))
                     }
                 }
@@ -160,9 +189,7 @@ struct MenuContentView: View {
             }
             .buttonStyle(GhostButtonStyle())
             .pointingHandCursor()
-            .help(modifierTracker.optionHeld
-                  ? "Fetch from remotes and refresh"
-                  : "Rescan sources and refresh all (Option-click to also fetch)")
+            .hoverTip("Refresh local repos and remotes", growsLeft: true)
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -246,6 +273,52 @@ extension View {
                 NSCursor.pop()
             }
         }
+    }
+
+    /// SwiftUI-only hover tip. `.help()` is broken in our popover host
+    /// because the panel uses `.nonactivatingPanel` (never becomes key),
+    /// and AppKit's tooltip subsystem requires a key window. This
+    /// modifier just listens for hover, then renders a small caption
+    /// box below the view — no AppKit tooltip-tracking needed.
+    /// `growsLeft` controls overflow direction: trailing-anchored
+    /// labels grow left so they stay inside the popover for buttons
+    /// on the right edge (like the header refresh).
+    func hoverTip(_ text: String, growsLeft: Bool = false) -> some View {
+        modifier(HoverTipModifier(text: text, growsLeft: growsLeft))
+    }
+}
+
+private struct HoverTipModifier: ViewModifier {
+    let text: String
+    let growsLeft: Bool
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { isHovered = $0 }
+            .overlay(alignment: growsLeft ? .bottomTrailing : .bottom) {
+                if isHovered {
+                    Text(text)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.thickMaterial,
+                                    in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                        )
+                        .shadow(color: Color.black.opacity(0.12),
+                                radius: 6, x: 0, y: 2)
+                        .fixedSize()
+                        .offset(y: 26)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                        .zIndex(999)
+                }
+            }
+            .animation(.easeInOut(duration: 0.12), value: isHovered)
     }
 }
 
@@ -412,6 +485,8 @@ struct RepoRow: View {
     @EnvironmentObject var store: RepoStore
     @EnvironmentObject var fetchStateStore: FetchStateStore
     @EnvironmentObject var fetchScheduler: FetchScheduler
+    @EnvironmentObject var githubScheduler: GitHubStatusScheduler
+    @EnvironmentObject var configStore: ConfigStore
     @State private var isHovered = false
     @StateObject private var frameRef = RowFrameReference()
 
@@ -450,9 +525,14 @@ struct RepoRow: View {
             if let status = repo.status {
                 StatusBadges(
                     status: status,
+                    githubStatus: showGitHubStatusForThisRepo
+                        ? githubScheduler.statuses[repo.url]
+                        : nil,
                     inFlight: store.inFlight[repo.id],
                     onPush: { store.push(repo: repo) },
-                    onPull: { store.pull(repo: repo) }
+                    onPull: { store.pull(repo: repo) },
+                    onOpenPRs: { openPRsPage() },
+                    onOpenCI: { openCIPage() }
                 )
             }
 
@@ -499,7 +579,66 @@ struct RepoRow: View {
                 } label: {
                     Label("Fetch from remote", systemImage: "arrow.triangle.2.circlepath")
                 }
+                if configStore.config.showGitHubStatus {
+                    Button {
+                        toggleGitHubMute()
+                    } label: {
+                        if showGitHubStatusForThisRepo {
+                            Label("Mute GitHub status", systemImage: "eye.slash")
+                        } else {
+                            Label("Unmute GitHub status", systemImage: "eye")
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    /// Whether GitHub-side badges should render for this row. Honors
+    /// both the global Show toggle and the per-repo mute list.
+    private var showGitHubStatusForThisRepo: Bool {
+        guard configStore.config.showGitHubStatus else { return false }
+        return !configStore.config.gitHubMutedRepos.contains(repo.url.standardizedFileURL.path)
+    }
+
+    private func toggleGitHubMute() {
+        let key = repo.url.standardizedFileURL.path
+        if let idx = configStore.config.gitHubMutedRepos.firstIndex(of: key) {
+            configStore.config.gitHubMutedRepos.remove(at: idx)
+        } else {
+            configStore.config.gitHubMutedRepos.append(key)
+        }
+    }
+
+    /// Opens the PR list page for this repo on github.com. Resolves the
+    /// owner/repo from the local origin URL — if the remote isn't a
+    /// GitHub remote, the click does nothing (the badge wouldn't have
+    /// been rendered in that case anyway).
+    private func openPRsPage() {
+        guard let urlString = GitService.remoteURL(at: repo.url),
+              let remote = GitHubRemoteParser.parse(urlString),
+              let url = URL(string: "https://github.com/\(remote.owner)/\(remote.repo)/pulls") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Opens the GitHub Actions page for this repo, pre-filtered to the
+    /// current branch when one is known. The badge tracks workflow-run
+    /// conclusions (not third-party check apps), so /actions is the
+    /// page that surfaces exactly what our badge represents.
+    private func openCIPage() {
+        guard let urlString = GitService.remoteURL(at: repo.url),
+              let remote = GitHubRemoteParser.parse(urlString) else {
+            return
+        }
+        var path = "https://github.com/\(remote.owner)/\(remote.repo)/actions"
+        if let branch = repo.status?.branch, branch != "(detached)",
+           let encoded = branch.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            path += "?query=branch:\(encoded)"
+        }
+        if let url = URL(string: path) {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -536,6 +675,7 @@ struct RepoDetailPopover: View {
     let status: RepoStatus
     var actions: [Action] = []
     var fetchState: FetchState? = nil
+    var githubStatus: GitHubRepoStatus? = nil
     var onAction: (Action) -> Void = { _ in }
 
     /// Max paths/commits to list per section before "+N more".
@@ -544,10 +684,11 @@ struct RepoDetailPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            if status.isClean {
+            if status.isClean && !hasGitHubSignal {
                 cleanMessage
             } else {
                 sections
+                githubSections
             }
             if let fetchState {
                 fetchStatusLine(fetchState)
@@ -555,6 +696,80 @@ struct RepoDetailPopover: View {
         }
         .padding(14)
         .frame(minWidth: 260, idealWidth: 320, maxWidth: 420, alignment: .leading)
+    }
+
+    /// True if there's a non-trivial GitHub signal worth explaining —
+    /// otherwise we still show "No pending changes" for clean repos.
+    private var hasGitHubSignal: Bool {
+        guard let gh = githubStatus else { return false }
+        if gh.ciStatus == .failure || gh.ciStatus == .pending { return true }
+        if let prs = gh.prCount, !prs.isEmpty { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var githubSections: some View {
+        if let gh = githubStatus {
+            // CI: failure and pending each get a one-liner with the
+            // matching badge icon. Green is silent. Phrasing is kept
+            // tight so the line wraps to one row in the typical card
+            // width — the panel's branch context already implies "this
+            // branch", so we don't repeat it.
+            switch gh.ciStatus {
+            case .failure:
+                GitHubLine(
+                    systemImage: "xmark.circle.fill",
+                    color: .red,
+                    text: failureText(failing: gh.failingCheckNames)
+                )
+            case .pending:
+                GitHubLine(
+                    systemImage: "record.circle.fill",
+                    color: .yellow,
+                    text: "CI is running on the latest push"
+                )
+            default:
+                EmptyView()
+            }
+            // PRs: only render when there's something open. Phrase the
+            // line so the human/bot split is unambiguous in plain text.
+            // Color matches the popover badge (.indigo) for consistency.
+            if let prs = gh.prCount, !prs.isEmpty {
+                GitHubLine(
+                    systemImage: "arrow.triangle.pull",
+                    color: .indigo,
+                    text: prText(prs)
+                )
+            }
+        }
+    }
+
+    /// Failure line text. When we know which check broke, name it —
+    /// otherwise stick with the generic phrasing. Capping at three names
+    /// keeps the line readable when many checks fail at once.
+    private func failureText(failing names: [String]) -> String {
+        guard !names.isEmpty else { return "CI failed on the latest push" }
+        let head = names.prefix(3).joined(separator: ", ")
+        if names.count > 3 {
+            return "CI failed: \(head) +\(names.count - 3) more"
+        }
+        return "CI failed: \(head)"
+    }
+
+    private func prText(_ prs: PRCount) -> String {
+        // Same shape across all three cases ("X PR(s) by humans/bots")
+        // so the wording is predictable. Mixed-case symmetry — both
+        // halves use "by …" — keeps the second number from reading as
+        // a subset of the first.
+        let prWord = { (n: Int) in n == 1 ? "PR" : "PRs" }
+        switch (prs.humans, prs.bots) {
+        case (0, let b):
+            return "\(b) \(prWord(b)) by bots"
+        case (let h, 0):
+            return "\(h) \(prWord(h)) by humans"
+        case (let h, let b):
+            return "\(h) \(prWord(h)) by humans · \(b) by bots"
+        }
     }
 
     @ViewBuilder
@@ -613,6 +828,28 @@ struct RepoDetailPopover: View {
         Label("No pending changes", systemImage: "checkmark.circle.fill")
             .font(.callout)
             .foregroundStyle(.green)
+    }
+
+    /// Single-line GitHub-side signal explainer used in the hover detail
+    /// panel. Mirrors the icon + color of the popover badge so the line
+    /// reads as "the badge, in words". Aligned to the first text baseline
+    /// so the icon sits next to the first line if the text wraps to two.
+    private struct GitHubLine: View {
+        let systemImage: String
+        let color: Color
+        let text: String
+
+        var body: some View {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(color)
+                    .frame(width: 16, alignment: .center)
+                Text(text)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+            }
+        }
     }
 
     @ViewBuilder
@@ -720,17 +957,40 @@ private struct DetailSection: View {
 
 struct StatusBadges: View {
     let status: RepoStatus
+    let githubStatus: GitHubRepoStatus?
     let inFlight: InFlightAction?
     let onPush: () -> Void
     let onPull: () -> Void
+    let onOpenPRs: () -> Void
+    let onOpenCI: () -> Void
 
     var body: some View {
+        // The green "all clear" checkmark only appears when *nothing*
+        // needs attention — local-clean alone isn't enough, since a
+        // failing CI or open PR also counts. Otherwise it'd sit next to
+        // the very badges it contradicts.
+        let hasCIBadge = githubStatus?.ciStatus == .failure
+                      || githubStatus?.ciStatus == .pending
+        let hasPRBadge = githubStatus?.prCount?.isEmpty == false
+        let allClear = status.isClean && !hasCIBadge && !hasPRBadge
+
         HStack(spacing: 4) {
-            if status.isClean {
+            // GitHub-side signals come first — they're "outside world"
+            // status, separate from the local git state pills on the right.
+            // CI red/running is rendered as a single icon (no count); PR
+            // pill shows the human/bot split with the bot tail muted.
+            if let gh = githubStatus {
+                CIBadge(status: gh.ciStatus, action: onOpenCI)
+                if let prs = gh.prCount, !prs.isEmpty {
+                    PRBadge(count: prs, action: onOpenPRs)
+                }
+            }
+
+            if allClear {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.body.weight(.medium))
                     .foregroundStyle(.green)
-            } else {
+            } else if !status.isClean {
                 // Commit-level state first (ahead / behind), then file-level
                 // as a progression (untracked → unstaged → staged). Unicode
                 // arrows for direction, git porcelain letters for file state.
@@ -764,6 +1024,120 @@ struct StatusBadges: View {
                 }
             }
         }
+    }
+}
+
+/// Compact PR pill: `⤴ 4 / 2` where `4` is human-authored open PRs in
+/// the primary color and `/ 2` is bot PRs in a muted secondary color.
+/// Bots stay visible but recede so dependabot pile-ups don't shout.
+/// Edge cases:
+///   - Only humans → just `⤴ N`
+///   - Only bots   → `⤴ N` rendered fully muted
+private struct PRBadge: View {
+    let count: PRCount
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        // .indigo so the pill never reads as a push/pull badge — the
+        // existing ↑/↓ pills already own .blue/.purple. Border and icon
+        // are always indigo so the pill's identity stays consistent
+        // across human-only, bot-only, and mixed cases. The numeric
+        // weight follows authorship: human counts in primary, bot
+        // counts in muted secondary — so a bot-only pile-up reads as
+        // "low priority noise" while humans-needed-attention stays
+        // visually loud.
+        let primary: Color = .indigo
+        let isBotOnly = count.humans == 0
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: "arrow.triangle.pull")
+                    .foregroundStyle(primary)
+                Text("\(count.humans > 0 ? count.humans : count.bots)")
+                    .foregroundStyle(isBotOnly ? .secondary : primary)
+                if count.humans > 0 && count.bots > 0 {
+                    // Stay in the indigo family but much lighter, so the
+                    // bot tail recedes visually while still feeling like
+                    // part of the same pill rather than disconnected
+                    // grey text.
+                    Text("/ \(count.bots)")
+                        .foregroundStyle(primary.opacity(0.4))
+                }
+            }
+            .font(.body.weight(.medium).monospacedDigit())
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                    .fill(isHovered ? primary.opacity(0.18) : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                    .strokeBorder(primary.opacity(isHovered ? 0.0 : 0.35), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: interactiveCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .onHover { isHovered = $0 }
+        .help(prTooltip)
+    }
+
+    private var prTooltip: String {
+        switch (count.humans, count.bots) {
+        case (0, let b): return "\(b) bot PR\(b == 1 ? "" : "s") open"
+        case (let h, 0): return "\(h) PR\(h == 1 ? "" : "s") open"
+        case (let h, let b): return "\(h) PR\(h == 1 ? "" : "s") · \(b) by bots"
+        }
+    }
+}
+
+/// CI status indicator. Renders nothing for `.success` and `.none` —
+/// matches the "hide repos with no changes" philosophy: green CI is not
+/// a signal worth showing. `.failure` and `.pending` get visible icons.
+private struct CIBadge: View {
+    let status: CIStatus
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        // Icon + color follow GitHub Actions' own visual language so
+        // the badges read as "this is what github.com would show":
+        //   ✕ red filled circle  → failure
+        //   ◉ yellow ring + dot  → running / queued
+        switch status {
+        case .failure:
+            badge(systemName: "xmark.circle.fill", color: .red, tip: "CI failed on the latest push to this branch")
+        case .pending:
+            badge(systemName: "record.circle.fill", color: .yellow, tip: "CI is running on the latest push")
+        default:
+            EmptyView()
+        }
+    }
+
+    private func badge(systemName: String, color: Color, tip: String) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.body.weight(.medium))
+                .foregroundStyle(color)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                        .fill(isHovered ? color.opacity(0.18) : .clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                        .strokeBorder(color.opacity(isHovered ? 0.0 : 0.35), lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: interactiveCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .onHover { isHovered = $0 }
+        .help(tip)
     }
 }
 

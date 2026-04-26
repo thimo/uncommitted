@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let fetchStateStore: FetchStateStore
     let repoStore: RepoStore
     let fetchScheduler: FetchScheduler
+    let githubScheduler: GitHubStatusScheduler
     let hoverDetail: HoverDetailController
     /// Sparkle auto-updater. Starts checking on launch; the "Check for
     /// Updates" action in Settings calls through to it.
@@ -67,12 +68,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             repoStore: repoStore,
             fetchStateStore: fetchStateStore
         )
+        self.githubScheduler = GitHubStatusScheduler(
+            repoStore: repoStore,
+            configStore: configStore
+        )
         self.repoStore.onCancelFetch = { [weak fetchScheduler] url in
             fetchScheduler?.cancelFetch(for: url)
         }
         self.hoverDetail = HoverDetailController()
         self.hoverDetail.fetchStateStore = fetchStateStore
         self.hoverDetail.fetchEnabled = configStore.config.fetchFromRemotes
+        // Capture weakly so the controller doesn't keep the scheduler
+        // alive past app shutdown — the closure is replaced if needed.
+        // Honor the global toggle + per-repo mute list so the detail
+        // panel stays in sync with the row badges.
+        self.hoverDetail.githubStatusLookup = { [weak githubScheduler, weak configStore] url in
+            guard let configStore, configStore.config.showGitHubStatus else { return nil }
+            let key = url.standardizedFileURL.path
+            if configStore.config.gitHubMutedRepos.contains(key) { return nil }
+            return githubScheduler?.statuses[url]
+        }
         self.updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
@@ -88,10 +103,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPanel()
         updateStatusLabel()
 
-        Publishers.Merge(
+        Publishers.Merge4(
             repoStore.$repos.map { _ in () }.eraseToAnyPublisher(),
             configStore.$config
                 .map(\.menuBarLabelStyle)
+                .removeDuplicates()
+                .map { _ in () }
+                .eraseToAnyPublisher(),
+            configStore.$config
+                .map(\.gitHubMutedRepos)
+                .removeDuplicates()
+                .map { _ in () }
+                .eraseToAnyPublisher(),
+            githubScheduler.$statuses
+                .map { statuses in statuses.values.contains { $0.ciStatus == .failure } }
                 .removeDuplicates()
                 .map { _ in () }
                 .eraseToAnyPublisher()
@@ -151,6 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func resizePanelIfVisible() {
         guard let panel, panel.isVisible, let hView = hostingController?.view else { return }
+        // Force the hosting view to drop any cached intrinsic size and
+        // re-measure against the current SwiftUI body. Without this,
+        // shrinking content (e.g. a row dropping off `visibleRepos`)
+        // leaves the panel at the previous, taller size — producing a
+        // band of empty space above the footer.
+        hView.invalidateIntrinsicContentSize()
+        hView.layoutSubtreeIfNeeded()
         let fitting = hView.intrinsicContentSize
         guard fitting.width > 0, fitting.height > 0,
               fitting != panel.frame.size else { return }
@@ -211,6 +243,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return svg
     }()
 
+    /// Red glyph used as a trailing CI-alert indicator on the status
+    /// item. Same `xmark.circle.fill` symbol the popover badge uses, so
+    /// the in-text alert reads as "the popover badge, in the menu bar."
+    /// Sized to match the system font so it sits inline with the count
+    /// digits without throwing off baseline alignment.
+    private static func alertShieldImage() -> NSImage? {
+        let pointSize = NSFont.systemFontSize
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+        guard let glyph = NSImage(systemSymbolName: "xmark.circle.fill",
+                                  accessibilityDescription: "CI failure")?
+                                   .withSymbolConfiguration(config) else {
+            return nil
+        }
+        let tinted = NSImage(size: glyph.size, flipped: false) { rect in
+            glyph.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
+            NSColor.systemRed.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        tinted.isTemplate = false
+        return tinted
+    }
+
     private func updateStatusLabel() {
         guard let button = statusItem?.button else { return }
 
@@ -221,17 +276,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.imageHugsTitle = true
 
         let title = labelTitle(for: configStore.config.menuBarLabelStyle)
+        // Muted repos are excluded from the menubar shield: if the user
+        // marked a repo as "not my problem", a red CI on it shouldn't
+        // keep nagging from the menu bar either.
+        let muted = Set(configStore.config.gitHubMutedRepos)
+        let useAlert = githubScheduler.statuses.contains { url, status in
+            status.ciStatus == .failure && !muted.contains(url.standardizedFileURL.path)
+        }
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byClipping
-        button.attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                .paragraphStyle: paragraph,
-                .kern: 0,
-            ]
-        )
+        let baseAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .paragraphStyle: paragraph,
+            .kern: 0,
+        ]
+
+        let attributed = NSMutableAttributedString(string: title, attributes: baseAttrs)
+        if useAlert, let shield = AppDelegate.alertShieldImage() {
+            // A leading space separates the shield from the count digits;
+            // when the count is empty (iconOnly style) we skip the space
+            // so the shield sits flush against the branch icon.
+            if !title.isEmpty {
+                attributed.append(NSAttributedString(string: " ", attributes: baseAttrs))
+            }
+            let attachment = NSTextAttachment()
+            attachment.image = shield
+            // Nudge the glyph down a hair so its visual center aligns
+            // with the digit baseline.
+            attachment.bounds = NSRect(x: 0, y: -2,
+                                       width: shield.size.width,
+                                       height: shield.size.height)
+            attributed.append(NSAttributedString(attachment: attachment))
+        }
+        button.attributedTitle = attributed
     }
 
     private func labelTitle(for style: MenuBarLabelStyle) -> String {
@@ -264,6 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(repoStore)
             .environmentObject(fetchStateStore)
             .environmentObject(fetchScheduler)
+            .environmentObject(githubScheduler)
             .environment(\.dismissPopover) { [weak self] in
                 self?.closePopup()
             }
@@ -371,6 +450,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panel.setFrameOrigin(NSPoint(x: clampedX, y: panelY))
         panel.orderFrontRegardless()
+
+        // Eager-refresh GitHub status for visible repos so freshly-opened
+        // popups don't show stale data. The scheduler dedups by slug + sha
+        // so this is cheap even when the cadence has just fired.
+        githubScheduler.eagerRefresh(repoStore.repos)
 
         hoverDetail.popupHostingView = hView
 

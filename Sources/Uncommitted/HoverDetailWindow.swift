@@ -24,6 +24,10 @@ final class HoverDetailController {
     /// Whether the auto-fetch feature is on. The detail panel only shows
     /// fetch info when this is true — there's nothing to report otherwise.
     var fetchEnabled: Bool = false
+    /// Closure that returns the latest GitHub status snapshot for a repo.
+    /// Set by AppDelegate so the detail panel can explain the PR pill and
+    /// CI badge in plain text. Nil while the feature is disabled.
+    var githubStatusLookup: ((URL) -> GitHubRepoStatus?)?
     /// Fade-in / fade-out duration. Tweak this to change the feel.
     private static let fadeDuration: TimeInterval = 0.1
     /// How long the cursor must sit on a row before the panel appears.
@@ -219,12 +223,14 @@ final class HoverDetailController {
         let actions = currentActions
         let onAction = currentOnAction
         let fetchState = fetchEnabled ? fetchStateStore?.state(for: repo.url) : nil
+        let githubStatus = githubStatusLookup?(repo.url)
         let content = HoverDetailContent(
             repoName: repo.name,
             status: status,
             arrowSide: currentSide,
             actions: actions,
             fetchState: fetchState,
+            githubStatus: githubStatus,
             onAction: { action in onAction?(action) },
             onHoverChange: { [weak self] in self?.panelHover($0) }
         )
@@ -392,6 +398,7 @@ struct HoverDetailContent: View {
     let arrowSide: PanelSide
     let actions: [Action]
     let fetchState: FetchState?
+    let githubStatus: GitHubRepoStatus?
     let onAction: (Action) -> Void
     let onHoverChange: (Bool) -> Void
 
@@ -409,6 +416,7 @@ struct HoverDetailContent: View {
             status: status,
             actions: actions,
             fetchState: fetchState,
+            githubStatus: githubStatus,
             onAction: onAction
         )
             .frame(width: 260)

@@ -142,6 +142,20 @@ public enum GitService {
         action(Self.lowSpeedGuard + ["fetch", "--quiet", "--no-tags", "--prune", "origin"], at: url)
     }
 
+    /// Returns the URL configured for the named remote (default: `origin`),
+    /// or nil when the remote isn't configured or `git remote get-url`
+    /// fails. Used by the GitHub status feature to discover the
+    /// `owner/repo` slug — empty means "skip this repo for GitHub calls."
+    public static func remoteURL(at url: URL, name: String = "origin") -> String? {
+        let result = execute(["remote", "get-url", name], at: url)
+        guard result.exitStatus == 0,
+              let output = String(data: result.stdout, encoding: .utf8) else {
+            return nil
+        }
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     /// Returns true if the repo has at least one remote configured. Used
     /// by the FetchScheduler to skip local-only repos forever (re-checked
     /// once per app launch). Empty stdout from `git remote` ⇒ no remotes.

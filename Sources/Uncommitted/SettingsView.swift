@@ -5,6 +5,34 @@ import UniformTypeIdentifiers
 import UncommittedCore
 
 struct SettingsView: View {
+    /// GitHub's official mark, rendered as a template image so it picks
+    /// up the tab's accent color. Bundled alongside the app icon glyph.
+    /// Defined here (and reused on the About tab) so the icon stays in
+    /// sync between the tab bar and the About link.
+    static let githubMark: NSImage? = {
+        guard let url = Bundle.module.url(forResource: "github-mark", withExtension: "svg"),
+              let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        image.isTemplate = true
+        return image
+    }()
+
+    /// Tab-bar-sized variant of the mark. `tabItem` reads the image's
+    /// `size` (in points) for layout, so we just retag the existing
+    /// representations with the SF Symbol tab-icon footprint instead
+    /// of pre-rasterising. Going through `setSize:` keeps the SVG
+    /// vector representation intact so it stays sharp on Retina.
+    static let githubMarkTabIcon: NSImage? = {
+        guard let url = Bundle.module.url(forResource: "github-mark", withExtension: "svg"),
+              let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        image.size = NSSize(width: 16, height: 16)
+        image.isTemplate = true
+        return image
+    }()
+
     var body: some View {
         TabView {
             GeneralSettingsView()
@@ -12,6 +40,9 @@ struct SettingsView: View {
 
             RepositoriesSettingsView()
                 .tabItem { Label("Repositories", systemImage: "folder") }
+
+            RemoteSettingsView()
+                .tabItem { Label("Remote", systemImage: "icloud") }
 
             ActionsSettingsView()
                 .tabItem { Label("Actions", systemImage: "cursorarrow.rays") }
@@ -39,9 +70,8 @@ struct GeneralSettingsView: View {
                     }
                 }
                 Toggle("Hide clean repositories", isOn: $configStore.config.hideCleanRepos)
-                Text("Hold Option to peek at hidden repos without toggling this off.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .help("Hold Option in the popup to peek at hidden repos without toggling this off.")
+                ShortcutRecorderRow(shortcut: $configStore.config.globalShortcut)
             }
 
             Section("Startup") {
@@ -57,20 +87,6 @@ struct GeneralSettingsView: View {
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
                     }
-            }
-
-            Section {
-                Toggle("Auto-fetch from remotes", isOn: $configStore.config.fetchFromRemotes)
-            } header: {
-                Text("Refresh")
-            } footer: {
-                Text("Periodically run `git fetch` in the background so the unpulled count stays current. Active repos refresh daily, idle repos weekly. Failures back off automatically; chronically failing repos are marked in the popup. Manual fetches via Option-click or right-click work regardless of this setting.")
-                    .font(.caption)
-                    .foregroundStyle(.primary.opacity(0.60))
-            }
-
-            Section("Keyboard shortcut") {
-                ShortcutRecorderRow(shortcut: $configStore.config.globalShortcut)
             }
 
             Section("Updates") {
@@ -94,6 +110,92 @@ struct GeneralSettingsView: View {
                 autoDownloadUpdates = updater.automaticallyDownloadsUpdates
             }
         }
+    }
+}
+
+/// Settings tab for everything that talks to a remote: generic git
+/// auto-fetch, plus the GitHub-specific status feature. Naming the
+/// tab "Remote" keeps room for additional providers (GitLab status,
+/// Bitbucket, etc.) without renaming the whole panel.
+struct RemoteSettingsView: View {
+    @EnvironmentObject var configStore: ConfigStore
+    @State private var ghAvailable: Bool = false
+    @State private var ghInstalled: Bool = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Auto-fetch from remotes", isOn: $configStore.config.fetchFromRemotes)
+            } header: {
+                Text("Refresh")
+            } footer: {
+                Text("Background `git fetch` so unpulled counts stay current — daily for active repos, weekly for idle. The Refresh button or a row's right-click menu fetches manually regardless of this setting.")
+                    .font(.caption)
+                    .foregroundStyle(.primary.opacity(0.60))
+            }
+
+            Section {
+                Toggle("Show GitHub status", isOn: $configStore.config.showGitHubStatus)
+                    .disabled(!ghAvailable)
+            } header: {
+                Text("GitHub")
+            } footer: {
+                footerText
+                    .font(.caption)
+                    .foregroundStyle(.primary.opacity(0.60))
+            }
+
+            if !configStore.config.gitHubMutedRepos.isEmpty {
+                Section("Muted repositories") {
+                    MutedReposList()
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .frame(width: 560)
+        .fixedSize(horizontal: false, vertical: true)
+        .task {
+            ghInstalled = GHService.ghPath() != nil
+            ghAvailable = GHService.isAvailable()
+        }
+    }
+
+    @ViewBuilder
+    private var footerText: some View {
+        if !ghInstalled {
+            Text("Install `gh` (`brew install gh`) and run `gh auth login` to enable.")
+        } else if !ghAvailable {
+            Text("`gh` is installed but not authenticated. Run `gh auth login`, then reopen Settings.")
+        } else {
+            Text("Open PR counts and a red icon for failing CI on your current branch. Right-click a repo row to mute it.")
+        }
+    }
+}
+
+/// Lists every repo whose GitHub status the user has muted, with an
+/// Unmute button per row. Driven directly off the published config, so
+/// muting via the popover row appears here within the next runloop.
+private struct MutedReposList: View {
+    @EnvironmentObject var configStore: ConfigStore
+
+    var body: some View {
+        ForEach(configStore.config.gitHubMutedRepos, id: \.self) { path in
+            HStack {
+                Image(systemName: "eye.slash")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text((path as NSString).lastPathComponent)
+                    .help(path)
+                Spacer()
+                Button("Unmute") { unmute(path) }
+                    .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func unmute(_ path: String) {
+        configStore.config.gitHubMutedRepos.removeAll { $0 == path }
     }
 }
 

@@ -71,6 +71,36 @@ they run, and the `.git/refs` changes they produce get picked up by
 the FSEvents watcher automatically — the count updates within a second
 of completion, no explicit refresh needed.
 
+## GitHub status
+
+Per-repo PR and CI signals next to the local-state pills. Answers
+"is what I just pushed green?" and "is there anything queued that needs
+cleanup?" without leaving the menu bar.
+
+| Badge | Meaning |
+|---|---|
+| ⚠️ | CI failed on the latest push to your current branch |
+| 🕐 | CI is running on the latest push |
+| `⤴ 4 / 2` | 4 human-authored open PRs · 2 by bots (the bot tail is muted) |
+
+Green CI is invisible by design — the menu bar is for things that need
+attention, not confirmation. The branch icon in the menu bar itself
+turns **red** whenever any tracked repo has failing CI, so a single
+glance tells you "is anything broken?" without opening the popover.
+
+Click the PR pill to open the GitHub PR list; click the red/yellow CI
+badge to open the Actions page filtered to that branch.
+
+GitHub access uses the [`gh` CLI][gh] — install with `brew install gh`,
+then run `gh auth login`. The scheduler refreshes active repos every 15
+minutes, idle repos once a day, and eagerly on every popover open.
+Multi-clone repos share API calls automatically.
+
+Toggle the feature in Settings → General → GitHub. Full details:
+[docs/github-integration.md](docs/github-integration.md).
+
+[gh]: https://cli.github.com
+
 ## Auto-fetch from remotes
 
 By default Uncommitted only reads what's already on disk — the unpulled
