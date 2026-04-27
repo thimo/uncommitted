@@ -156,13 +156,18 @@ public final class GitHubStatusScheduler: ObservableObject {
             guard let spec = resolvedSpec(for: repo) else { return nil }
             let last = lastRefreshAt[repo.url]
             let interval: TimeInterval = {
-                // Pending CI gets the fast cadence regardless of
-                // local-activity tier — we want to know the moment a
-                // run concludes.
-                if statuses[repo.url]?.ciStatus == .pending {
+                // Pending and failing CI both get the fast cadence
+                // regardless of local-activity tier — pending so we
+                // catch the moment a run concludes, failing so the
+                // menu-bar shield clears within a minute of someone
+                // fixing it (otherwise it lingers for up to 15 min on
+                // active repos, 24 h on idle ones).
+                switch statuses[repo.url]?.ciStatus {
+                case .pending, .failure:
                     return Self.pendingInterval
+                default:
+                    return isActive(repo: repo) ? Self.activeInterval : Self.idleInterval
                 }
-                return isActive(repo: repo) ? Self.activeInterval : Self.idleInterval
             }()
             if let last, now.timeIntervalSince(last) < interval {
                 return nil
