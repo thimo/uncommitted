@@ -3,13 +3,34 @@
     <channel>
         <title>Uncommitted</title>
         <item>
+            <title>0.5.0</title>
+            <pubDate>Mon, 27 Apr 2026 02:03:04 +0200</pubDate>
+            <link>https://github.com/thimo/uncommitted/releases/tag/v0.5.0</link>
+            <sparkle:version>91</sparkle:version>
+            <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.5.0/Uncommitted-0.5.0.zip" length="3637652" type="application/octet-stream" sparkle:edSignature="30ftvEYg/okro9Z+YmCTKT3mPJQbagfSfBpKHDhlJcpI51Hdb2Inqf8/q+kMq6EKf9c02smIcxwnEM4Ssf32BA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.5.0/Uncommitted91-57.delta" sparkle:deltaFrom="57" length="1814078" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="oBTRh4AqSeteSKsTb5yN8JR84dbTVnM183SxfZFEivnnycfqPOyAuWqFrsAq8xodD9XGzGujZYjnmmpE4yjKDQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.5.0-beta1</title>
             <pubDate>Sun, 12 Apr 2026 15:20:01 +0200</pubDate>
             <link>https://github.com/thimo/uncommitted/releases/tag/v0.5.0-beta1</link>
             <sparkle:version>57</sparkle:version>
             <sparkle:shortVersionString>0.5.0-beta1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.5.0-beta1/Uncommitted-0.5.0-beta1.zip" length="3139540" type="application/octet-stream" sparkle:edSignature="inEoqxBX30y7Qnhz9gYfLHO0g4Q65AYbfEDd1Hjziz+nVeXqoVvVGNQ+Xq/T75c5vU0iN8+J49Z/wxwsWJOGAQ=="/>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.5.0/Uncommitted-0.5.0-beta1.zip" length="3139540" type="application/octet-stream" sparkle:edSignature="inEoqxBX30y7Qnhz9gYfLHO0g4Q65AYbfEDd1Hjziz+nVeXqoVvVGNQ+Xq/T75c5vU0iN8+J49Z/wxwsWJOGAQ=="/>
+        </item>
+        <item>
+            <title>0.5.0-test</title>
+            <pubDate>Sun, 12 Apr 2026 14:47:35 +0200</pubDate>
+            <link>https://github.com/thimo/uncommitted/releases/tag/v0.5.0-beta1</link>
+            <sparkle:version>56</sparkle:version>
+            <sparkle:shortVersionString>0.5.0-test</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.5.0/Uncommitted-0.5.0-test.zip" length="3128189" type="application/octet-stream"/>
         </item>
     </channel>
 </rss>
