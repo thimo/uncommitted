@@ -579,6 +579,11 @@ struct RepoRow: View {
                 } label: {
                     Label("Fetch from remote", systemImage: "arrow.triangle.2.circlepath")
                 }
+                Button {
+                    openRemoteInBrowser()
+                } label: {
+                    Label("Open remote in browser", systemImage: "safari")
+                }
                 if configStore.config.showGitHubStatus {
                     Button {
                         toggleGitHubMute()
@@ -608,6 +613,50 @@ struct RepoRow: View {
         } else {
             configStore.config.gitHubMutedRepos.append(key)
         }
+    }
+
+    /// Opens the repo's remote in the user's default browser. Works for
+    /// any host (GitHub, GitLab, Bitbucket, self-hosted) by translating
+    /// the SSH or HTTPS clone URL into the host's web URL.
+    private func openRemoteInBrowser() {
+        guard let urlString = GitService.remoteURL(at: repo.url),
+              let webURL = Self.remoteWebURL(from: urlString) else {
+            return
+        }
+        NSWorkspace.shared.open(webURL)
+    }
+
+    /// Translate any remote URL — SSH `git@host:owner/repo[.git]`,
+    /// `ssh://git@host/path`, or `https://host/path[.git]` — into the
+    /// host's web URL. Returns nil for unparseable input or local-only
+    /// remotes; callers treat that as "no remote, don't open."
+    static func remoteWebURL(from raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // SCP-style SSH: `git@host:owner/repo[.git]`. Has no scheme,
+        // contains a colon, and the part before the colon parses as
+        // user@host.
+        if !trimmed.contains("://"), let colonIdx = trimmed.firstIndex(of: ":") {
+            let userHost = trimmed[..<colonIdx]
+            let pathPart = trimmed[trimmed.index(after: colonIdx)...]
+            let host = userHost.split(separator: "@").last.map(String.init) ?? String(userHost)
+            let cleaned = stripDotGit(String(pathPart))
+            guard !host.isEmpty, !cleaned.isEmpty else { return nil }
+            return URL(string: "https://\(host)/\(cleaned)")
+        }
+
+        // URL form (ssh://, https://, http://, git://).
+        guard let url = URL(string: trimmed),
+              let host = url.host, !host.isEmpty else { return nil }
+        let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let cleaned = stripDotGit(path)
+        guard !cleaned.isEmpty else { return nil }
+        return URL(string: "https://\(host)/\(cleaned)")
+    }
+
+    private static func stripDotGit(_ path: String) -> String {
+        path.hasSuffix(".git") ? String(path.dropLast(4)) : path
     }
 
     /// Opens the PR list page for this repo on github.com. Resolves the
