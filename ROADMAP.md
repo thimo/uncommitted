@@ -5,86 +5,21 @@ order can shift, ideas can drop.
 
 ## Where we are
 
+**v0.5.0** (2026-04) — GitHub PR + CI signals per repo. PR pill shows
+`⤴ N / N` (humans / bots, bot count muted), CI surfaces only red and
+running (green stays silent), menu-bar branch icon turns red when any
+tracked repo has red CI. Backed by the `gh` CLI with tiered refresh
+(15 min for recent-active, 1×/day rest, eager on popover open, fast
+re-poll on failing/pending CI), multi-clone-aware caching, and a
+graceful-degrade banner when `gh` isn't installed. Row context menu
+also gained "Open remote in browser".
+
 **v0.4.0** (2026-04-11) — first tagged release. Daily-usable: AppKit-hosted
 menu bar, configurable actions, per-source scan depth, git-porcelain status
 badges, four-tab Settings, Sparkle 2.x auto-updater integrated, MIT license
 on GitHub.
 
 Distribution is still ad-hoc signed — no notarized binary yet.
-
-## v0.5 — GitHub status integration
-
-Goal: surface PR and CI signals per repo. Uncommitted now answers two more
-questions next to "do I need to commit/push?":
-
-- "Is what I just pushed green?"
-- "Is there anything queued (PRs, dependabot) that needs cleanup?"
-
-**Design decisions (locked in 2026-04-26):**
-
-- **CI status** — current branch's HEAD on remote. Silent if the branch is
-  local-only; the branch-switch is the signal.
-- **PR pill** — single badge `⤴ N / N` where the second number is bot-PR
-  count, rendered muted. `arrow.triangle.pull` icon. Edge cases:
-  - Only humans → just `⤴ N`
-  - Only bots → `⤴ N` rendered fully muted
-  - No PRs → no badge
-- **CI icons** — only red and running show. Green stays silent (matches the
-  "hide repos with no changes" philosophy).
-  - Red: `exclamationmark.shield.fill` in `.systemRed`
-  - Running: `clock.fill` in `.systemYellow`
-  - Click red → `gh run view --web`
-  - Click PR pill → `gh pr list --web`
-- **Auth** — `gh` CLI as backend (`gh api ...` via Process). Reuses the user's
-  existing `gh auth login`. Graceful degrade with a Settings banner if `gh`
-  isn't installed; feature disables itself silently.
-- **Refresh cadence** — tiered, internal:
-  - Recent-active (commit <24h old or FSEvents activity): every 15 min
-  - Rest: 1×/day
-  - Popover-open: eager refresh of visible repos
-  - Manual refresh button: forces all
-- **Caching** — multi-clone-aware. Cache key for PR-count = `owner/repo`
-  (shared across clones). CI status keyed by `owner/repo + commit-sha`
-  (shared when clones happen to be on the same commit). Four clones of the
-  same repo collapse to 1 PR fetch + N CI fetches where N = unique commits.
-- **Menu bar** — branch icon turns red when any tracked repo has red CI.
-  Count number stays on uncommitted+unpushed (pure git signal). Two bits
-  of info at a glance: cijfer = "moet ik committen?", kleur = "is iets
-  stuk?".
-- **No notifications in v1** — visible-only. Notifications can come later
-  if the visual signal isn't enough.
-
-**Build sequence:**
-
-- [ ] `UncommittedCore/GitHubStatus.swift` — model types
-  (`GitHubRepoStatus`, `CIStatus`, `PRCount`)
-- [ ] GitHub remote detection — parse `git remote get-url origin`, extract
-  `owner/repo`, skip silently for non-GitHub remotes
-- [ ] `gh api` Process wrapper — mirrors `GitService.execute()` patterns
-  (subprocess, drain timeout, error surfacing)
-- [ ] PR list fetch + bot filter (`user.type == "Bot"` or login matches
-  `^(dependabot|renovate)`)
-- [ ] CI status fetch — `repos/{owner}/{repo}/commits/{branch}/check-runs`,
-  aggregate conclusion
-- [ ] In-memory cache layer with TTL keyed per design above
-- [ ] `GitHubStatusScheduler` — tiered cadence, popover-open eager refresh
-- [ ] Popover row UI — PR pill, CI badge (placement: left of existing action
-  pills, near the auto-fetch warning glyph)
-- [ ] Menu-bar branch icon tint — red on any-CI-red
-- [ ] Click handlers — `gh pr list --web` / `gh run view --web` via
-  `NSWorkspace`
-- [ ] Settings — master toggle "Show GitHub status", graceful-degrade banner
-  if `gh` missing
-- [ ] Tests — remote URL parser, bot filter, cache key collisions
-- [ ] README section + `docs/github-integration.md` (`gh` install +
-  `gh auth login` prerequisite)
-
-**Open scope questions (revisit during build):**
-
-- Does the PR pill count *all* open PRs, or only PRs against the default
-  branch? Probably all — but worth re-checking once the data is real.
-- Should CI status follow the local current branch even when that branch
-  is checked out somewhere else? Walkable; revisit when implementing.
 
 ## v0.6 — Distribution
 
@@ -125,18 +60,14 @@ These are worth doing when the mood strikes. Not blocked on anything.
   solution that writes to `~/Library/Logs/Uncommitted/` with an "Export
   diagnostics…" button in Settings that bundles the last N log files
   for sharing.
-- **FSEvents safety net.** The watcher can drift after sleep/wake. Listen
-  for `NSWorkspace.didWakeNotification` and rebuild the stream. Cheap
-  belt-and-suspenders against silent drift. (Partially in place — see
-  CLAUDE.md item 4.)
-- **Interval-based status refresh.** Even with FSEvents, nothing guarantees
-  the status reflects reality after long idle periods — FSEvents drops
-  events on sleep, some filesystem operations don't fire events, and other
-  git tools (Tower, VSCode, dependabot) make changes out-of-band that
-  eventually get picked up but not immediately. Add an opt-in "refresh
-  every N minutes" setting in General (default off, suggested 5–10 min
-  when enabled) that runs `rebuildFromConfig()` on a timer.
-- **GitHub status — phase 2.** State-transition notifications opt-in
+- **Opt-in periodic status refresh.** Even with FSEvents and the existing
+  sleep/wake backstop, nothing guarantees status reflects reality after
+  long idle periods — some filesystem operations don't fire events, and
+  other git tools (Tower, VSCode, dependabot) make changes out-of-band.
+  Add an opt-in "refresh every N minutes" setting in General (default off,
+  suggested 5–10 min when enabled) that runs `rebuildFromConfig()` on a
+  timer. Distinct from the existing internal 10-min wake-recovery timer.
+- **GitHub status follow-ups.** State-transition notifications opt-in
   ("CI just broke on repo X", "Dependabot opened a new PR"). Default branch
   CI as a secondary signal. Per-PR review status when current branch has
   an open PR.

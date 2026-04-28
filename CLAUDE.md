@@ -9,8 +9,10 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
 
 ## Current state
 
-- **v0.4.0** released. MIT-licensed on GitHub at `thimo/uncommitted`.
-- **v0.5** (Distribution) is blocked on Apple Developer Program activation
+- **v0.5.0** released. MIT-licensed on GitHub at `thimo/uncommitted`. Adds
+  per-repo GitHub PR + CI signals via the `gh` CLI, with tiered refresh
+  cadence and multi-clone-aware caching.
+- **v0.6** (Distribution) is blocked on Apple Developer Program activation
   email. Once that lands: Developer ID signing, notarization, universal
   binary, release.sh, Homebrew tap. See `ROADMAP.md`.
 
