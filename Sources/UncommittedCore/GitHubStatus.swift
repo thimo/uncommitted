@@ -1,7 +1,7 @@
 import Foundation
 import os.log
 
-private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "github")
+private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "github")
 
 /// owner/repo pair extracted from a GitHub remote URL. Holds the original
 /// URL string so callers can surface it in errors/logs.
@@ -206,7 +206,7 @@ public enum GHService {
     public static func execute(_ args: [String]) -> ExecuteResult {
         guard let path = ghPath() else {
             let err = NSError(
-                domain: "nl.thimo.uncommitted.gh",
+                domain: "nl.defrog.uncommitted.gh",
                 code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "gh CLI not found in PATH"]
             )
@@ -231,7 +231,7 @@ public enum GHService {
         }
 
         let group = DispatchGroup()
-        let queue = DispatchQueue(label: "nl.thimo.uncommitted.gh-drain", attributes: .concurrent)
+        let queue = DispatchQueue(label: "nl.defrog.uncommitted.gh-drain", attributes: .concurrent)
 
         var stdoutData = Data()
         var stderrData = Data()

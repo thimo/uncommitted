@@ -38,11 +38,11 @@ public final class RepoStore: ObservableObject {
     // Serial here meant a full refresh of N repos took N × ~150ms, which
     // felt noticeably sluggish on the refresh button.
     private let statusQueue = DispatchQueue(
-        label: "nl.thimo.uncommitted.git-status",
+        label: "nl.defrog.uncommitted.git-status",
         qos: .utility,
         attributes: .concurrent
     )
-    private let actionQueue = DispatchQueue(label: "nl.thimo.uncommitted.git-action", qos: .userInitiated)
+    private let actionQueue = DispatchQueue(label: "nl.defrog.uncommitted.git-action", qos: .userInitiated)
 
     public var totalUncommitted: Int {
         repos.reduce(0) { $0 + ($1.status?.totalUncommitted ?? 0) }

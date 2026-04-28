@@ -3,7 +3,7 @@ import Combine
 import AppKit
 import os.log
 
-private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "fetch-scheduler")
+private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "fetch-scheduler")
 
 /// Runs `git fetch` on tracked repos in the background at a tiered cadence
 /// (24h for repos active in the last 7 days, 7d otherwise). Failures back
@@ -63,7 +63,7 @@ public final class FetchScheduler: ObservableObject {
     /// path.
     private let fetchQueue: OperationQueue = {
         let q = OperationQueue()
-        q.name = "nl.thimo.uncommitted.fetch-scheduler"
+        q.name = "nl.defrog.uncommitted.fetch-scheduler"
         q.qualityOfService = .utility
         q.maxConcurrentOperationCount = FetchScheduler.parallelLimit
         return q

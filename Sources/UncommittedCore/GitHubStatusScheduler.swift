@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import os.log
 
-private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "github-status-scheduler")
+private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "github-status-scheduler")
 
 /// Polls GitHub for PR + CI status across tracked repos at a tiered
 /// cadence. Multi-clone aware — repos sharing an `owner/repo` slug
@@ -41,7 +41,7 @@ public final class GitHubStatusScheduler: ObservableObject {
     private var lastRefreshAt: [URL: Date] = [:]
 
     private let queue = DispatchQueue(
-        label: "nl.thimo.uncommitted.github-status",
+        label: "nl.defrog.uncommitted.github-status",
         qos: .utility,
         attributes: .concurrent
     )

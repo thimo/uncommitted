@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import os.log
 
-private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "fetch-state")
+private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "fetch-state")
 
 /// Persists per-repo fetch bookkeeping to
 /// `~/Library/Application Support/Uncommitted/fetch-state.json`.

@@ -1,7 +1,7 @@
 import Foundation
 import os.log
 
-private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "git")
+private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "git")
 
 /// Classified representation of a git command failure. Cases are added
 /// as we encounter real examples — unrecognised stderr falls through to
@@ -246,7 +246,7 @@ public enum GitService {
 
         // Concurrent drain — neither pipe can starve the other.
         let group = DispatchGroup()
-        let concurrentQueue = DispatchQueue(label: "nl.thimo.uncommitted.pipe-drain", attributes: .concurrent)
+        let concurrentQueue = DispatchQueue(label: "nl.defrog.uncommitted.pipe-drain", attributes: .concurrent)
 
         var stdoutData = Data()
         var stderrData = Data()

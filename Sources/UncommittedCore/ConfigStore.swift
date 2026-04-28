@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import os.log
 
-private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "config")
+private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "config")
 
 public final class ConfigStore: ObservableObject {
     @Published public var config: Config {

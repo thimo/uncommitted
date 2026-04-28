@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 import os.log
 
-private let log = Logger(subsystem: "nl.thimo.uncommitted", category: "actions")
+private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "actions")
 
 public struct Action: Codable, Identifiable, Hashable {
     public var id: UUID
