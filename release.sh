@@ -113,7 +113,7 @@ fi
 # ---------------------------------------------------------------------------
 # Code signing
 # ---------------------------------------------------------------------------
-if [ -n "$SIGN_IDENTITY" ] && [ "$DRY_RUN" = false ]; then
+if [ -n "$SIGN_IDENTITY" ]; then
   echo "==> Signing with Developer ID (hardened runtime + timestamp)"
   codesign --force --deep \
     --sign "$SIGN_IDENTITY" \
