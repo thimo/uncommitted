@@ -230,7 +230,7 @@ struct MenuContentView: View {
 
     private var footer: some View {
         HStack {
-            Button("Settings…") {
+            Button {
                 // LSUIElement apps don't auto-activate when a SwiftUI window
                 // opens, so without this the Settings window comes up with
                 // an inactive titlebar. dismissPopover() is hosted by our
@@ -238,11 +238,14 @@ struct MenuContentView: View {
                 NSApp.activate(ignoringOtherApps: true)
                 openSettings()
                 dismissPopover()
+            } label: {
+                Text(Image(systemName: "gearshape"))
             }
             .buttonStyle(GhostButtonStyle())
             .foregroundStyle(.primary.opacity(0.70))
             .font(.callout)
             .keyboardShortcut(",")
+            .help("Settings")
             .pointingHandCursor()
 
             Spacer()
@@ -257,8 +260,7 @@ struct MenuContentView: View {
             .pointingHandCursor()
         }
         .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
+        .padding(.vertical, 6)
     }
 }
 
