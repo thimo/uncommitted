@@ -130,6 +130,9 @@ struct MenuContentView: View {
                                         onAction: { action in
                                             ActionRunner.run(repoURL: repo.url, action: action)
                                             dismissPopover()
+                                        },
+                                        onFetch: {
+                                            fetchScheduler.manualFetch(repos: [repo])
                                         }
                                     )
                                 } else {
@@ -721,11 +724,15 @@ struct RepoRow: View {
 /// popover reads as "the badges, expanded".
 struct RepoDetailPopover: View {
     let repoName: String
+    let repoURL: URL
     let status: RepoStatus
     var actions: [Action] = []
-    var fetchState: FetchState? = nil
+    var fetchEnabled: Bool = false
+    var fetchStateStore: FetchStateStore? = nil
+    var fetchScheduler: FetchScheduler? = nil
     var githubStatus: GitHubRepoStatus? = nil
     var onAction: (Action) -> Void = { _ in }
+    var onFetch: (() -> Void)? = nil
 
     /// Max paths/commits to list per section before "+N more".
     private static let itemLimit = 12
@@ -739,8 +746,15 @@ struct RepoDetailPopover: View {
                 sections
                 githubSections
             }
-            if let fetchState {
-                fetchStatusLine(fetchState)
+            if fetchEnabled,
+               let fetchStateStore,
+               let fetchScheduler {
+                LiveFetchStatusLine(
+                    repoURL: repoURL,
+                    fetchStateStore: fetchStateStore,
+                    fetchScheduler: fetchScheduler,
+                    onFetch: onFetch
+                )
             }
         }
         .padding(14)
@@ -821,46 +835,91 @@ struct RepoDetailPopover: View {
         }
     }
 
-    @ViewBuilder
-    private func fetchStatusLine(_ state: FetchState) -> some View {
-        if state.noRemote {
-            // Don't waste a row on no-remote repos in the detail panel.
-            EmptyView()
-        } else {
-            Divider()
+    /// Bottom-row "Last fetched X ago" line, observing FetchStateStore +
+    /// FetchScheduler so the text refreshes the moment a fetch completes
+    /// and the icon swaps to a spinner while one is in flight. Clickable
+    /// to force a fetch when `onFetch` is wired — same call as the
+    /// "Fetch from remote" item in the row's right-click menu.
+    private struct LiveFetchStatusLine: View {
+        let repoURL: URL
+        @ObservedObject var fetchStateStore: FetchStateStore
+        @ObservedObject var fetchScheduler: FetchScheduler
+        let onFetch: (() -> Void)?
+        @State private var isHovering = false
+
+        private var state: FetchState { fetchStateStore.state(for: repoURL) }
+        private var isFetching: Bool { fetchScheduler.inFlightURLs.contains(repoURL) }
+
+        var body: some View {
+            if state.noRemote {
+                // Don't waste a row on no-remote repos in the detail panel.
+                EmptyView()
+            } else {
+                Divider()
+                if let onFetch {
+                    Button(action: onFetch) {
+                        content
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isFetching)
+                    .onHover { hovering in
+                        isHovering = hovering && !isFetching
+                        if hovering && !isFetching {
+                            NSCursor.pointingHand.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
+                } else {
+                    content
+                }
+            }
+        }
+
+        @ViewBuilder
+        private var content: some View {
             HStack(spacing: 6) {
-                Image(systemName: state.consecutiveFailures == 0
-                      ? "arrow.triangle.2.circlepath"
-                      : "exclamationmark.triangle.fill")
+                if isFetching {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.6)
+                        .frame(width: 12, height: 12)
+                } else {
+                    Image(systemName: state.consecutiveFailures == 0
+                          ? "arrow.clockwise"
+                          : "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(state.consecutiveFailures == 0
+                                         ? .primary.opacity(isHovering ? 0.85 : 0.50)
+                                         : Color.orange)
+                        .frame(width: 12, height: 12)
+                }
+                Text(statusText)
                     .font(.caption)
-                    .foregroundStyle(state.consecutiveFailures == 0
-                                     ? .primary.opacity(0.50)
-                                     : Color.orange)
-                Text(fetchStatusText(state))
-                    .font(.caption)
-                    .foregroundStyle(.primary.opacity(0.70))
+                    .foregroundStyle(.primary.opacity(isHovering ? 0.95 : 0.70))
             }
         }
-    }
 
-    private func fetchStatusText(_ state: FetchState) -> String {
-        if state.consecutiveFailures > 0 {
-            if let last = state.lastAttemptAt {
-                return "Last fetch failed \(Self.relativeFormatter.localizedString(for: last, relativeTo: Date()))"
+        private var statusText: String {
+            if isFetching { return "Fetching…" }
+            if state.consecutiveFailures > 0 {
+                if let last = state.lastAttemptAt {
+                    return "Last fetch failed \(Self.relativeFormatter.localizedString(for: last, relativeTo: Date()))"
+                }
+                return "Last fetch failed"
             }
-            return "Last fetch failed"
+            if let success = state.lastSuccessAt {
+                return "Last fetched \(Self.relativeFormatter.localizedString(for: success, relativeTo: Date()))"
+            }
+            return "Not fetched yet"
         }
-        if let success = state.lastSuccessAt {
-            return "Last fetched \(Self.relativeFormatter.localizedString(for: success, relativeTo: Date()))"
-        }
-        return "Not fetched yet"
-    }
 
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
-    }()
+        private static let relativeFormatter: RelativeDateTimeFormatter = {
+            let f = RelativeDateTimeFormatter()
+            f.unitsStyle = .full
+            return f
+        }()
+    }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {

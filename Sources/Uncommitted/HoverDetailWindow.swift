@@ -21,6 +21,9 @@ final class HoverDetailController {
     /// Optional fetch state lookup. Set by AppDelegate at construction time
     /// so the detail panel can show "Last fetched X ago" / failure status.
     weak var fetchStateStore: FetchStateStore?
+    /// Manual-fetch trigger and per-repo in-flight signal source. Same
+    /// instance MenuContentView uses; injected by AppDelegate.
+    weak var fetchScheduler: FetchScheduler?
     /// Whether the auto-fetch feature is on. The detail panel only shows
     /// fetch info when this is true — there's nothing to report otherwise.
     var fetchEnabled: Bool = false
@@ -46,6 +49,7 @@ final class HoverDetailController {
     private var isPanelHovered = false
     private var currentActions: [Action] = []
     private var currentOnAction: ((Action) -> Void)?
+    private var currentOnFetch: (() -> Void)?
 
     /// The repo ID currently being displayed. Used by the right-click
     /// handler in AppDelegate to show a context menu for the right row.
@@ -75,12 +79,14 @@ final class HoverDetailController {
         for repo: Repo,
         rowFrameOnScreen: NSRect,
         actions: [Action],
-        onAction: @escaping (Action) -> Void
+        onAction: @escaping (Action) -> Void,
+        onFetch: (() -> Void)? = nil
     ) {
         guard let status = repo.status else { return }
 
         currentActions = actions
         currentOnAction = onAction
+        currentOnFetch = onFetch
         dismissWorkItem?.cancel()
 
         // Already visible → swap content and reposition instantly.
@@ -222,16 +228,20 @@ final class HoverDetailController {
 
         let actions = currentActions
         let onAction = currentOnAction
-        let fetchState = fetchEnabled ? fetchStateStore?.state(for: repo.url) : nil
+        let onFetch = currentOnFetch
         let githubStatus = githubStatusLookup?(repo.url)
         let content = HoverDetailContent(
             repoName: repo.name,
+            repoURL: repo.url,
             status: status,
             arrowSide: currentSide,
             actions: actions,
-            fetchState: fetchState,
+            fetchEnabled: fetchEnabled,
+            fetchStateStore: fetchStateStore,
+            fetchScheduler: fetchScheduler,
             githubStatus: githubStatus,
             onAction: { action in onAction?(action) },
+            onFetch: onFetch.map { fn in { fn() } },
             onHoverChange: { [weak self] in self?.panelHover($0) }
         )
         if let hostingView {
@@ -394,12 +404,16 @@ enum PanelSide {
 /// state back to the controller.
 struct HoverDetailContent: View {
     let repoName: String
+    let repoURL: URL
     let status: RepoStatus
     let arrowSide: PanelSide
     let actions: [Action]
-    let fetchState: FetchState?
+    let fetchEnabled: Bool
+    let fetchStateStore: FetchStateStore?
+    let fetchScheduler: FetchScheduler?
     let githubStatus: GitHubRepoStatus?
     let onAction: (Action) -> Void
+    let onFetch: (() -> Void)?
     let onHoverChange: (Bool) -> Void
 
     /// Arrow dimensions. 8pt wide, 14pt tall is a system-popover-ish feel.
@@ -413,11 +427,15 @@ struct HoverDetailContent: View {
     var body: some View {
         RepoDetailPopover(
             repoName: repoName,
+            repoURL: repoURL,
             status: status,
             actions: actions,
-            fetchState: fetchState,
+            fetchEnabled: fetchEnabled,
+            fetchStateStore: fetchStateStore,
+            fetchScheduler: fetchScheduler,
             githubStatus: githubStatus,
-            onAction: onAction
+            onAction: onAction,
+            onFetch: onFetch
         )
             .frame(width: 260)
             .fixedSize(horizontal: false, vertical: true)

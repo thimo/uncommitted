@@ -77,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.hoverDetail = HoverDetailController()
         self.hoverDetail.fetchStateStore = fetchStateStore
+        self.hoverDetail.fetchScheduler = fetchScheduler
         self.hoverDetail.fetchEnabled = configStore.config.fetchFromRemotes
         // Capture weakly so the controller doesn't keep the scheduler
         // alive past app shutdown — the closure is replaced if needed.

@@ -16,6 +16,10 @@ public final class FetchScheduler: ObservableObject {
     /// completion (both on the main thread).
     @Published public private(set) var inFlightFetches: Int = 0
 
+    /// URLs whose `git fetch` is currently running. Drives the per-repo
+    /// spinner in the hover detail panel.
+    @Published public private(set) var inFlightURLs: Set<URL> = []
+
     /// How often the scheduler wakes up to look for work. Each tick is
     /// cheap when there's nothing to do.
     public static let tickInterval: TimeInterval = 5 * 60
@@ -266,6 +270,7 @@ public final class FetchScheduler: ObservableObject {
         // the header spinner fires as soon as the user kicks off work —
         // don't wait for the OperationQueue to schedule the block.
         inFlightFetches += 1
+        inFlightURLs.insert(url)
         let operation = BlockOperation()
         operation.addExecutionBlock { [weak self, weak operation] in
             // Always decrement on every exit path. Local helper so we
@@ -274,6 +279,7 @@ public final class FetchScheduler: ObservableObject {
                 guard let self else { return }
                 DispatchQueue.main.async {
                     self.inFlightFetches = max(0, self.inFlightFetches - 1)
+                    self.inFlightURLs.remove(url)
                     self.inFlightOperations.removeValue(forKey: url)
                 }
             }
@@ -313,7 +319,10 @@ public final class FetchScheduler: ObservableObject {
             DispatchQueue.main.async {
                 // Decrement is the last thing we do on this path so the
                 // spinner stays up until the state write lands.
-                defer { self.inFlightFetches = max(0, self.inFlightFetches - 1) }
+                defer {
+                    self.inFlightFetches = max(0, self.inFlightFetches - 1)
+                    self.inFlightURLs.remove(url)
+                }
                 // Bail if the user disabled the feature while this
                 // operation was running, OR if the repo was removed
                 // from sources between scheduling and completion. In
