@@ -9,7 +9,7 @@ struct MenuContentView: View {
     @EnvironmentObject var githubScheduler: GitHubStatusScheduler
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismissPopover) private var dismissPopover
-    @Environment(\.resizePanel) private var resizePanel
+    @Environment(\.setPanelSize) private var setPanelSize
     @Environment(\.hoverDetail) private var hoverDetail
 
     /// Tracks whether the Option modifier is currently held. Updated by
@@ -64,31 +64,17 @@ struct MenuContentView: View {
             footer
         }
         .frame(width: 360)
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { newSize in
+            // SwiftUI reports the actual rendered size after every layout
+            // pass, so we never have to chase intrinsicContentSize through
+            // a runloop hop. Covers data updates, modifier-held toggles,
+            // and visible-row changes in one place.
+            setPanelSize(newSize)
+        }
         .onChange(of: fetchScheduler.inFlightFetches) { _, newValue in
             busyIndicator.update(busy: newValue > 0)
-        }
-        .onChange(of: modifierTracker.optionHeld) { _, _ in
-            // Dispatch to the next runloop so SwiftUI has committed the
-            // updated body before we read the hosting view's fitting size
-            // — reading it synchronously inside onChange sometimes returns
-            // the stale size, leaving the resize a no-op until Auto
-            // Layout's own cadence kicks in 100–300ms later. The panel's
-            // resize notification handler in AppDelegate re-anchors the
-            // top edge whenever the panel actually changes size.
-            DispatchQueue.main.async {
-                resizePanel()
-            }
-        }
-        .onChange(of: visibleRepos.count) { _, _ in
-            // A repo dropping off the visible list (e.g. push cleared
-            // its unpushed count and "hide clean repos" is on) has to
-            // shrink the panel too — the controller's $repos sink fires
-            // before SwiftUI commits the new layout, so it'd read the
-            // old fittingSize. Hopping to the next runloop after we
-            // already saw the count change gives layout a beat to land.
-            DispatchQueue.main.async {
-                resizePanel()
-            }
         }
         .onDisappear {
             // Popup closed — drop any lingering hover detail panel.

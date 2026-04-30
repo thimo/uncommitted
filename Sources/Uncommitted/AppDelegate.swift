@@ -157,47 +157,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // When repo data changes while the panel is open (e.g. after a
-        // push clears "unpushed" counts), re-fit the panel to the new
-        // SwiftUI content size.
-        repoStore.$repos
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.resizePanelIfVisible()
-                // SwiftUI may not have re-rendered yet (e.g. clean repos
-                // being filtered out after status loads). Follow up on
-                // the next runloop so fittingSize reflects the new content.
-                DispatchQueue.main.async {
-                    self?.resizePanelIfVisible()
-                }
-            }
-            .store(in: &cancellables)
     }
 
-    private func resizePanelIfVisible() {
-        guard let panel, panel.isVisible, let hView = hostingController?.view else { return }
-        // Force the hosting view to drop any cached intrinsic size and
-        // re-measure against the current SwiftUI body. Without this,
-        // shrinking content (e.g. a row dropping off `visibleRepos`)
-        // leaves the panel at the previous, taller size — producing a
-        // band of empty space above the footer.
-        hView.invalidateIntrinsicContentSize()
-        hView.layoutSubtreeIfNeeded()
-        let fitting = hView.intrinsicContentSize
-        guard fitting.width > 0, fitting.height > 0,
-              fitting != panel.frame.size else { return }
-
-        // Unconditionally re-pin the top edge 1pt below the menu bar rather
-        // than preserving the panel's old top: Auto Layout can auto-grow
-        // the panel upward when intrinsic content expands, which displaces
-        // the top into the menu bar. Re-deriving the origin from
-        // `visibleFrame.maxY` every resize makes us robust to that.
+    /// Resize the panel to a size reported by SwiftUI itself (via
+    /// `.onGeometryChange` on the root content view). Reading
+    /// `NSHostingView.intrinsicContentSize` directly was race-prone:
+    /// SwiftUI re-renders asynchronously, so a synchronous read after a
+    /// data change could see a stale size and clip the last row by ~15pt.
+    /// Driving the size from SwiftUI's measured geometry removes the
+    /// timing dependency.
+    private func setPanelSize(_ size: CGSize) {
+        guard let panel, panel.isVisible else { return }
+        let target = CGSize(width: ceil(size.width), height: ceil(size.height))
+        guard target.width > 0, target.height > 0,
+              target != panel.frame.size else { return }
+        // Unconditionally re-pin the top edge 1pt below the menu bar so
+        // the panel never grows upward into it.
         let screen = panel.screen ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? panel.frame
         var frame = panel.frame
-        frame.size = fitting
-        frame.origin.y = visibleFrame.maxY - fitting.height - 1
+        frame.size = target
+        frame.origin.y = visibleFrame.maxY - target.height - 1
         panel.setFrame(frame, display: true, animate: false)
     }
 
@@ -347,8 +327,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(\.dismissPopover) { [weak self] in
                 self?.closePopup()
             }
-            .environment(\.resizePanel) { [weak self] in
-                self?.resizePanelIfVisible()
+            .environment(\.setPanelSize) { [weak self] size in
+                self?.setPanelSize(size)
             }
             .environment(\.hoverDetail, hoverDetail)
 
@@ -510,8 +490,8 @@ struct DismissPopoverKey: EnvironmentKey {
     static let defaultValue: () -> Void = {}
 }
 
-struct ResizePanelKey: EnvironmentKey {
-    static let defaultValue: () -> Void = {}
+struct SetPanelSizeKey: EnvironmentKey {
+    static let defaultValue: (CGSize) -> Void = { _ in }
 }
 
 extension EnvironmentValues {
@@ -520,8 +500,8 @@ extension EnvironmentValues {
         set { self[DismissPopoverKey.self] = newValue }
     }
 
-    var resizePanel: () -> Void {
-        get { self[ResizePanelKey.self] }
-        set { self[ResizePanelKey.self] = newValue }
+    var setPanelSize: (CGSize) -> Void {
+        get { self[SetPanelSizeKey.self] }
+        set { self[SetPanelSizeKey.self] = newValue }
     }
 }
