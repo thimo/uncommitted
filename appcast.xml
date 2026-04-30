@@ -3,13 +3,28 @@
     <channel>
         <title>Uncommitted</title>
         <item>
+            <title>0.6.2</title>
+            <pubDate>Thu, 30 Apr 2026 21:49:00 +0200</pubDate>
+            <link>https://github.com/thimo/uncommitted/releases/tag/v0.6.2</link>
+            <sparkle:version>110</sparkle:version>
+            <sparkle:shortVersionString>0.6.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted-0.6.2.zip" length="3720083" type="application/octet-stream" sparkle:edSignature="dnM5E3qhU5fT/7hq61id+f46LKdhZn/NQ4Y+V5+qRYIBfch3mwlybhysMHBWWO4OAisX9UDnCnEn9HZ2fII1Cw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted110-101.delta" sparkle:deltaFrom="101" length="150282" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="h4sJga0ArMRWNPR/iL7z722SvWFYPPvh6vme9uW7TSg4BUyenxEeoedGU4VIrO2zDh6LHeb/J5Omi19bRpvkDA=="/>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted110-97.delta" sparkle:deltaFrom="97" length="287062" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="NuGDFimVPOiFszLOGq2PJ6J3vBkXOFAF2+aC4heX8DuVrwdjskEfzEhg4FMpb7wNb3kNJpxOCVBwk8rpGcuJBw=="/>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted110-91.delta" sparkle:deltaFrom="91" length="304446" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="gPjkvtsebd/t43mLS4hQvY1kiv+bdFzQV44ceq7domc342m4cKab0fxZXuj/n9jzSW/fI2kWOo/fVPHkQ0BfBw=="/>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted110-57.delta" sparkle:deltaFrom="57" length="1845926" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="mt0eA6ZZYqawXGFQRfM02GJty5UKkxOHZEqSeHThdSYqjdqafdpZ9ZoKGSBH8hcIAF12+Q5Xa+vgXC0FFZUYDg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.6.1</title>
             <pubDate>Thu, 30 Apr 2026 14:23:22 +0200</pubDate>
             <link>https://github.com/thimo/uncommitted/releases/tag/v0.6.1</link>
             <sparkle:version>101</sparkle:version>
             <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.1/Uncommitted-0.6.1.zip" length="3718939" type="application/octet-stream" sparkle:edSignature="Q9s1fidWXLOX7153+TwUscThhQ/bIoVkw+EwdcLP15Tl6LoNj//CEyRF8BSV2DuPEOwY57om4XWhGWt2azOeCg=="/>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted-0.6.1.zip" length="3718939" type="application/octet-stream" sparkle:edSignature="Q9s1fidWXLOX7153+TwUscThhQ/bIoVkw+EwdcLP15Tl6LoNj//CEyRF8BSV2DuPEOwY57om4XWhGWt2azOeCg=="/>
             <sparkle:deltas>
                 <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.1/Uncommitted101-97.delta" sparkle:deltaFrom="97" length="278614" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="U5e6l+r4JFa3DV47Eq4sCrQnQjT61eeuUgbiTvu76m212XgGDi8L+0JgJy+i7JWpC2H6zgONyD9r1zZSMCqnDA=="/>
                 <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.1/Uncommitted101-91.delta" sparkle:deltaFrom="91" length="295466" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="6ba4n5oMK07KIfd1SxvmaSf+cCNMgEMLqUJjvT2MY8aa4A7tRBpG5AKw3vQm1EE62KSQzS5SQs35frvFcoSBDA=="/>
@@ -23,19 +38,7 @@
             <sparkle:version>97</sparkle:version>
             <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.1/Uncommitted-0.6.0.zip" length="3695382" type="application/octet-stream" sparkle:edSignature="noj7ZtfrKtf3UGP9F1hzxgaO3DWkpYEBL5tRx0wyJ5jz4x83pVe2bBbOqwWNCMpj2sf0bPiz7glpdnzQ6TMkAw=="/>
-        </item>
-        <item>
-            <title>0.5.0</title>
-            <pubDate>Mon, 27 Apr 2026 02:03:04 +0200</pubDate>
-            <link>https://github.com/thimo/uncommitted/releases/tag/v0.5.0</link>
-            <sparkle:version>91</sparkle:version>
-            <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.1/Uncommitted-0.5.0.zip" length="3637652" type="application/octet-stream" sparkle:edSignature="30ftvEYg/okro9Z+YmCTKT3mPJQbagfSfBpKHDhlJcpI51Hdb2Inqf8/q+kMq6EKf9c02smIcxwnEM4Ssf32BA=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.5.0/Uncommitted91-57.delta" sparkle:deltaFrom="57" length="1814078" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="oBTRh4AqSeteSKsTb5yN8JR84dbTVnM183SxfZFEivnnycfqPOyAuWqFrsAq8xodD9XGzGujZYjnmmpE4yjKDQ=="/>
-            </sparkle:deltas>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted-0.6.0.zip" length="3695382" type="application/octet-stream" sparkle:edSignature="noj7ZtfrKtf3UGP9F1hzxgaO3DWkpYEBL5tRx0wyJ5jz4x83pVe2bBbOqwWNCMpj2sf0bPiz7glpdnzQ6TMkAw=="/>
         </item>
     </channel>
 </rss>
