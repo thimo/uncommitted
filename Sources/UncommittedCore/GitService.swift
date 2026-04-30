@@ -71,8 +71,8 @@ public enum GitService {
     ///
     /// Uses `--no-optional-locks` so we never grab `index.lock`. Without
     /// this, every FSEvents-triggered status poll takes a brief lock that
-    /// collides with concurrent git operations (other tools, CI, Claude
-    /// Code instances running `git add`/`git commit` in the same repo).
+    /// collides with concurrent git operations (other tools, CI, editor
+    /// integrations running `git add`/`git commit` in the same repo).
     /// Uses `--untracked-files=all` so individual files inside untracked
     /// directories are counted, matching what other git tools show.
     public static func status(at url: URL) -> RepoStatus? {

@@ -12,7 +12,7 @@ build/
 # Signing credentials for release.sh (local only, never committed).
 .env.local
 
-# Claude Code project-local settings (per-device permissions).
+# Per-device editor/tooling overrides (never committed).
 .claude/settings.local.json
 
 # Peekaboo screenshots dumped during dev sessions.
