@@ -145,10 +145,6 @@ icon programmatically via `Resources/make-icon.swift`, wraps the binary in a
 proper `.app` with `Info.plist`, ad-hoc codesigns, quits any running instance,
 and installs to `~/Applications/Uncommitted.app`.
 
-> **Note:** The app is currently ad-hoc signed, not notarized. macOS
-> Gatekeeper may block it on first launch — right-click → Open to bypass.
-> Proper Developer ID signing is pending Apple Developer Program enrollment.
-
 The app is `LSUIElement`, so there's no Dock icon — look for it in the menu
 bar.
 

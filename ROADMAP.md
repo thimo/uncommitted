@@ -5,6 +5,15 @@ order can shift, ideas can drop.
 
 ## Where we are
 
+**v0.6.1** (2026-04-30) — first signed + notarized release. Apple Developer ID
+signing with hardened runtime + secure timestamp, universal binary
+(`arm64` + `x86_64`), `release.sh` automates the whole pipeline (build,
+sign, notarize, staple, appcast, GitHub release, version commit). Bundle
+id renamed to `nl.defrog.uncommitted` for proper reverse-DNS hygiene.
+Hover detail panel's "Last fetched X ago" line is now a clickable refresh
+that shows a live spinner while a fetch is in flight; the popup footer
+shifted Settings to a gear icon to match the header chrome.
+
 **v0.5.0** (2026-04) — GitHub PR + CI signals per repo. PR pill shows
 `⤴ N / N` (humans / bots, bot count muted), CI surfaces only red and
 running (green stays silent), menu-bar branch icon turns red when any
@@ -19,33 +28,15 @@ menu bar, configurable actions, per-source scan depth, git-porcelain status
 badges, four-tab Settings, Sparkle 2.x auto-updater integrated, MIT license
 on GitHub.
 
-Distribution is still ad-hoc signed — no notarized binary yet.
+## Distribution follow-ups
 
-## v0.6 — Distribution
+A few distribution chores that didn't make it into v0.6.1 itself but are
+natural next steps now that signed builds exist:
 
-Goal: ship a signed, notarized binary so anyone with a Mac can install
-Uncommitted without running `swift build`. Blocked on Apple Developer
-Program enrollment (in progress 2026-04-26).
-
-- [ ] Enroll in Apple Developer Program (~$99/year)
-- [ ] Generate a Developer ID Application certificate
-- [ ] Store notary credentials with `xcrun notarytool store-credentials`
-- [ ] Wire `build.sh` to read `UNCOMMITTED_SIGN_IDENTITY` from `.env.local`
-      — use it when set, fall back to ad-hoc for dev builds
-- [ ] Add `--timestamp --options runtime` to the `codesign` call
-- [ ] Build universal (`arm64` + `x86_64`) so both architectures work
-- [ ] New `release.sh`: builds release, zips with `ditto`, submits to
-      notarytool, staples the ticket, re-zips for upload, runs `spctl` for
-      sanity, runs `generate_appcast` to update `appcast.xml`, commits
-      and tags
-- [ ] Add a "Download" section at the top of the README
-- [ ] Create a personal Homebrew tap at `thimo/homebrew-tap` with a
-      `Casks/uncommitted.rb` pointing at the GitHub Release zip
-
-The scaffolding for this is already in the repo: `.env.example` documents
-the env vars the release flow needs. Sparkle 2.x is already integrated
-(see CLAUDE.md). Only the script edits and the Apple enrollment step are
-outstanding.
+- [ ] Add a "Download" section at the top of the README pointing at the
+      GitHub Releases page (or directly at the latest universal `.zip`).
+- [ ] Personal Homebrew tap at `thimo/homebrew-tap` with a
+      `Casks/uncommitted.rb` pointing at the latest GitHub Release zip.
 
 ## Other ideas (unordered backlog)
 
