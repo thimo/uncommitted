@@ -187,14 +187,41 @@ fi
 if command -v gh &>/dev/null; then
   TAG="v${VERSION}"
   echo "==> Creating GitHub release $TAG"
+
+  # Extract the entry for this version from CHANGELOG.md as the release
+  # body, so users see curated user-facing notes (also picked up by
+  # Sparkle's update prompt via the appcast). Falls back to
+  # `--generate-notes` if the changelog has no entry yet.
+  NOTES_FILE=""
+  if [ -f CHANGELOG.md ]; then
+    NOTES_FILE=$(mktemp -t "uncommitted-${VERSION}-notes.XXXXXX.md")
+    awk -v v="${VERSION}" '
+      $0 ~ "^## v" v "( |$)" { found = 1; next }
+      found && /^## v/ { exit }
+      found { print }
+    ' CHANGELOG.md > "$NOTES_FILE"
+    if [ ! -s "$NOTES_FILE" ]; then
+      rm -f "$NOTES_FILE"
+      NOTES_FILE=""
+    fi
+  fi
+
   if git rev-parse "$TAG" &>/dev/null; then
     echo "   Tag exists — uploading to existing release."
     gh release upload "$TAG" "$ZIP_PATH" --clobber
+    if [ -n "$NOTES_FILE" ]; then
+      gh release edit "$TAG" --notes-file "$NOTES_FILE"
+    fi
+  elif [ -n "$NOTES_FILE" ]; then
+    gh release create "$TAG" "$ZIP_PATH" \
+      --title "Uncommitted ${VERSION}" \
+      --notes-file "$NOTES_FILE"
   else
     gh release create "$TAG" "$ZIP_PATH" \
       --title "Uncommitted ${VERSION}" \
       --generate-notes
   fi
+  [ -n "$NOTES_FILE" ] && rm -f "$NOTES_FILE"
   echo "   https://github.com/thimo/uncommitted/releases/tag/$TAG"
 else
   echo "   gh CLI not found — upload $ZIP_PATH manually."
