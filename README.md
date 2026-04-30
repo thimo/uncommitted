@@ -5,6 +5,23 @@ your git repositories. SwiftUI + AppKit, no polling, no dependencies.
 
 ![menu bar label showing icon plus counts](./docs/menubar.png)
 
+## Download
+
+**[Latest release on GitHub →](https://github.com/thimo/uncommitted/releases/latest)**
+
+Grab `Uncommitted-X.Y.Z.zip` from the latest release — universal binary
+(`arm64` + `x86_64`, macOS 14+), signed with my Apple Developer ID and
+notarized by Apple. Unzip, drag `Uncommitted.app` into `~/Applications/`
+(or `/Applications/`), and launch. First run passes Gatekeeper without
+prompts.
+
+After installation the app updates itself: a built-in Sparkle 2.x updater
+checks for new releases on launch and once a day, and prompts when one is
+available. No manual download needed for subsequent versions.
+
+Prefer to build from source? See [Building from source](#building-from-source)
+below.
+
 ## What it does
 
 At-a-glance status for every repo you care about:
@@ -217,18 +234,10 @@ Those are all great tools, but I wanted:
 - A real native Settings window with proper preferences, not a JSON file
 - Live updates via FSEvents instead of a 5-minute polling interval
 - Custom per-repo actions with icons pulled from the actual apps
-- An excuse to learn SwiftUI on macOS properly
+- A genuinely beautiful Mac app that keeps an eye on my repos all day
 
-First "beautiful Mac app" project for me. Code is deliberately readable — if
-you want to crib patterns for your own menu bar app, start at
-`Sources/Uncommitted/AppDelegate.swift`.
+First "beautiful Mac app" project for me.
 
 ## License
 
 MIT — see [LICENSE](./LICENSE).
-
-## Credits
-
-Built collaboratively with [Claude Code](https://claude.com/claude-code)
-(Claude Opus 4.6, 1M context). Every commit on the history carries a
-co-authored-by line. Fully written from scratch on 2026-04-11.

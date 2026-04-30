@@ -30,11 +30,6 @@ on GitHub.
 
 ## Distribution follow-ups
 
-A few distribution chores that didn't make it into v0.6.1 itself but are
-natural next steps now that signed builds exist:
-
-- [ ] Add a "Download" section at the top of the README pointing at the
-      GitHub Releases page (or directly at the latest universal `.zip`).
 - [ ] Personal Homebrew tap at `thimo/homebrew-tap` with a
       `Casks/uncommitted.rb` pointing at the latest GitHub Release zip.
 
