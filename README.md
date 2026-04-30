@@ -3,7 +3,7 @@
 A native macOS menubar app that tracks uncommitted and unpushed changes across
 your git repositories. SwiftUI + AppKit, no polling, no dependencies.
 
-![menu bar label showing icon plus counts](./docs/menubar.png)
+![menu bar label showing the branch icon and attention count](./docs/menubar.png)
 
 ## Download
 
@@ -34,6 +34,13 @@ At-a-glance status for every repo you care about:
 - Right-click a row for the full action list
 - "Hide repositories with no changes" toggle so you only see what needs attention
 
+![popover with mixed status across the demo repos](./docs/popover-mixed.png)
+
+Hover any row for a detail panel with the recent commits behind that
+repo's counts:
+
+![hover detail panel with commit subjects](./docs/hover-detail.png)
+
 ## Menu bar label
 
 A git-branch icon followed by a single at-a-glance number: **how many
@@ -44,7 +51,7 @@ repositories need your attention**. Click for the full breakdown.
 | All repositories clean | branch icon only |
 | Three repositories have uncommitted or unpushed work | branch icon + `3` |
 
-The per-file counts (`↑7`, `★2`, `M10`, `A1`) live inside the popover, one
+The per-file counts (`↑7`, `★2`, `●10`, `+1`) live inside the popover, one
 row per repo — not in the menu bar. Menu bars are for "do I need to care?"
 signals, not data.
 
@@ -65,28 +72,22 @@ The `↑` and `↓` badges are pill-shaped and interactive — click the `↑`
 to run `git push`, click the `↓` to run `git pull`. The rest are
 read-only indicators.
 
+![close-up of a single repo row with the full badge set](./docs/badges-closeup.png)
+
 ## Push and pull
 
-Clicking the `↑` pill on a repo runs **`git push`** — straightforward,
-uses whatever upstream the branch tracks. If the push is rejected
-(typically because the remote has commits you don't have), an alert
-surfaces git's actual error text and nothing changes locally.
+Clicking the `↑` pill runs **`git push`** with whatever upstream the
+branch tracks. If the push is rejected, an alert surfaces git's actual
+error text and nothing changes locally.
 
-Clicking the `↓` pill runs **`git pull --ff-only`**, deliberately. Git's
-default pull either creates a merge commit or (with `--rebase`) silently
-rewrites your local history — both of those are surprising things to
-happen from a one-click menu-bar action. Fast-forward-only means: if
-your local branch is strictly behind the remote with no local commits
-of its own, git advances your branch pointer to match the remote and
-that's it. If your branch has **diverged** (you have local commits
-_and_ the remote has new commits), pull aborts with an error and you
-handle it manually in your editor or terminal. Safer default for a
-one-click control.
+Clicking the `↓` pill runs **`git pull --ff-only`**, deliberately —
+plain `git pull` either creates a merge commit or rewrites local
+history depending on config, neither of which should happen from a
+one-click button. With `--ff-only`, a diverged branch aborts with an
+error and you resolve it manually.
 
-Both actions show a small spinner in place of the badge count while
-they run, and the `.git/refs` changes they produce get picked up by
-the FSEvents watcher automatically — the count updates within a second
-of completion, no explicit refresh needed.
+A spinner replaces the badge count while either action runs; the badge
+updates within a second of completion via the FSEvents watcher.
 
 ## GitHub status
 
@@ -133,7 +134,7 @@ off exponentially up to 30 days, then go dormant; a small warning glyph
 next to the repo name surfaces problems before they get there. Repos
 without a remote are skipped entirely.
 
-To fetch on demand, **Option-click** the refresh button in the popup
+To fetch on demand, **Option-click** the refresh button in the popover
 header (the icon swaps to indicate the alternate action), or use the
 "Fetch from remote" item on a repo row's right-click menu. A manual
 fetch always runs, even on dormant repos.
@@ -177,6 +178,8 @@ Add *source folders* with the **+** button. A source folder is any directory:
 Depth is configurable per source (0–5). Scanning stops at each repo found, so
 submodules and nested checkouts aren't treated as separate repos.
 
+![Settings → Repositories tab](./docs/settings-repositories.png)
+
 ### Actions (Cmd+, → Actions)
 
 Configure what happens when you click a repo row in the popover. Default list
@@ -197,6 +200,8 @@ Similarly, `code {path}` uses VS Code's IPC to reuse the existing window
 across desktops. Set the **Icon** field to the app name (e.g. "Tower") to
 keep the app icon in the action list.
 
+![Settings → Actions tab](./docs/settings-actions.png)
+
 ### General (Cmd+, → General)
 
 - **Hide repositories with no changes** — only show repos that need attention
@@ -204,6 +209,8 @@ keep the app icon in the action list.
 - **Auto-fetch from remotes** — periodic background `git fetch` so the
   unpulled count stays current without manual intervention. See [Auto-fetch
   from remotes](#auto-fetch-from-remotes).
+
+![Settings → General tab](./docs/settings-general.png)
 
 ### Config file
 
@@ -215,17 +222,17 @@ to.
 
 - Swift Package, single executable target, no Xcode project required
 - SwiftUI views throughout: popover content, Settings scene, all tabs
-- AppKit `NSStatusItem` + `NSPopover` hosted via `NSHostingController` — we
-  tried SwiftUI's `MenuBarExtra` but it offers no way to dismiss its popover
-  programmatically
+- AppKit `NSStatusItem` + `NSMenu` with a single custom-view item hosting
+  an `NSHostingView` of the SwiftUI content — earlier iterations used
+  `MenuBarExtra` (no programmatic dismiss) and `NSPopover` (visible arrow
+  on macOS 15 with no API to hide it); `NSMenu` gives us the system
+  button highlight, cross-menu dismissal, and correct positioning for free
 - `FSEvents` watcher per resolved repo with configurable scan depth — no
   polling; the only background work is `git status --porcelain=v2 --branch`
   triggered by file changes, run on a serial utility queue so nothing blocks
   the main thread
 - A failed or suspect `git status` parse never clobbers a known-good status,
   which keeps the UI stable when git is mid-operation (fetch, push, etc.)
-- Popover is `.transient`, so it auto-closes on focus loss (e.g. when your
-  editor takes focus after a click)
 
 ## Why not SwiftBar / Barmaid / AnyBar?
 
