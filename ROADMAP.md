@@ -5,6 +5,17 @@ order can shift, ideas can drop.
 
 ## Where we are
 
+**v0.6.2** (2026-04-30) — popover polish. Bottom row's subtitle no
+longer briefly clips on first show: a synchronous `intrinsicContentSize`
+read can lag SwiftUI's settled body by 15-20pt when a Combine publisher
+hasn't yet committed, so we now follow up with a one-tick async resize
+that catches the drift before the user sees it. Switching Spaces /
+Mission Control desktops dismisses the popover so the next menu-bar
+click opens a fresh one on the current desktop, matching the rest of
+macOS's status-bar apps. README gained screenshots, a Download section
+pointing at the GitHub release, and a few stale technical references
+got fixed.
+
 **v0.6.1** (2026-04-30) — first signed + notarized release. Apple Developer ID
 signing with hardened runtime + secure timestamp, universal binary
 (`arm64` + `x86_64`), `release.sh` automates the whole pipeline (build,
