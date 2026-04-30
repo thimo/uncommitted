@@ -452,6 +452,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.setFrameOrigin(NSPoint(x: clampedX, y: panelY))
         panel.orderFrontRegardless()
 
+        // The synchronous `intrinsicContentSize` read above can be 15-20pt
+        // smaller than the steady-state height when SwiftUI hasn't yet
+        // committed all pending body updates (e.g. a row's subtitle line
+        // that only renders after a Combine publisher settles a beat
+        // later). Schedule a follow-up resize on the next runloop tick
+        // to catch the settled size and correct the panel before the
+        // user sees the too-small popover with its bottom row clipped.
+        DispatchQueue.main.async { [weak self] in
+            self?.resizePanelIfVisible()
+        }
+
         // Eager-refresh GitHub status for visible repos so freshly-opened
         // popups don't show stale data. The scheduler dedups by slug + sha
         // so this is cheap even when the cadence has just fired.
