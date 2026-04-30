@@ -369,6 +369,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isOpaque = false
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
+        // Surface over fullscreen apps too — expected status-bar
+        // behaviour. We deliberately do *not* set `.canJoinAllSpaces`:
+        // the popover should dismiss when the user switches Spaces
+        // (handled below via `activeSpaceDidChangeNotification`) so
+        // the next menu-bar click opens a fresh popover on the
+        // current desktop, like every other status-bar app.
+        panel.collectionBehavior = [.fullScreenAuxiliary]
 
         let visualEffect = NSVisualEffectView()
         visualEffect.material = .headerView
@@ -402,6 +409,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWindow.didResizeNotification,
             object: panel
         )
+
+        // Dismiss the popover when the user switches Spaces. Without
+        // this, the panel stays pinned to its original Space — clicking
+        // the menu-bar icon on the new Space would toggle that hidden
+        // panel "closed", so the next click is the one that opens a
+        // fresh popover. Standard status-bar apps dismiss on switch.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(activeSpaceDidChange(_:)),
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func activeSpaceDidChange(_ note: Notification) {
+        guard let panel, panel.isVisible else { return }
+        closePopup()
     }
 
     @objc private func panelDidResize(_ note: Notification) {
