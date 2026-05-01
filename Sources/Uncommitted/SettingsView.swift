@@ -454,6 +454,16 @@ struct ActionRow: View {
                     .lineLimit(1)
             }
             Spacer()
+            if action.role == .gitClient {
+                Text("Git client")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.primary.opacity(0.85))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule().fill(Color.secondary.opacity(0.20))
+                    )
+            }
             if isDefault {
                 Text("Default")
                     .font(.caption2.weight(.semibold))
@@ -489,6 +499,26 @@ struct ActionRow: View {
 
 struct ActionDetailView: View {
     @Binding var action: Action
+    @EnvironmentObject var configStore: ConfigStore
+
+    private var isGitClient: Binding<Bool> {
+        Binding(
+            get: { action.role == .gitClient },
+            set: { newValue in
+                if newValue {
+                    // Single-assignment: clear .gitClient on every other action.
+                    for i in configStore.config.actions.indices where configStore.config.actions[i].id != action.id {
+                        if configStore.config.actions[i].role == .gitClient {
+                            configStore.config.actions[i].role = nil
+                        }
+                    }
+                    action.role = .gitClient
+                } else {
+                    action.role = nil
+                }
+            }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -557,6 +587,14 @@ struct ActionDetailView: View {
                         .foregroundStyle(.primary.opacity(0.70))
                         .padding(.top, 2)
                 }
+            }
+
+            section(title: "Role") {
+                Toggle("Use as git client", isOn: isGitClient)
+                Text("Surfaces this action as the recovery button in push/pull error alerts. Only one action can hold this role.")
+                    .font(.caption)
+                    .foregroundStyle(.primary.opacity(0.70))
+                    .padding(.top, 2)
             }
 
             Spacer()

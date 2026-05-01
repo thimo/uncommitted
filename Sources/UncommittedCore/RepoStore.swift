@@ -164,10 +164,13 @@ public final class RepoStore: ObservableObject {
                     // we haven't classified yet.
                     let friendly = result.kind?.userMessage
                     let message = friendly ?? result.errorOutput ?? "Unknown error"
+                    let recovery = self.configStore.config.actions.first(where: { $0.role == .gitClient })
+                        .map { (url: url, action: $0) }
                     Self.presentError(
                         title: "\(kind == .push ? "Push" : "Pull") failed — \(repoName)",
                         message: message,
-                        detail: friendly != nil ? result.errorOutput : nil
+                        detail: friendly != nil ? result.errorOutput : nil,
+                        recovery: recovery
                     )
                 }
                 if let index = self.repos.firstIndex(where: { $0.id == id }) {
@@ -177,13 +180,23 @@ public final class RepoStore: ObservableObject {
         }
     }
 
-    private static func presentError(title: String, message: String, detail: String? = nil) {
+    private static func presentError(
+        title: String,
+        message: String,
+        detail: String? = nil,
+        recovery: (url: URL, action: Action)? = nil
+    ) {
         // NSAlert.runModal() takes focus on its own — don't yank the whole
         // app forward just to display a warning sheet.
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
+        if let recovery {
+            // Recovery button first → becomes the default (Return key).
+            alert.addButton(withTitle: "Open in \(recovery.action.name)")
+            alert.addButton(withTitle: "OK")
+        }
         if let detail, !detail.isEmpty {
             // Raw git stderr available via a disclosure so the friendly
             // message can stay short but power users can still read
@@ -201,7 +214,10 @@ public final class RepoStore: ObservableObject {
             scroll.borderType = .lineBorder
             alert.accessoryView = scroll
         }
-        alert.runModal()
+        let response = alert.runModal()
+        if let recovery, response == .alertFirstButtonReturn {
+            ActionRunner.run(repoURL: recovery.url, action: recovery.action)
+        }
     }
 
     /// Re-resolve sources from config and refresh every repo. Unlike

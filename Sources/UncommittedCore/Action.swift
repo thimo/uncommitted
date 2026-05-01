@@ -12,13 +12,46 @@ public struct Action: Codable, Identifiable, Hashable {
     /// wrap a specific app's CLI (e.g. "Tower" for `gittower {path}`).
     /// Ignored for `.app` and `.finder` kinds which derive their own.
     public var iconApp: String?
+    /// Optional semantic role. Used by error-recovery UI to find the
+    /// user's preferred git client without hardcoding a name. At most
+    /// one action per role; enforcement lives in the settings UI.
+    public var role: ActionRole?
 
-    public init(id: UUID = UUID(), name: String, kind: ActionKind, iconApp: String? = nil) {
+    public init(id: UUID = UUID(), name: String, kind: ActionKind, iconApp: String? = nil, role: ActionRole? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
         self.iconApp = iconApp
+        self.role = role
     }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, kind, iconApp, role
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.kind = try c.decode(ActionKind.self, forKey: .kind)
+        self.iconApp = try c.decodeIfPresent(String.self, forKey: .iconApp)
+        self.role = try c.decodeIfPresent(ActionRole.self, forKey: .role)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(kind, forKey: .kind)
+        try c.encodeIfPresent(iconApp, forKey: .iconApp)
+        try c.encodeIfPresent(role, forKey: .role)
+    }
+}
+
+public enum ActionRole: String, Codable, Hashable {
+    /// User's preferred GUI git client. Surfaced in push/pull error
+    /// alerts as a recovery button.
+    case gitClient
 }
 
 public enum ActionKind: Codable, Hashable {

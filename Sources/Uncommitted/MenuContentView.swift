@@ -579,16 +579,19 @@ struct RepoRow: View {
                 }
             }
             Section {
+                let noRemote = fetchState?.noRemote == true
                 Button {
                     fetchScheduler.manualFetch(repos: [repo])
                 } label: {
                     Label("Fetch from remote", systemImage: "arrow.triangle.2.circlepath")
                 }
+                .disabled(noRemote)
                 Button {
                     openRemoteInBrowser()
                 } label: {
                     Label("Open remote in browser", systemImage: "safari")
                 }
+                .disabled(noRemote)
                 if configStore.config.showGitHubStatus {
                     Button {
                         toggleGitHubMute()
@@ -599,6 +602,7 @@ struct RepoRow: View {
                             Label("Unmute GitHub status", systemImage: "eye")
                         }
                     }
+                    .disabled(noRemote)
                 }
             }
         }
