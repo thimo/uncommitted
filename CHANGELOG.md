@@ -3,6 +3,32 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
+## v0.7.0 — 2026-05-16
+
+### Improvements
+- Search field in the popover header, auto-focused when the popup
+  opens. Matches across every repository by name and path — including
+  the fully-committed ones the "hide clean repos" filter normally
+  hides — so you can jump to any repo, not just the ones needing
+  attention. (Replaces the old "Uncommitted" title.)
+- Full keyboard flow: ⌘⇧U to open, type to filter, ↑/↓ to move the
+  selection, ⏎ to run the default action on it. Esc clears the query,
+  or closes the popup if it's already empty.
+- Mouse and keyboard share one selection — hovering a row makes it the
+  active row, so a following arrow press steps from there, and the
+  hover detail panel follows the keyboard selection just as it does
+  the mouse.
+- One configured action can be tagged "git client" in Settings.
+  Push/pull error alerts then offer "Open in <name>" as the default
+  button, opening the failing repo in that client.
+
+### Bug fixes
+- Fixed the pointing-hand cursor sticking on the text I-beam when
+  moving between clickable rows in the popover.
+- "Fetch from remote", "Open remote in browser", and "Mute GitHub
+  status" are now disabled instead of silent no-ops for repositories
+  without a remote.
+
 ## v0.6.2 — 2026-04-30
 
 ### Improvements

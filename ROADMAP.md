@@ -5,6 +5,22 @@ order can shift, ideas can drop.
 
 ## Where we are
 
+**v0.7.0** (2026-05-16) — search + keyboard navigation. The popover
+header's app-name title is gone; in its place an auto-focused search
+field that matches every repo by name and path, including the
+fully-committed ones the "hide clean repos" filter normally hides — so
+it doubles as a jump-to-repo, not just a filter for dirty ones. The
+whole flow is keyboard-driven: ⌘⇧U opens, type to filter, ↑/↓ move a
+selection, ⏎ runs the default action, Esc clears-then-closes. Mouse and
+keyboard share a single selection so arrowing continues from wherever
+the cursor last was, and hover events caused by the list scrolling
+under a parked cursor are suppressed so keyboard nav isn't hijacked.
+The pointing-hand cursor moved off `NSCursor.push()/.pop()` (the stack
+desynced when LazyVStack recycled rows, sticking the cursor on the
+I-beam). One action can be tagged "git client" so push/pull error
+alerts offer "Open in <name>"; remote-only row actions are disabled
+for repos without a remote.
+
 **v0.6.2** (2026-04-30) — popover polish. Bottom row's subtitle no
 longer briefly clips on first show: a synchronous `intrinsicContentSize`
 read can lag SwiftUI's settled body by 15-20pt when a Combine publisher
