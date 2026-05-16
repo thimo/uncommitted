@@ -3,13 +3,29 @@
     <channel>
         <title>Uncommitted</title>
         <item>
+            <title>0.7.1</title>
+            <pubDate>Sat, 16 May 2026 14:40:41 +0200</pubDate>
+            <link>https://github.com/thimo/uncommitted/releases/tag/v0.7.1</link>
+            <sparkle:version>119</sparkle:version>
+            <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted-0.7.1.zip" length="3808908" type="application/octet-stream" sparkle:edSignature="Nf/OyZ9RYoashO6H1hQbtXpVcAEf3Q7wHhPPtAufqVDWEuclpCX+ZqvkEM9il19U8QskTXo0NwcQ4Zpn+mR5Ag=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-115.delta" sparkle:deltaFrom="115" length="252506" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="H+0BhsdZvj9qocaeh5E3fBpVYBu+W5uBqbCb9u78r0DQA1vhYENsscVY4EJQZcg02JDNZcxUUdWgzr6OJNQ4BQ=="/>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-110.delta" sparkle:deltaFrom="110" length="425002" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="9rW9P7YLWlbUTn3VK0d3Nv5RG7fDNMFDjK54Fzzez9MOJwYaRIUrW0dwAOlc5fptaeeq2oWPqYGAD+TukMQpAA=="/>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-101.delta" sparkle:deltaFrom="101" length="425294" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="1e5x/WVTKrMLaQ7RXZyKwXPMZ5cUVFxgtoukRj+X7HfXUoG/aedFt0QfrtXjstEehOn0K6pxu/oQdhzt4IjBCg=="/>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-97.delta" sparkle:deltaFrom="97" length="464818" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="I4aLH7/KvHpIYsLiYanmC8anEB305Ot25CjzUZ5l5/R2i0f+DypZK/WLqHDZ3goeYkm9DUHB8h7351mCk1ypAw=="/>
+                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-91.delta" sparkle:deltaFrom="91" length="479842" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="aroxfA2b6ST+91QveS4LXpUImjTK33ml7j7f0lqA4vsu38Be4RdIuOhSoiaJjOmCRoS1dU7JdEQsmjJRSEMbBQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.7.0</title>
             <pubDate>Sat, 16 May 2026 13:47:46 +0200</pubDate>
             <link>https://github.com/thimo/uncommitted/releases/tag/v0.7.0</link>
             <sparkle:version>115</sparkle:version>
             <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.0/Uncommitted-0.7.0.zip" length="3810039" type="application/octet-stream" sparkle:edSignature="bb1KjEoqv8ny/9WvGdGOQTNj04hG3SFbhaG+fkA/8PkWz65Z3W/g0jJbrpiwiP5kaZNLaGp5jVJSonuD9xnlBQ=="/>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted-0.7.0.zip" length="3810039" type="application/octet-stream" sparkle:edSignature="bb1KjEoqv8ny/9WvGdGOQTNj04hG3SFbhaG+fkA/8PkWz65Z3W/g0jJbrpiwiP5kaZNLaGp5jVJSonuD9xnlBQ=="/>
             <sparkle:deltas>
                 <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.0/Uncommitted115-110.delta" sparkle:deltaFrom="110" length="398422" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="9AzAIe9b8TwERP2mEQ5wVUmpuhLWcxAAzHWuvCxWrDM3KPbHe9lef2uYZrcRDOFyBzzKyGSBpY5cZeZr3l5DDA=="/>
                 <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.0/Uncommitted115-101.delta" sparkle:deltaFrom="101" length="410802" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="4xa0lYz5Up6vwrx6pHxgAjj9n+G7YdxCTxdnBUJCLtCCBdAl8/ubtHrlgHZXbKD84zLLAG6FbnWjkXFIGk7fCw=="/>
@@ -25,26 +41,12 @@
             <sparkle:version>110</sparkle:version>
             <sparkle:shortVersionString>0.6.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.0/Uncommitted-0.6.2.zip" length="3720083" type="application/octet-stream" sparkle:edSignature="dnM5E3qhU5fT/7hq61id+f46LKdhZn/NQ4Y+V5+qRYIBfch3mwlybhysMHBWWO4OAisX9UDnCnEn9HZ2fII1Cw=="/>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted-0.6.2.zip" length="3720083" type="application/octet-stream" sparkle:edSignature="dnM5E3qhU5fT/7hq61id+f46LKdhZn/NQ4Y+V5+qRYIBfch3mwlybhysMHBWWO4OAisX9UDnCnEn9HZ2fII1Cw=="/>
             <sparkle:deltas>
                 <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted110-101.delta" sparkle:deltaFrom="101" length="150282" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="h4sJga0ArMRWNPR/iL7z722SvWFYPPvh6vme9uW7TSg4BUyenxEeoedGU4VIrO2zDh6LHeb/J5Omi19bRpvkDA=="/>
                 <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted110-97.delta" sparkle:deltaFrom="97" length="287062" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="NuGDFimVPOiFszLOGq2PJ6J3vBkXOFAF2+aC4heX8DuVrwdjskEfzEhg4FMpb7wNb3kNJpxOCVBwk8rpGcuJBw=="/>
                 <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted110-91.delta" sparkle:deltaFrom="91" length="304446" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="gPjkvtsebd/t43mLS4hQvY1kiv+bdFzQV44ceq7domc342m4cKab0fxZXuj/n9jzSW/fI2kWOo/fVPHkQ0BfBw=="/>
                 <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.2/Uncommitted110-57.delta" sparkle:deltaFrom="57" length="1845926" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="mt0eA6ZZYqawXGFQRfM02GJty5UKkxOHZEqSeHThdSYqjdqafdpZ9ZoKGSBH8hcIAF12+Q5Xa+vgXC0FFZUYDg=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>0.6.1</title>
-            <pubDate>Thu, 30 Apr 2026 14:23:22 +0200</pubDate>
-            <link>https://github.com/thimo/uncommitted/releases/tag/v0.6.1</link>
-            <sparkle:version>101</sparkle:version>
-            <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.0/Uncommitted-0.6.1.zip" length="3718939" type="application/octet-stream" sparkle:edSignature="Q9s1fidWXLOX7153+TwUscThhQ/bIoVkw+EwdcLP15Tl6LoNj//CEyRF8BSV2DuPEOwY57om4XWhGWt2azOeCg=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.1/Uncommitted101-97.delta" sparkle:deltaFrom="97" length="278614" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="U5e6l+r4JFa3DV47Eq4sCrQnQjT61eeuUgbiTvu76m212XgGDi8L+0JgJy+i7JWpC2H6zgONyD9r1zZSMCqnDA=="/>
-                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.1/Uncommitted101-91.delta" sparkle:deltaFrom="91" length="295466" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="6ba4n5oMK07KIfd1SxvmaSf+cCNMgEMLqUJjvT2MY8aa4A7tRBpG5AKw3vQm1EE62KSQzS5SQs35frvFcoSBDA=="/>
-                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.6.1/Uncommitted101-57.delta" sparkle:deltaFrom="57" length="1842274" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="UVugbPFDXxgHFK5jDrMt64UiSs2hBtQGUB4k9vwE1Ouc5M63mhmUIb5sq7haYYJjBhyEJCnMDRrcaiPA9zKbAw=="/>
             </sparkle:deltas>
         </item>
     </channel>
