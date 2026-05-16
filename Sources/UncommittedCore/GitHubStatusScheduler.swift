@@ -136,8 +136,18 @@ public final class GitHubStatusScheduler: ObservableObject {
     /// refresh. Off-thread under the hood; results post on main.
     public func eagerRefresh(_ repos: [Repo]) {
         guard !stopped else { return }
-        let specs = repos.compactMap(resolvedSpec(for:))
-        runFetch(specs: specs)
+        // `resolvedSpec` shells out to `git remote get-url` per repo.
+        // Done on the caller (main) thread this blocked the run loop for
+        // ~900ms with a dozen repos — measured: it stalled the popup's
+        // window-key/activation and every keystroke until it returned.
+        // The actual fetch in `runFetch` was already off-main; the spec
+        // resolution wasn't. Push the whole thing to the background
+        // queue so opening the popup never waits on git.
+        queue.async { [weak self] in
+            guard let self, !self.stopped else { return }
+            let specs = repos.compactMap(self.resolvedSpec(for:))
+            self.runFetch(specs: specs)
+        }
     }
 
     /// Drop cached status for a repo — useful when its remote URL just

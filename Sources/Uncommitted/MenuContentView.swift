@@ -98,7 +98,7 @@ struct MenuContentView: View {
     /// Shows (or instantly swaps) the floating detail popover for `repo`,
     /// positioned next to `frame`. Shared by mouse hover and keyboard
     /// selection so both routes produce the identical panel.
-    private func presentDetail(for repo: Repo, frame: NSRect) {
+    private func presentDetail(for repo: Repo, frame: NSRect, immediate: Bool = false) {
         // The single choke point for showing the detail panel — covers
         // both the mouse-hover and keyboard-selection routes. If the
         // popup is gone, this is a stale late call: drop it.
@@ -111,7 +111,8 @@ struct MenuContentView: View {
                 ActionRunner.run(repoURL: repo.url, action: action)
                 dismissPopover()
             },
-            onFetch: { fetchScheduler.manualFetch(repos: [repo]) }
+            onFetch: { fetchScheduler.manualFetch(repos: [repo]) },
+            immediate: immediate
         )
     }
 
@@ -219,16 +220,45 @@ struct MenuContentView: View {
             hoverDetail?.dismissImmediately()
         }
         .onReceive(NotificationCenter.default.publisher(for: .popupDidOpen)) { _ in
-            // Fresh session: clear the previous query and focus the field
-            // so the user can type immediately. Hop a runloop so the panel
-            // has finished becoming key before we assert focus.
+            // Fresh session: clear the previous query, drop any stale
+            // selection, and focus the field so the user can type
+            // immediately. The selection reset can't be left to the
+            // searchQuery .onChange — when the query is already "" (it's
+            // cleared on close) re-setting "" is a no-op, so a row
+            // arrowed-to last session would otherwise still show
+            // selected on reopen. Hop a runloop so the panel has
+            // finished becoming key before we assert focus.
             isPopupOpen = true
             searchQuery = ""
+            selectedIndex = nil
+            selectionFromKeyboard = false
+            keyboardSelectionMouseLocation = nil
+            // Focus synchronously: `panel.makeKey()` already ran before
+            // this notification was posted, so the field can become
+            // first responder right now. Deferring it a runloop (as
+            // before) meant a fast ↓ right after ⌘⇧U hit an unfocused
+            // field and was dropped — the first selection only landed on
+            // the second press. The async re-assert stays as a fallback
+            // for the rare case the panel isn't key yet.
+            searchFocused = true
             DispatchQueue.main.async { searchFocused = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popupDidClose)) { _ in
             isPopupOpen = false
             searchQuery = ""
+            selectedIndex = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .popupKeyCommand)) { note in
+            switch note.userInfo?["cmd"] as? String {
+            case "down": moveSelection(1)
+            case "up": moveSelection(-1)
+            case "return": activateSelected()
+            case "escape":
+                // Clear the query first, then (if already empty) close
+                // the popup — Spotlight behaviour.
+                if searchQuery.isEmpty { dismissPopover() } else { searchQuery = "" }
+            default: break
+            }
         }
         .onChange(of: searchQuery) { _, _ in
             // The result set (and thus content height) changes as the
@@ -295,8 +325,9 @@ struct MenuContentView: View {
                             },
                             onSelectedShow: { frame in
                                 // Keyboard moved selection onto this row —
-                                // pop the same detail panel to the side.
-                                presentDetail(for: repo, frame: frame)
+                                // pop the same detail panel to the side,
+                                // immediately (no hover show-delay).
+                                presentDetail(for: repo, frame: frame, immediate: true)
                             }
                         )
                         .id(repo.id)
@@ -381,29 +412,11 @@ struct MenuContentView: View {
                 .textFieldStyle(.plain)
                 .font(.body)
                 .focused($searchFocused)
-                .onExitCommand {
-                    // Esc: clear the query first, then (if already
-                    // empty) dismiss the popup — matches Spotlight.
-                    if searchQuery.isEmpty {
-                        dismissPopover()
-                    } else {
-                        searchQuery = ""
-                    }
-                }
-                // Return runs the default action on the highlighted row,
-                // so the flow is: ⌘⇧U → type → ↓/↑ → ⏎.
-                .onSubmit { activateSelected() }
-                // Intercept up/down before the field uses them for caret
-                // movement (a single-line field doesn't need them) and
-                // walk the result list instead.
-                .onKeyPress(.downArrow) {
-                    moveSelection(1)
-                    return .handled
-                }
-                .onKeyPress(.upArrow) {
-                    moveSelection(-1)
-                    return .handled
-                }
+                // ↑/↓/⏎/Esc are handled by AppDelegate's key-down
+                // monitor (see `.popupKeyCommand` below), not SwiftUI
+                // key modifiers — the monitor fires the moment the panel
+                // is key, so a fast arrow right after ⌘⇧U isn't lost
+                // while the field is still becoming first responder.
             if !searchQuery.isEmpty {
                 Button {
                     searchQuery = ""

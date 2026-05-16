@@ -75,12 +75,18 @@ final class HoverDetailController {
     /// Called by a `RepoRow` on hover-in. Shows the panel after a short
     /// delay (debounced). When called while another panel is already
     /// visible, switches content instantly without re-running the delay.
+    /// `immediate` skips the show delay. Mouse hover keeps the delay so
+    /// sweeping the cursor across rows doesn't flash a panel per row;
+    /// keyboard selection passes `true` because each arrow press is a
+    /// deliberate pick — the 0.3s wait there just read as lag on the
+    /// first selection (subsequent ones already swap instantly).
     func showDetail(
         for repo: Repo,
         rowFrameOnScreen: NSRect,
         actions: [Action],
         onAction: @escaping (Action) -> Void,
-        onFetch: (() -> Void)? = nil
+        onFetch: (() -> Void)? = nil,
+        immediate: Bool = false
     ) {
         guard let status = repo.status else { return }
 
@@ -94,6 +100,15 @@ final class HoverDetailController {
             showWorkItem?.cancel()
             currentRepoId = repo.id
             updateContent(repo: repo, status: status, rowFrameOnScreen: rowFrameOnScreen)
+            return
+        }
+
+        // Deliberate keyboard pick → present now, no delay.
+        if immediate {
+            showWorkItem?.cancel()
+            showWorkItem = nil
+            present(repo: repo, status: status, rowFrameOnScreen: rowFrameOnScreen)
+            currentRepoId = repo.id
             return
         }
 

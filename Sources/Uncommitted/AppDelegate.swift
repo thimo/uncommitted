@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hostingController: NSHostingController<AnyView>?
     private var globalMonitor: Any?
     private var localMonitor: Any?
+    private var keyMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
     private let hotkeyManager = HotkeyManager()
 
@@ -477,8 +478,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         // Become key (without activating the app — `.nonactivatingPanel`
         // + the PopupPanel `canBecomeKey` override) so the SwiftUI search
-        // field in the header can take keyboard focus on open. The click-
-        // outside monitors still dismiss as before.
+        // field can take keyboard focus on open. The earlier ~900ms
+        // input lag was never an activation problem: a synchronous
+        // `eagerRefresh` was blocking the main run loop right here, so
+        // key-window/activation/keystrokes all queued until it returned.
+        // That fetch is now off-main, so plain `makeKey()` is prompt.
         panel.makeKey()
         NotificationCenter.default.post(name: .popupDidOpen, object: nil)
 
@@ -538,11 +542,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.closePopup()
             return event
         }
+
+        // Navigation keys are handled here, not via SwiftUI
+        // `.onKeyPress`/`.onSubmit`, so they work the instant the panel
+        // is key — which is synchronous in `showPopup` — rather than
+        // waiting for the search field to finish becoming first
+        // responder. Consuming the event (return nil) keeps the field
+        // from also acting on it; every other key falls through so
+        // typing still reaches the field.
+        keyMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: .keyDown
+        ) { [weak self] event in
+            guard let self, let panel = self.panel, panel.isVisible,
+                  event.window == panel else { return event }
+
+            let cmd: String
+            switch event.keyCode {
+            case 125: cmd = "down"
+            case 126: cmd = "up"
+            case 36, 76: cmd = "return"   // Return, keypad Enter
+            case 53: cmd = "escape"
+            default: return event
+            }
+            NotificationCenter.default.post(
+                name: .popupKeyCommand,
+                object: nil,
+                userInfo: ["cmd": cmd]
+            )
+            return nil
+        }
     }
 
     private func removeEventMonitors() {
         if let m = globalMonitor { NSEvent.removeMonitor(m); globalMonitor = nil }
         if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
+        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
     }
 }
 
@@ -562,6 +596,12 @@ extension Notification.Name {
     /// content can focus (and reset) the search field per session.
     static let popupDidOpen = Notification.Name("UncommittedPopupDidOpen")
     static let popupDidClose = Notification.Name("UncommittedPopupDidClose")
+    /// Posted by the key-down monitor for the navigation keys while the
+    /// popup is key. `userInfo["cmd"]` is "up" / "down" / "return" /
+    /// "escape". Decoupled from SwiftUI `@FocusState` so a fast arrow
+    /// right after ⌘⇧U isn't dropped while the field is still settling
+    /// into first-responder.
+    static let popupKeyCommand = Notification.Name("UncommittedPopupKeyCommand")
 }
 
 // MARK: - Environment key
