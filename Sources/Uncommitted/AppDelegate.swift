@@ -356,7 +356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hosting.sizingOptions = .intrinsicContentSize
         self.hostingController = hosting
 
-        let panel = NSPanel(
+        let panel = PopupPanel(
             contentRect: .zero,
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
@@ -475,6 +475,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panel.setFrameOrigin(NSPoint(x: clampedX, y: panelY))
         panel.orderFrontRegardless()
+        // Become key (without activating the app — `.nonactivatingPanel`
+        // + the PopupPanel `canBecomeKey` override) so the SwiftUI search
+        // field in the header can take keyboard focus on open. The click-
+        // outside monitors still dismiss as before.
+        panel.makeKey()
+        NotificationCenter.default.post(name: .popupDidOpen, object: nil)
 
         // The synchronous `intrinsicContentSize` read above can be 15-20pt
         // smaller than the steady-state height when SwiftUI hasn't yet
@@ -508,6 +514,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.highlight(false)
         panel?.orderOut(nil)
         removeEventMonitors()
+        NotificationCenter.default.post(name: .popupDidClose, object: nil)
     }
 
     // MARK: - Click-outside dismissal
@@ -537,6 +544,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let m = globalMonitor { NSEvent.removeMonitor(m); globalMonitor = nil }
         if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
     }
+}
+
+// MARK: - Popup panel
+
+/// Borderless panels return `canBecomeKey == false` by default, which
+/// would block keyboard focus for the header search field. Overriding it
+/// lets the panel become key so typing works — without activating the
+/// (LSUIElement) app, since the style mask stays `.nonactivatingPanel`.
+final class PopupPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+extension Notification.Name {
+    /// Posted when the menu-bar popup is shown / hidden so the SwiftUI
+    /// content can focus (and reset) the search field per session.
+    static let popupDidOpen = Notification.Name("UncommittedPopupDidOpen")
+    static let popupDidClose = Notification.Name("UncommittedPopupDidClose")
 }
 
 // MARK: - Environment key

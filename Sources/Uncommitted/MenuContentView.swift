@@ -19,7 +19,102 @@ struct MenuContentView: View {
     @StateObject private var modifierTracker = ModifierTracker()
     @StateObject private var busyIndicator = BusyIndicator()
 
+    /// Header search query. When non-empty it overrides the "hide clean
+    /// repos" filter and matches across *all* repos by name and path —
+    /// the point of search is to find a repo even when it's fully
+    /// committed and would normally be hidden.
+    @State private var searchQuery = ""
+    @FocusState private var searchFocused: Bool
+
+    /// The active row in `visibleRepos` — the one that's highlighted and
+    /// whose detail popover is showing. `nil` means nothing is selected
+    /// (the default: we deliberately don't pre-select the first row).
+    /// Mouse hover and arrow keys both write here, so arrowing continues
+    /// from wherever the mouse last was.
+    @State private var selectedIndex: Int?
+
+    /// True when the last selection change came from the keyboard. Gates
+    /// the auto-scroll so mouse-hovering down the list doesn't yank the
+    /// scroll position around.
+    @State private var selectionFromKeyboard = false
+
+    /// Mouse location (screen coords) captured at the last keyboard
+    /// selection. A keyboard-driven scroll slides rows under a stationary
+    /// cursor, which makes SwiftUI fire spurious `.onHover` events that
+    /// would steal the selection straight back. We accept a hover as a
+    /// real mouse interaction only once the pointer has actually moved
+    /// away from this point.
+    @State private var keyboardSelectionMouseLocation: NSPoint?
+
+    private func moveSelection(_ delta: Int) {
+        let count = visibleRepos.count
+        guard count > 0 else { return }
+        selectionFromKeyboard = true
+        keyboardSelectionMouseLocation = NSEvent.mouseLocation
+        // No selection yet → first ↓ or ↑ lands on the first row.
+        let base = selectedIndex ?? -1
+        selectedIndex = max(0, min(count - 1, base + delta))
+    }
+
+    /// Whether a hover event reflects a genuine pointer move (vs. a row
+    /// scrolling under a parked cursor right after an arrow press).
+    private func isRealMouseHover() -> Bool {
+        guard let parked = keyboardSelectionMouseLocation else { return true }
+        // Any measurable movement from the parked point counts as real.
+        let now = NSEvent.mouseLocation
+        return abs(now.x - parked.x) > 1 || abs(now.y - parked.y) > 1
+    }
+
+    /// Index Return acts on: the explicit selection, or — when the
+    /// search has narrowed to a single repo — that lone result, so
+    /// "⌘⇧U → type → ⏎" still works without touching the arrows.
+    private var activationIndex: Int? {
+        if let selectedIndex { return selectedIndex }
+        return visibleRepos.count == 1 ? 0 : nil
+    }
+
+    private func activateSelected() {
+        guard let idx = activationIndex,
+              visibleRepos.indices.contains(idx),
+              let first = configStore.config.actions.first else { return }
+        let repo = visibleRepos[idx]
+        ActionRunner.run(repoURL: repo.url, action: first)
+        dismissPopover()
+    }
+
+    /// Shows (or instantly swaps) the floating detail popover for `repo`,
+    /// positioned next to `frame`. Shared by mouse hover and keyboard
+    /// selection so both routes produce the identical panel.
+    private func presentDetail(for repo: Repo, frame: NSRect) {
+        hoverDetail?.showDetail(
+            for: repo,
+            rowFrameOnScreen: frame,
+            actions: configStore.config.actions,
+            onAction: { action in
+                ActionRunner.run(repoURL: repo.url, action: action)
+                dismissPopover()
+            },
+            onFetch: { fetchScheduler.manualFetch(repos: [repo]) }
+        )
+    }
+
+    private var trimmedQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSearching: Bool { !trimmedQuery.isEmpty }
+
     private var visibleRepos: [Repo] {
+        // Search wins over every other filter: match name or full path,
+        // case-insensitively, against the entire repo set.
+        if isSearching {
+            let q = trimmedQuery.lowercased()
+            return store.repos.filter {
+                $0.name.lowercased().contains(q)
+                    || $0.url.path.lowercased().contains(q)
+            }
+        }
+
         // Holding Option temporarily reveals clean repos even when the filter
         // is on — a peek, not a state change. The header toggle is for the
         // persisted preference.
@@ -79,7 +174,7 @@ struct MenuContentView: View {
                 resizePanel()
             }
         }
-        .onChange(of: visibleRepos.count) { _, _ in
+        .onChange(of: visibleRepos.count) { _, newCount in
             // A repo dropping off the visible list (e.g. push cleared
             // its unpushed count and "hide clean repos" is on) has to
             // shrink the panel too — the controller's $repos sink fires
@@ -89,10 +184,40 @@ struct MenuContentView: View {
             DispatchQueue.main.async {
                 resizePanel()
             }
+            // Keep the selection inside the (possibly shrunk) result set.
+            if let idx = selectedIndex, idx >= newCount {
+                selectedIndex = newCount > 0 ? newCount - 1 : nil
+            }
+        }
+        .onChange(of: selectedIndex) { _, idx in
+            // Selection cleared (typing, Esc-clear, fresh open) → fade the
+            // floating detail panel out with it.
+            if idx == nil, let shown = hoverDetail?.hoveredRepoId {
+                hoverDetail?.scheduleDismiss(for: shown)
+            }
         }
         .onDisappear {
             // Popup closed — drop any lingering hover detail panel.
             hoverDetail?.dismissImmediately()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .popupDidOpen)) { _ in
+            // Fresh session: clear the previous query and focus the field
+            // so the user can type immediately. Hop a runloop so the panel
+            // has finished becoming key before we assert focus.
+            searchQuery = ""
+            DispatchQueue.main.async { searchFocused = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .popupDidClose)) { _ in
+            searchQuery = ""
+        }
+        .onChange(of: searchQuery) { _, _ in
+            // The result set (and thus content height) changes as the
+            // user types — re-fit the panel like the other filters do.
+            DispatchQueue.main.async { resizePanel() }
+            // Don't carry a stale selection across a changed result set,
+            // and don't auto-pick the first row — selection stays empty
+            // until the user arrows (or there's a single match for ⏎).
+            selectedIndex = nil
         }
     }
 
@@ -101,14 +226,16 @@ struct MenuContentView: View {
         if store.repos.isEmpty {
             emptyNoSources
         } else if visible.isEmpty {
-            emptyAllClean
+            if isSearching { emptyNoMatches } else { emptyAllClean }
         } else {
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(visible.enumerated()), id: \.element.id) { index, repo in
                         RepoRow(
                             repo: repo,
                             actions: configStore.config.actions,
+                            isSelected: index == selectedIndex,
                             onDefault: {
                                 guard let first = configStore.config.actions.first else { return }
                                 ActionRunner.run(repoURL: repo.url, action: first)
@@ -123,23 +250,36 @@ struct MenuContentView: View {
                             },
                             onHoverChange: { hovering, rowFrameOnScreen in
                                 if hovering, let frame = rowFrameOnScreen {
-                                    hoverDetail?.showDetail(
-                                        for: repo,
-                                        rowFrameOnScreen: frame,
-                                        actions: configStore.config.actions,
-                                        onAction: { action in
-                                            ActionRunner.run(repoURL: repo.url, action: action)
-                                            dismissPopover()
-                                        },
-                                        onFetch: {
-                                            fetchScheduler.manualFetch(repos: [repo])
-                                        }
-                                    )
+                                    // Ignore hovers caused by the list
+                                    // scrolling under a parked cursor
+                                    // right after an arrow press — they'd
+                                    // steal the keyboard selection back.
+                                    guard isRealMouseHover() else { return }
+                                    // Real pointer move: mouse takes over
+                                    // the selection so a following arrow
+                                    // steps from the hovered row. Not
+                                    // keyboard-driven, so it must not
+                                    // auto-scroll.
+                                    keyboardSelectionMouseLocation = nil
+                                    selectionFromKeyboard = false
+                                    selectedIndex = index
+                                    presentDetail(for: repo, frame: frame)
                                 } else {
+                                    // Only the keyboard-suppressed case is
+                                    // special: a scroll-induced hover-out
+                                    // shouldn't dismiss the panel the
+                                    // keyboard selection is showing.
+                                    guard isRealMouseHover() else { return }
                                     hoverDetail?.scheduleDismiss(for: repo.id)
                                 }
+                            },
+                            onSelectedShow: { frame in
+                                // Keyboard moved selection onto this row —
+                                // pop the same detail panel to the side.
+                                presentDetail(for: repo, frame: frame)
                             }
                         )
+                        .id(repo.id)
                         if index < visible.count - 1 {
                             Divider().padding(.horizontal, 10)
                         }
@@ -147,15 +287,25 @@ struct MenuContentView: View {
                 }
             }
             .frame(maxHeight: maxListHeight)
+            .onChange(of: selectedIndex) { _, idx in
+                guard selectionFromKeyboard,
+                      let idx, visible.indices.contains(idx) else { return }
+                // No explicit anchor → SwiftUI scrolls the *minimum*
+                // needed to reveal the row. A row that's already on
+                // screen doesn't move at all (centering it here is what
+                // made the list jump back when arrowing off a hovered
+                // mid-list row); only off-screen rows get pulled in.
+                withAnimation(.easeOut(duration: 0.12)) {
+                    proxy.scrollTo(visible[idx].id)
+                }
+            }
+            }
         }
     }
 
     private var header: some View {
-        HStack {
-            Text("Uncommitted")
-                .font(.headline)
-                .padding(.horizontal, 6)
-            Spacer()
+        HStack(spacing: 8) {
+            searchField
             Button {
                 // One-click "refresh everything": rescan source folders
                 // (catches just-cloned repos), kick a manual `git fetch`
@@ -197,6 +347,77 @@ struct MenuContentView: View {
         .padding(.horizontal, 12)
         .padding(.top, 12)
         .padding(.bottom, 10)
+    }
+
+    /// Always-visible search box in the header. Focused automatically
+    /// when the popup opens (see the `.popupDidOpen` handler) and cleared
+    /// per session so each open starts fresh.
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.45))
+            TextField("Search repositories", text: $searchQuery)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .focused($searchFocused)
+                .onExitCommand {
+                    // Esc: clear the query first, then (if already
+                    // empty) dismiss the popup — matches Spotlight.
+                    if searchQuery.isEmpty {
+                        dismissPopover()
+                    } else {
+                        searchQuery = ""
+                    }
+                }
+                // Return runs the default action on the highlighted row,
+                // so the flow is: ⌘⇧U → type → ↓/↑ → ⏎.
+                .onSubmit { activateSelected() }
+                // Intercept up/down before the field uses them for caret
+                // movement (a single-line field doesn't need them) and
+                // walk the result list instead.
+                .onKeyPress(.downArrow) {
+                    moveSelection(1)
+                    return .handled
+                }
+                .onKeyPress(.upArrow) {
+                    moveSelection(-1)
+                    return .handled
+                }
+            if !searchQuery.isEmpty {
+                Button {
+                    searchQuery = ""
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.primary.opacity(0.35))
+                }
+                .buttonStyle(.plain)
+                .pointingHandCursor()
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .frame(maxWidth: .infinity)
+    }
+
+    private var emptyNoMatches: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.largeTitle)
+                .foregroundStyle(.primary.opacity(0.50))
+            Text("No repositories match “\(trimmedQuery)”")
+                .font(.callout)
+                .foregroundStyle(.primary.opacity(0.70))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
     }
 
     private var emptyNoSources: some View {
@@ -270,12 +491,26 @@ extension View {
     /// Changes the cursor to a pointing hand while hovering this view so
     /// clickable controls read as clickable (macOS doesn't do this by
     /// default the way web browsers do).
-    func pointingHandCursor() -> some View {
-        onHover { hovering in
-            if hovering {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
+    ///
+    /// Uses `onContinuousHover` + `NSCursor.set()` rather than the
+    /// `push()`/`pop()` stack. The stack desyncs in this popup: SwiftUI
+    /// drops the hover-out when rows recycle in the LazyVStack or scroll,
+    /// leaving an unbalanced `push` so the cursor sticks (often on the
+    /// I-beam the hosting view falls back to). `set()` carries no state,
+    /// and re-asserting it on every move inside the target overrides any
+    /// cursor rect the host resets between events. `enabled == false`
+    /// keeps the arrow (for controls that are momentarily non-clickable).
+    func pointingHandCursor(_ enabled: Bool = true) -> some View {
+        onContinuousHover { phase in
+            switch phase {
+            case .active:
+                if enabled {
+                    NSCursor.pointingHand.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
+            case .ended:
+                NSCursor.arrow.set()
             }
         }
     }
@@ -480,12 +715,19 @@ private struct GhostButtonBody<Label: View>: View {
 struct RepoRow: View {
     let repo: Repo
     let actions: [Action]
+    /// Keyboard-selected row highlight (independent of mouse hover).
+    var isSelected: Bool = false
     let onDefault: () -> Void
     let onAlternate: (Action) -> Void
     /// Reports hover state changes along with the row's screen-space
     /// frame so the hover detail controller can position its floating
     /// panel next to the correct row. Frame is nil on hover-out.
     let onHoverChange: (Bool, NSRect?) -> Void
+    /// Called when this row becomes the keyboard-selected one, handing up
+    /// its on-screen frame so the parent can pop the same detail panel a
+    /// mouse hover would. The row owns its frame (`frameRef`), so it's
+    /// the right place to source this.
+    var onSelectedShow: (NSRect) -> Void = { _ in }
 
     @EnvironmentObject var store: RepoStore
     @EnvironmentObject var fetchStateStore: FetchStateStore
@@ -546,7 +788,9 @@ struct RepoRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: interactiveCornerRadius)
-                .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
+                .fill(isSelected
+                      ? Color.primary.opacity(0.12)
+                      : (isHovered ? Color.primary.opacity(0.08) : Color.clear))
         )
         // Outer padding: the "gap" between rows at the popup edge still
         // counts as part of the row for hover purposes. Without
@@ -559,6 +803,14 @@ struct RepoRow: View {
         .onHover { hovering in
             isHovered = hovering
             onHoverChange(hovering, hovering ? frameRef.currentFrameOnScreen : nil)
+        }
+        .onChange(of: isSelected) { _, selected in
+            if selected { reportSelectedFrame() }
+        }
+        .onAppear {
+            // A row arrowed-to while off-screen is created here already
+            // selected (the parent scrolled it in) — fire on appear too.
+            if isSelected { reportSelectedFrame() }
         }
         .contextMenu {
             Section("Open with") {
@@ -605,6 +857,19 @@ struct RepoRow: View {
                     .disabled(noRemote)
                 }
             }
+        }
+    }
+
+    /// Hand the row's live on-screen frame up so the parent can pop the
+    /// detail panel beside it. Deferred a runloop tick: when this fires
+    /// from `onAppear` right after a programmatic scroll, the NSView
+    /// hasn't been positioned yet and `currentFrameOnScreen` would read
+    /// zero/stale. Re-checks `isSelected` so a fast arrow burst doesn't
+    /// fire stale rows.
+    private func reportSelectedFrame() {
+        DispatchQueue.main.async {
+            guard isSelected, let frame = frameRef.currentFrameOnScreen else { return }
+            onSelectedShow(frame)
         }
     }
 
@@ -868,14 +1133,8 @@ struct RepoDetailPopover: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isFetching)
-                    .onHover { hovering in
-                        isHovering = hovering && !isFetching
-                        if hovering && !isFetching {
-                            NSCursor.pointingHand.push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
+                    .onHover { isHovering = $0 && !isFetching }
+                    .pointingHandCursor(!isFetching)
                 } else {
                     content
                 }
