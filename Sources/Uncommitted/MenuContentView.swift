@@ -26,6 +26,15 @@ struct MenuContentView: View {
     @State private var searchQuery = ""
     @FocusState private var searchFocused: Bool
 
+    /// True only while the popup is on screen. The detail popover is
+    /// shown via async work (`reportSelectedFrame` hops a runloop,
+    /// `HoverDetailController.showDetail` adds its own `showDelay`), so
+    /// pressing Return — which closes the popup immediately — can leave
+    /// that work to fire afterwards and pop an orphan panel for the
+    /// just-activated (or a previously hovered) repo. Gating every
+    /// present on this flag drops those late shows.
+    @State private var isPopupOpen = false
+
     /// The active row in `visibleRepos` — the one that's highlighted and
     /// whose detail popover is showing. `nil` means nothing is selected
     /// (the default: we deliberately don't pre-select the first row).
@@ -78,6 +87,10 @@ struct MenuContentView: View {
               visibleRepos.indices.contains(idx),
               let first = configStore.config.actions.first else { return }
         let repo = visibleRepos[idx]
+        // Close the gate before dismissing so any already-queued detail
+        // show that runs after this is suppressed (belt to the
+        // notification's suspenders).
+        isPopupOpen = false
         ActionRunner.run(repoURL: repo.url, action: first)
         dismissPopover()
     }
@@ -86,6 +99,10 @@ struct MenuContentView: View {
     /// positioned next to `frame`. Shared by mouse hover and keyboard
     /// selection so both routes produce the identical panel.
     private func presentDetail(for repo: Repo, frame: NSRect) {
+        // The single choke point for showing the detail panel — covers
+        // both the mouse-hover and keyboard-selection routes. If the
+        // popup is gone, this is a stale late call: drop it.
+        guard isPopupOpen else { return }
         hoverDetail?.showDetail(
             for: repo,
             rowFrameOnScreen: frame,
@@ -198,16 +215,19 @@ struct MenuContentView: View {
         }
         .onDisappear {
             // Popup closed — drop any lingering hover detail panel.
+            isPopupOpen = false
             hoverDetail?.dismissImmediately()
         }
         .onReceive(NotificationCenter.default.publisher(for: .popupDidOpen)) { _ in
             // Fresh session: clear the previous query and focus the field
             // so the user can type immediately. Hop a runloop so the panel
             // has finished becoming key before we assert focus.
+            isPopupOpen = true
             searchQuery = ""
             DispatchQueue.main.async { searchFocused = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popupDidClose)) { _ in
+            isPopupOpen = false
             searchQuery = ""
         }
         .onChange(of: searchQuery) { _, _ in
