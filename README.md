@@ -24,7 +24,7 @@ notarized by Apple. Unzip, drag `Uncommitted.app` into `~/Applications/`
 (or `/Applications/`), and launch. First run passes Gatekeeper without
 prompts.
 
-After installation the app updates itself: a built-in Sparkle 2.x updater
+After installation the app updates itself: a built-in updater
 checks for new releases on launch and once a day, and prompts when one is
 available. No manual download needed for subsequent versions.
 
