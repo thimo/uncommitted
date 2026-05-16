@@ -3,6 +3,20 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
+## v0.7.1 — 2026-05-16
+
+### Bug fixes
+- Opening the popover via the global shortcut no longer has a ~1s lag
+  before the first keystroke registers. A status refresh ran
+  synchronously on the main thread on every open and stalled keyboard
+  input until it finished; it now runs in the background.
+- Arrow keys / Return / Esc respond immediately on open instead of
+  waiting for the search field to take focus.
+- Keyboard-selecting a repo shows its detail panel instantly rather
+  than after the mouse-hover delay.
+- The popover no longer keeps a stale selection from the previous
+  session, and never flashes an orphan detail panel after it closes.
+
 ## v0.7.0 — 2026-05-16
 
 ### Improvements

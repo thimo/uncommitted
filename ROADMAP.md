@@ -5,6 +5,14 @@ order can shift, ideas can drop.
 
 ## Where we are
 
+**v0.7.1** (2026-05-16) — keyboard-nav latency fix. Measured the ~1s
+input lag after the global shortcut to a synchronous `eagerRefresh`
+that shelled out to `git` per repo on the main thread on every open,
+stalling window-key/activation and every keystroke until it returned;
+moved off-main. Nav keys decoupled from search-field focus, keyboard
+selection shows its detail panel with no hover delay, no stale
+selection across opens, no orphan panel after close.
+
 **v0.7.0** (2026-05-16) — search + keyboard navigation. The popover
 header's app-name title is gone; in its place an auto-focused search
 field that matches every repo by name and path, including the
