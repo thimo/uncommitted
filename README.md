@@ -1,7 +1,15 @@
 # Uncommitted
 
-A native macOS menubar app that tracks uncommitted and unpushed changes across
-your git repositories. SwiftUI + AppKit, no polling, no dependencies.
+**Every repo with uncommitted or unpushed work, one glance away in your
+macOS menu bar.** Native SwiftUI + AppKit, FSEvents-driven (no polling),
+zero third-party runtime dependencies.
+
+[![Latest release](https://img.shields.io/github/v/release/thimo/uncommitted?label=download&color=2f6df0)](https://github.com/thimo/uncommitted/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-lightgrey)
+![Universal binary](https://img.shields.io/badge/arch-arm64%20%2B%20x86__64-lightgrey)
+
+🔗 **[uncommitted.defrog.nl](https://uncommitted.defrog.nl)** · [Latest release →](https://github.com/thimo/uncommitted/releases/latest)
 
 ![menu bar label showing the branch icon and attention count](./docs/menubar.png)
 
