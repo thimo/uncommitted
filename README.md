@@ -1,8 +1,9 @@
 # Uncommitted
 
 **Every repo with uncommitted or unpushed work, one glance away in your
-macOS menu bar.** Native SwiftUI + AppKit, FSEvents-driven (no polling),
-zero third-party runtime dependencies.
+macOS menu bar.** Native SwiftUI + AppKit. Local status updates instantly
+via a file-system watcher (no polling for file changes); the optional
+GitHub PR/CI signals refresh on a quiet cadence and use the `gh` CLI.
 
 [![Latest release](https://img.shields.io/github/v/release/thimo/uncommitted?label=download&color=2f6df0)](https://github.com/thimo/uncommitted/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -34,7 +35,7 @@ below.
 
 At-a-glance status for every repo you care about:
 
-- Live file-system watcher (FSEvents) — no polling, no refresh button needed
+- Live file-system watcher (FSEvents) — local changes show instantly, no polling for file state (a manual refresh button is there for the GitHub/fetch side)
 - Uncommitted file counts broken down by category (untracked / modified / staged)
 - Unpushed and unpulled commit counts per repo
 - Click a row to open in your preferred app (VS Code, Tower, Terminal, Finder,

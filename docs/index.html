@@ -106,12 +106,12 @@
   <div class="wrap">
     <img class="appicon" src="icon.png" alt="Uncommitted app icon" width="112" height="112">
     <h1>Uncommitted</h1>
-    <p class="tag">Every repo with uncommitted or unpushed work, one glance away in your macOS menu bar. No polling. No dependencies.</p>
+    <p class="tag">Every repo with uncommitted or unpushed work, one glance away in your macOS menu bar. Native, fast, always up to date.</p>
     <div class="cta">
       <a class="btn btn-primary" href="https://github.com/thimo/uncommitted/releases/latest">Download for macOS</a>
       <a class="btn btn-ghost" href="https://github.com/thimo/uncommitted">View source on GitHub</a>
     </div>
-    <p class="meta">Free &amp; open source (MIT) · macOS 14+ · universal binary · signed &amp; notarized</p>
+    <p class="meta">Free &amp; open source (MIT) · macOS 14+ · universal binary · opens without Gatekeeper warnings</p>
     <div class="shot hero-shot">
       <img src="popover-mixed.png" alt="Uncommitted popover showing mixed git status across several repositories">
     </div>
@@ -123,7 +123,7 @@
     <h2>The menu bar tells you if you should care</h2>
     <p class="sub">A git-branch icon and a single number: how many repositories need your attention. Click for the full breakdown — never lose a stash, a forgotten commit, or an unpushed branch again.</p>
     <div class="grid">
-      <div class="card"><h3>No polling, ever</h3><p>A live FSEvents file-system watcher updates counts the moment something changes. No refresh button, no timer hammering your disk.</p></div>
+      <div class="card"><h3>No polling for file changes</h3><p>A live FSEvents file-system watcher updates counts the moment something changes — no timer hammering your disk.</p></div>
       <div class="card"><h3>Everything that needs attention</h3><p>Untracked, modified and staged file counts, plus unpushed and unpulled commits — per repo, broken down by category.</p></div>
       <div class="card"><h3>Push &amp; pull in one click</h3><p>Click the ↑ pill to <code>git push</code>, the ↓ pill to <code>git pull --ff-only</code>. Failures surface git's real error; nothing silent.</p></div>
       <div class="card"><h3>PR &amp; CI signals</h3><p>Optional per-repo GitHub status via the <code>gh</code> CLI. The menu-bar icon turns red when any tracked repo has failing CI.</p></div>
@@ -142,9 +142,8 @@
       <span class="pill b-orange">● N <small>modified</small></span>
       <span class="pill b-teal">+ N <small>staged</small></span>
     </div>
-    <div class="shots2">
-      <div class="shot"><img src="hover-detail.png" alt="Hover detail panel listing the recent commits behind a repo's counts"></div>
-      <div class="shot"><img src="settings-general.png" alt="Uncommitted settings — General tab"></div>
+    <div class="shot" style="max-width:620px;margin:0 auto;aspect-ratio:1342/985">
+      <img src="hover-detail.png" alt="Hover detail panel listing the recent commits behind a repo's counts" style="height:100%;object-fit:cover;object-position:top">
     </div>
   </div>
 </section>
@@ -152,20 +151,29 @@
 <section>
   <div class="wrap">
     <h2>Install in 30 seconds</h2>
-    <p class="sub">Notarized by Apple — first launch passes Gatekeeper without prompts. Updates itself afterwards via a built-in Sparkle updater.</p>
+    <p class="sub">Signed by Apple, no Gatekeeper warning or right-click workaround. Updates itself afterwards via a built-in Sparkle updater.</p>
     <ol class="steps">
       <li><a href="https://github.com/thimo/uncommitted/releases/latest">Download the latest <code>Uncommitted-X.Y.Z.zip</code></a>.</li>
       <li>Unzip and drag <code>Uncommitted.app</code> into <code>~/Applications</code>.</li>
       <li>Launch it — it lives in the menu bar, no Dock icon. Add your repo folders in Settings.</li>
     </ol>
+    <p class="sub" style="margin:36px auto 0">
+      Want the detail? <a href="https://github.com/thimo/uncommitted#readme">Full README</a> ·
+      <a href="https://github.com/thimo/uncommitted/blob/main/docs/github-integration.md">GitHub integration</a> ·
+      <a href="https://github.com/thimo/uncommitted/blob/main/docs/auto-fetch.md">Auto-fetch from remotes</a>
+    </p>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
-    Built by <a href="https://github.com/thimo">Thimo Jansen</a> · MIT licensed ·
-    <a href="https://github.com/thimo/uncommitted">Source &amp; issues on GitHub</a><br>
-    Native Swift, SwiftUI + AppKit, zero third-party runtime dependencies.
+    <p style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:14px;font-size:17px;font-style:italic;color:var(--ink)">
+      <span style="width:32px;height:1px;background:var(--line)"></span>
+      Helping developers with commitment issues since 2026.
+      <span style="width:32px;height:1px;background:var(--line)"></span>
+    </p>
+    Built with ❤️ in the Netherlands by <a href="https://defrog.nl">Thimo Jansen</a>. MIT licensed ·
+    <a href="https://github.com/thimo/uncommitted">Source &amp; issues on GitHub</a>
   </div>
 </footer>
 
