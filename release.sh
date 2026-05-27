@@ -166,8 +166,15 @@ if [ -x "$SPARKLE_BIN/generate_appcast" ] && [ "$DRY_RUN" = false ]; then
   "$SPARKLE_BIN/generate_appcast" \
     --download-url-prefix "https://github.com/thimo/uncommitted/releases/download/v${VERSION}/" \
     --link "https://github.com/thimo/uncommitted/releases/tag/v${VERSION}" \
+    --maximum-deltas 0 \
     build/
   if [ -f build/appcast.xml ]; then
+    # generate_appcast applies --download-url-prefix to every item, including
+    # historical zips in build/, so each old item's enclosure ends up pointing
+    # at this release's tag (e.g. v0.7.1/Uncommitted-0.6.2.zip — 404). Rewrite
+    # each Uncommitted-<v>.zip URL so the tag in the path matches the
+    # version in the filename.
+    sed -E -i '' 's|/releases/download/v[^/]+/Uncommitted-([^"]+)\.zip|/releases/download/v\1/Uncommitted-\1.zip|g' build/appcast.xml
     cp build/appcast.xml appcast.xml
     echo "   appcast.xml updated in repo root."
   fi
