@@ -5,7 +5,7 @@ order can shift, ideas can drop.
 
 ## Where we are
 
-**v0.8.0** (unreleased) — pending-work age. Every dirty row shows a muted
+**v0.8.0** (2026-06-19) — pending-work age. Every dirty row shows a muted
 age suffix ("11d", "now"), spelled out in the hover panel ("Last change 3
 days ago"). Age counts from the *newest* local change — latest uncommitted-
 file mtime or unpushed commit — not the oldest, so a repo you're actively

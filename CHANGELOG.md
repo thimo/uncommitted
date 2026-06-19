@@ -3,6 +3,17 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
+## v0.8.0 — 2026-06-19
+
+### New
+- Every repo with pending work now shows how long it's gone untouched —
+  a muted age ("11d", "now") next to the branch, spelled out in the hover
+  panel ("Last change 3 days ago"). It counts from your most recent change,
+  so a repo you're actively editing never looks abandoned. Toggle under
+  Settings → General.
+- Click any changed file in the hover panel to open it with your default
+  action — no more digging through the repo to find the one you touched.
+
 ## v0.7.1 — 2026-05-16
 
 ### Bug fixes
