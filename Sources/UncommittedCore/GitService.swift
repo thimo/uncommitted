@@ -96,7 +96,58 @@ public enum GitService {
         if parsed.behind > 0 {
             parsed.behindCommits = commitSubjects(range: "HEAD..@{u}", at: url)
         }
+        parsed.lastActivityDate = lastActivityDate(for: parsed, at: url)
         return parsed
+    }
+
+    /// Most recent timestamp of pending local work: the newest working-tree
+    /// file modification (staged/unstaged/untracked) or, if commits sit
+    /// unpushed, the newest unpushed commit — whichever is more recent. The
+    /// UI reads "how long has this gone untouched" from the gap between this
+    /// and now, so the *newest* change is what matters: a repo the user is
+    /// still editing shouldn't read as abandoned just because it also holds
+    /// one old file. Pull-only "behind" state is deliberately excluded. nil
+    /// when nothing is pending or no timestamp could be read.
+    static func lastActivityDate(for status: RepoStatus, at url: URL) -> Date? {
+        var candidates: [Date] = []
+        if let m = latestWorkingTreeModification(
+            paths: status.stagedPaths + status.unstagedPaths + status.untrackedPaths,
+            relativeTo: url
+        ) {
+            candidates.append(m)
+        }
+        if status.ahead > 0, let c = latestUnpushedCommitDate(at: url) {
+            candidates.append(c)
+        }
+        return candidates.max()
+    }
+
+    /// Newest modification date across the given repo-relative paths. Files
+    /// that no longer exist (e.g. a staged deletion) are skipped — their
+    /// mtime isn't meaningful. Public for the test runner.
+    public static func latestWorkingTreeModification(paths: [String], relativeTo repo: URL) -> Date? {
+        let fm = FileManager.default
+        var latest: Date?
+        for rel in paths {
+            let fileURL = repo.appendingPathComponent(rel)
+            guard let attrs = try? fm.attributesOfItem(atPath: fileURL.path),
+                  let mtime = attrs[.modificationDate] as? Date else { continue }
+            if latest == nil || mtime > latest! { latest = mtime }
+        }
+        return latest
+    }
+
+    /// Committer timestamp of the newest unpushed commit. `git log -1` over
+    /// `@{u}..HEAD` is newest-first, so the single line is HEAD's own commit
+    /// time (`%ct`, Unix seconds). nil on any error.
+    private static func latestUnpushedCommitDate(at url: URL) -> Date? {
+        let result = execute(["log", "-1", "@{u}..HEAD", "--format=%ct"], at: url)
+        guard result.exitStatus == 0,
+              let output = String(data: result.stdout, encoding: .utf8),
+              let ct = Int(output.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: TimeInterval(ct))
     }
 
     /// Runs `git log <range> --format=%s` and returns each commit's subject

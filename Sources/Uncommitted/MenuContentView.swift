@@ -789,10 +789,22 @@ struct RepoRow: View {
                                 .help(fetchFailureTooltip(fetchState))
                         }
                     }
-                    Text(repo.status?.displayBranch ?? "Loading…")
-                        .font(.caption)
-                        .foregroundStyle(.primary.opacity(0.70))
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(repo.status?.displayBranch ?? "Loading…")
+                            .foregroundStyle(.primary.opacity(0.70))
+                            .lineLimit(1)
+                            .layoutPriority(0)
+                        if let age = pendingAge {
+                            // Ambient "how long pending" on every dirty row.
+                            // Muted so it reads as metadata, not an alarm;
+                            // higher layout priority so a long branch name
+                            // truncates before the age does.
+                            Text("· \(age)")
+                                .foregroundStyle(.primary.opacity(0.45))
+                                .layoutPriority(1)
+                        }
+                    }
+                    .font(.caption)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -904,6 +916,16 @@ struct RepoRow: View {
             guard isSelected, let frame = frameRef.currentFrameOnScreen else { return }
             onSelectedShow(frame)
         }
+    }
+
+    /// Compact age of the repo's pending work for the row suffix, or nil when
+    /// the feature is off or there's no pending local work. Shown on every
+    /// dirty row (no threshold) — it's ambient "how long has this been
+    /// sitting" info, so a stale repo simply shows a bigger number.
+    private var pendingAge: String? {
+        guard configStore.config.flagStaleRepos,
+              let date = repo.status?.lastActivityDate else { return nil }
+        return Staleness.age(since: date).compact
     }
 
     /// Whether GitHub-side badges should render for this row. Honors
@@ -1227,6 +1249,17 @@ struct RepoDetailPopover: View {
                 .font(.caption)
                 .foregroundStyle(.primary.opacity(0.70))
                 .monospaced()
+            // Unlike the popup row's threshold-gated suffix, the panel is the
+            // "tell me everything" surface — show the age whenever there's
+            // pending local work, so a fresh repo reads "2 hours" too. Same
+            // computed unit as the row's compact suffix (no clock glyph, so
+            // the text left-aligns with the name and branch above it).
+            if let date = status.lastActivityDate {
+                Text("Last change \(Staleness.age(since: date).ago)")
+                    .font(.caption)
+                    .foregroundStyle(.primary.opacity(0.55))
+                    .padding(.top, 1)
+            }
         }
     }
 

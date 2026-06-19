@@ -78,6 +78,7 @@ struct TestRunnerMain {
         FetchStateStoreTests.register()
         GitErrorClassifierTests.register()
         GitHubStatusTests.register()
+        StalenessTests.register()
 
         var passed = 0
         var failed = 0

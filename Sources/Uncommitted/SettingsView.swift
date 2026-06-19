@@ -74,6 +74,16 @@ struct GeneralSettingsView: View {
                 ShortcutRecorderRow(shortcut: $configStore.config.globalShortcut)
             }
 
+            Section {
+                Toggle("Show age of pending work", isOn: $configStore.config.flagStaleRepos)
+            } header: {
+                Text("Pending work")
+            } footer: {
+                Text("Shows a compact age (\"11d\") next to every repo with uncommitted or unpushed work — how long it's gone untouched. The hover panel spells it out in full.")
+                    .font(.caption)
+                    .foregroundStyle(.primary.opacity(0.60))
+            }
+
             Section("Startup") {
                 Toggle("Open at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in

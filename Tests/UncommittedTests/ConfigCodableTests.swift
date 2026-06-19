@@ -133,6 +133,26 @@ enum ConfigCodableTests {
             try expectNil(decoded.globalShortcut)
         }
 
+        test("Config/flagStaleRepos_defaultsOn") {
+            try expect(Config().flagStaleRepos)
+        }
+
+        test("Config/flagStaleRepos_roundTrips") {
+            let original = Config(flagStaleRepos: false)
+            let data = try JSONEncoder().encode(original)
+            let decoded = try JSONDecoder().decode(Config.self, from: data)
+            try expect(decoded.flagStaleRepos == false)
+        }
+
+        test("Config/legacyConfig_withoutFlagStaleRepos_defaultsOn") {
+            // A config saved before the field existed keeps the feature on.
+            let json = """
+            { "sources": [], "actions": [] }
+            """.data(using: .utf8)!
+            let decoded = try JSONDecoder().decode(Config.self, from: json)
+            try expect(decoded.flagStaleRepos)
+        }
+
         test("Config/menuBarLabelStyle_rawValuesAreStable") {
             // The raw values are what lands in config.json on disk — changing
             // them silently would orphan every existing user's setting.

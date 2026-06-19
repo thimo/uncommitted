@@ -63,6 +63,10 @@ public struct Config: Codable, Equatable {
     public var gitHubMutedRepos: [String]
     /// Global hotkey to open/close the popup. Nil means no hotkey registered.
     public var globalShortcut: GlobalShortcut?
+    /// When true, every repo with pending work shows a compact age suffix
+    /// ("11d") in the popup — how long the uncommitted/unpushed work has gone
+    /// untouched.
+    public var flagStaleRepos: Bool
 
     public init(
         sources: [Source] = [],
@@ -72,7 +76,8 @@ public struct Config: Codable, Equatable {
         fetchFromRemotes: Bool = false,
         showGitHubStatus: Bool = true,
         gitHubMutedRepos: [String] = [],
-        globalShortcut: GlobalShortcut? = .defaultShortcut
+        globalShortcut: GlobalShortcut? = .defaultShortcut,
+        flagStaleRepos: Bool = true
     ) {
         self.sources = sources
         self.actions = actions
@@ -82,6 +87,7 @@ public struct Config: Codable, Equatable {
         self.showGitHubStatus = showGitHubStatus
         self.gitHubMutedRepos = gitHubMutedRepos
         self.globalShortcut = globalShortcut
+        self.flagStaleRepos = flagStaleRepos
     }
 
     public static var defaultActions: [Action] {
@@ -101,6 +107,7 @@ public struct Config: Codable, Equatable {
         case showGitHubStatus
         case gitHubMutedRepos
         case globalShortcut
+        case flagStaleRepos
     }
 
     public init(from decoder: Decoder) throws {
@@ -118,5 +125,6 @@ public struct Config: Codable, Equatable {
         } else {
             self.globalShortcut = .defaultShortcut
         }
+        self.flagStaleRepos = try container.decodeIfPresent(Bool.self, forKey: .flagStaleRepos) ?? true
     }
 }
