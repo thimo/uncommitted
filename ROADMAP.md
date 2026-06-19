@@ -5,6 +5,15 @@ order can shift, ideas can drop.
 
 ## Where we are
 
+**v0.8.0** (unreleased) — pending-work age. Every dirty row shows a muted
+age suffix ("11d", "now"), spelled out in the hover panel ("Last change 3
+days ago"). Age counts from the *newest* local change — latest uncommitted-
+file mtime or unpushed commit — not the oldest, so a repo you're actively
+editing never reads as abandoned. Always-on, grey not coloured, toggle in
+Settings → General. (Repos under `~/Documents`/`~/Desktop`/`~/Downloads` hit
+the one-time macOS folder-access prompt, since the age reads file mtimes
+there.)
+
 **v0.7.1** (2026-05-16) — keyboard-nav latency fix. Measured the ~1s
 input lag after the global shortcut to a synchronous `eagerRefresh`
 that shelled out to `git` per repo on the main thread on every open,
