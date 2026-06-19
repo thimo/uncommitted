@@ -112,6 +112,16 @@ struct MenuContentView: View {
                 dismissPopover()
             },
             onFetch: { fetchScheduler.manualFetch(repos: [repo]) },
+            onOpenFile: { fileURL in
+                // Open the clicked file with the repo's default action (the
+                // same one the row's name runs) — set your editor as the
+                // default action to open files in it. Switching apps closes
+                // the transient popup; dismiss explicitly to be sure.
+                if let first = configStore.config.actions.first {
+                    ActionRunner.run(repoURL: fileURL, action: first)
+                }
+                dismissPopover()
+            },
             immediate: immediate
         )
     }
@@ -1059,9 +1069,20 @@ struct RepoDetailPopover: View {
     var githubStatus: GitHubRepoStatus? = nil
     var onAction: (Action) -> Void = { _ in }
     var onFetch: (() -> Void)? = nil
+    /// Opens a changed file (repo-relative path resolved against `repoURL`)
+    /// with the user's default action. Nil leaves the file lists read-only.
+    var onOpenFile: ((URL) -> Void)? = nil
 
     /// Max paths/commits to list per section before "+N more".
     private static let itemLimit = 12
+
+    /// Turns a repo-relative path into an open action, or nil when file
+    /// opening is disabled — passed only to the file sections so commit
+    /// subjects (ahead/behind) stay unclickable.
+    private var fileOpener: ((String) -> Void)? {
+        guard let onOpenFile else { return nil }
+        return { rel in onOpenFile(repoURL.appendingPathComponent(rel)) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1320,7 +1341,8 @@ struct RepoDetailPopover: View {
                 count: status.untracked,
                 items: status.untrackedPaths,
                 color: .green,
-                limit: Self.itemLimit
+                limit: Self.itemLimit,
+                onOpenItem: fileOpener
             )
         }
         if status.unstaged > 0 {
@@ -1330,7 +1352,8 @@ struct RepoDetailPopover: View {
                 count: status.unstaged,
                 items: status.unstagedPaths,
                 color: .orange,
-                limit: Self.itemLimit
+                limit: Self.itemLimit,
+                onOpenItem: fileOpener
             )
         }
         if status.staged > 0 {
@@ -1340,7 +1363,8 @@ struct RepoDetailPopover: View {
                 count: status.staged,
                 items: status.stagedPaths,
                 color: .teal,
-                limit: Self.itemLimit
+                limit: Self.itemLimit,
+                onOpenItem: fileOpener
             )
         }
     }
@@ -1353,6 +1377,9 @@ private struct DetailSection: View {
     let items: [String]
     let color: Color
     let limit: Int
+    /// When set, each listed path becomes a button that opens that file.
+    /// Left nil for commit-subject sections (ahead/behind), which aren't paths.
+    var onOpenItem: ((String) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1371,11 +1398,15 @@ private struct DetailSection: View {
             } else {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(items.prefix(limit).enumerated()), id: \.offset) { _, text in
-                        Text(text)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.primary.opacity(0.70))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        if let onOpenItem {
+                            ClickablePath(text: text) { onOpenItem(text) }
+                        } else {
+                            Text(text)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.primary.opacity(0.70))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
                     }
                     if items.count > limit {
                         Text("+\(items.count - limit) more")
@@ -1391,6 +1422,30 @@ private struct DetailSection: View {
     private var headerText: String {
         let word = count == 1 ? noun : noun + "s"
         return "\(count) \(word)"
+    }
+}
+
+/// A monospaced file path that opens the file on click. Brightens and
+/// underlines on hover with a pointing-hand cursor so it reads as a link.
+private struct ClickablePath: View {
+    let text: String
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(text)
+                .font(.caption.monospaced())
+                .foregroundStyle(.primary.opacity(hovered ? 1.0 : 0.70))
+                .underline(hovered)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .onHover { hovered = $0 }
     }
 }
 

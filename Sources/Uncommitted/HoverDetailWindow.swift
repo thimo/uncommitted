@@ -50,6 +50,7 @@ final class HoverDetailController {
     private var currentActions: [Action] = []
     private var currentOnAction: ((Action) -> Void)?
     private var currentOnFetch: (() -> Void)?
+    private var currentOnOpenFile: ((URL) -> Void)?
 
     /// The repo ID currently being displayed. Used by the right-click
     /// handler in AppDelegate to show a context menu for the right row.
@@ -86,6 +87,7 @@ final class HoverDetailController {
         actions: [Action],
         onAction: @escaping (Action) -> Void,
         onFetch: (() -> Void)? = nil,
+        onOpenFile: ((URL) -> Void)? = nil,
         immediate: Bool = false
     ) {
         guard let status = repo.status else { return }
@@ -93,6 +95,7 @@ final class HoverDetailController {
         currentActions = actions
         currentOnAction = onAction
         currentOnFetch = onFetch
+        currentOnOpenFile = onOpenFile
         dismissWorkItem?.cancel()
 
         // Already visible → swap content and reposition instantly.
@@ -244,6 +247,7 @@ final class HoverDetailController {
         let actions = currentActions
         let onAction = currentOnAction
         let onFetch = currentOnFetch
+        let onOpenFile = currentOnOpenFile
         let githubStatus = githubStatusLookup?(repo.url)
         let content = HoverDetailContent(
             repoName: repo.name,
@@ -257,6 +261,7 @@ final class HoverDetailController {
             githubStatus: githubStatus,
             onAction: { action in onAction?(action) },
             onFetch: onFetch.map { fn in { fn() } },
+            onOpenFile: onOpenFile.map { fn in { url in fn(url) } },
             onHoverChange: { [weak self] in self?.panelHover($0) }
         )
         if let hostingView {
@@ -429,6 +434,7 @@ struct HoverDetailContent: View {
     let githubStatus: GitHubRepoStatus?
     let onAction: (Action) -> Void
     let onFetch: (() -> Void)?
+    let onOpenFile: ((URL) -> Void)?
     let onHoverChange: (Bool) -> Void
 
     /// Arrow dimensions. 8pt wide, 14pt tall is a system-popover-ish feel.
@@ -450,7 +456,8 @@ struct HoverDetailContent: View {
             fetchScheduler: fetchScheduler,
             githubStatus: githubStatus,
             onAction: onAction,
-            onFetch: onFetch
+            onFetch: onFetch,
+            onOpenFile: onOpenFile
         )
             .frame(width: 260)
             .fixedSize(horizontal: false, vertical: true)
