@@ -79,6 +79,7 @@ struct TestRunnerMain {
         GitErrorClassifierTests.register()
         GitHubStatusTests.register()
         StalenessTests.register()
+        ActionTests.register()
 
         var passed = 0
         var failed = 0

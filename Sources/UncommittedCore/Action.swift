@@ -71,7 +71,7 @@ public enum ActionRunner {
             openInApp(name: appName, url: repoURL)
 
         case .command(let command):
-            let expanded = command.replacingOccurrences(of: "{path}", with: repoURL.path)
+            let expanded = expand(command: command, repoPath: repoURL.path)
             run(executable: "/bin/zsh", args: ["-l", "-c", expanded], environment: Self.shellEnvironment)
             // If the command wraps an app (iconApp set), activate it
             // after a short delay so macOS switches to its Space/desktop.
@@ -81,6 +81,13 @@ public enum ActionRunner {
 
 
         }
+    }
+
+    /// Expands a command template by substituting every `{path}` token with
+    /// the repo path. Pure and side-effect-free so it can be unit-tested
+    /// without launching a subprocess.
+    public static func expand(command: String, repoPath: String) -> String {
+        command.replacingOccurrences(of: "{path}", with: repoPath)
     }
 
     /// Opens a URL in a named app using NSWorkspace's modern API. This

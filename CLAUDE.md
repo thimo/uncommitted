@@ -24,8 +24,12 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
     replacing the bundle, so every build terminates the live app. User
     needs to relaunch from Finder / menu bar after the build.
 - `.build/release/UncommittedTests` — custom plain-Swift test runner, not
-  XCTest/swift-testing (neither ships with the CLT). 26 tests covering
-  parser, config round-trip, repo resolution.
+  XCTest/swift-testing (neither ships with the CLT). 117 tests covering
+  the `UncommittedCore` logic layer: git status parser, error classifier,
+  config round-trip, repo resolution, fetch scheduler/state, GitHub status
+  aggregation, staleness formatting, and actions (`{path}` expansion +
+  Codable). UI/orchestration (AppKit/SwiftUI, RepoStore, RepoWatcher) is
+  untested — won't run headlessly under the CLT-only toolchain.
 
 ## Target layout
 
