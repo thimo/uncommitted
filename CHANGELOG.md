@@ -3,6 +3,22 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
+## v0.9.0 — 2026-06-22
+
+### New
+- The hover panel now shows your *other* local branches, not just the one
+  you're on. Living on `develop` while your local `main` quietly falls behind
+  `origin/main`? It shows up as "main ↓3" under "Other branches" — click to
+  fast-forward it, no checkout needed. Branches with unpushed commits get a
+  push button; diverged branches are greyed out (nothing safe to do from the
+  menu bar).
+- The current branch's "commits to pull / push" lines in the panel are
+  clickable now too — pull or push straight from the detail card, and the
+  counts update in place.
+
+### Bug fixes
+- The pull section read "2 commit to pulls"; now "2 commits to pull".
+
 ## v0.8.0 — 2026-06-19
 
 ### New
