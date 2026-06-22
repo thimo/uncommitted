@@ -5,6 +5,18 @@ order can shift, ideas can drop.
 
 ## Where we are
 
+**v0.9.0** (2026-06-22) — per-branch pull/push in the hover panel. An "Other
+branches" section lists every local tracking branch other than the checked-out
+one with its ahead/behind, so local `main` drifting behind `origin/main` while
+you live on `develop` is finally visible — click to fast-forward it without a
+checkout (`git fetch <remote> <b>:<b>`). Ahead-only branches get a per-branch
+push; diverged ones are greyed (no safe fast-forward either way). The current
+branch's commits-to-pull/push lines in the panel became clickable too, and the
+panel now reads live status from the store so counts update in place. Counts
+come from one `git for-each-ref` per repo (no per-branch `rev-list`). The
+menu-bar badge still means "your current work" — other-branch drift is
+panel-only. Fixed "2 commit to pulls" → "2 commits to pull".
+
 **v0.8.0** (2026-06-19) — pending-work age. Every dirty row shows a muted
 age suffix ("11d", "now"), spelled out in the hover panel ("Last change 3
 days ago"). Age counts from the *newest* local change — latest uncommitted-
