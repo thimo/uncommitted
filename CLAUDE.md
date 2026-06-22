@@ -9,12 +9,15 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
 
 ## Current state
 
-- **v0.5.0** released. MIT-licensed on GitHub at `thimo/uncommitted`. Adds
-  per-repo GitHub PR + CI signals via the `gh` CLI, with tiered refresh
-  cadence and multi-clone-aware caching.
-- **v0.6** (Distribution) is blocked on Apple Developer Program activation
-  email. Once that lands: Developer ID signing, notarization, universal
-  binary, release.sh, Homebrew tap. See `ROADMAP.md`.
+- **v0.9.0** released. MIT-licensed on GitHub at `thimo/uncommitted`. Latest:
+  per-branch pull/push in the hover panel ("Other branches" section + clickable
+  current-branch commit lines). Earlier milestones: per-repo GitHub PR + CI
+  signals via `gh`, search + keyboard nav, pending-work age. See `ROADMAP.md`
+  for the full per-version log.
+- **Distribution is live.** `release.sh` does the full pipeline — universal
+  build, Developer ID signing, Apple notarization + stapling, Sparkle appcast,
+  GitHub release. Signing creds live in `.env.local` (see `.env.example`).
+  Existing installs auto-update via Sparkle off `appcast.xml` (GitHub raw).
 
 ## Build & install
 
