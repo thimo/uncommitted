@@ -117,4 +117,4 @@ Anything else is treated as human.
   to that branch (or open the Actions page directly).
 - Notifications — there's no "ping when CI breaks" yet. v0.5 is
   visible-only. State-transition notifications are on the
-  [roadmap](../ROADMAP.md).
+  [ideas list](../IDEAS.md).

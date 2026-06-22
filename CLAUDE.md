@@ -5,14 +5,14 @@ across multiple repositories. LSUIElement, Swift Package Manager, AppKit +
 SwiftUI hybrid.
 
 This file is the fast-warm-up doc for Claude Code. For end-user docs see
-`README.md`; for what's next see `ROADMAP.md`.
+`README.md`; for the backlog of ideas see `IDEAS.md`.
 
 ## Current state
 
 - **v0.9.0** released. MIT-licensed on GitHub at `thimo/uncommitted`. Latest:
   per-branch pull/push in the hover panel ("Other branches" section + clickable
   current-branch commit lines). Earlier milestones: per-repo GitHub PR + CI
-  signals via `gh`, search + keyboard nav, pending-work age. See `ROADMAP.md`
+  signals via `gh`, search + keyboard nav, pending-work age. See `CHANGELOG.md`
   for the full per-version log.
 - **Distribution is live.** `release.sh` does the full pipeline — universal
   build, Developer ID signing, Apple notarization + stapling, Sparkle appcast,
