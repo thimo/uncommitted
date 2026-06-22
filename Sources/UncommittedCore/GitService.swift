@@ -601,6 +601,7 @@ public enum GitService {
         var stagedPaths: [String] = []
         var unstagedPaths: [String] = []
         var untrackedPaths: [String] = []
+        var deletedPaths: [String] = []
 
         for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
             guard let head = line.first else { continue }
@@ -630,7 +631,7 @@ public enum GitService {
                 guard parts.count >= 9 else { continue }
                 let xy = parts[1]
                 let path = String(parts[8])
-                recordEntry(xy: xy, path: path, stagedPaths: &stagedPaths, unstagedPaths: &unstagedPaths)
+                recordEntry(xy: xy, path: path, stagedPaths: &stagedPaths, unstagedPaths: &unstagedPaths, deletedPaths: &deletedPaths)
 
             case "2":
                 // Renamed/copied: `2 XY sub mH mI mW hH hI Xscore path\torigPath`.
@@ -641,7 +642,7 @@ public enum GitService {
                 let xy = parts[1]
                 let pathField = parts[9]
                 let path = String(pathField.split(separator: "\t").first ?? pathField)
-                recordEntry(xy: xy, path: path, stagedPaths: &stagedPaths, unstagedPaths: &unstagedPaths)
+                recordEntry(xy: xy, path: path, stagedPaths: &stagedPaths, unstagedPaths: &unstagedPaths, deletedPaths: &deletedPaths)
 
             case "?":
                 // `? path` — everything after the space-after-? is the path.
@@ -665,7 +666,8 @@ public enum GitService {
             behind: behind,
             stagedPaths: stagedPaths,
             unstagedPaths: unstagedPaths,
-            untrackedPaths: untrackedPaths
+            untrackedPaths: untrackedPaths,
+            deletedPaths: deletedPaths
         )
     }
 
@@ -673,10 +675,17 @@ public enum GitService {
         xy: Substring,
         path: String,
         stagedPaths: inout [String],
-        unstagedPaths: inout [String]
+        unstagedPaths: inout [String],
+        deletedPaths: inout [String]
     ) {
         let chars = Array(xy)
         guard chars.count >= 2 else { return }
+        // A deletion in either axis is a deleted file — surface it as its own
+        // category rather than folding it into staged/unstaged "modified".
+        if chars[0] == "D" || chars[1] == "D" {
+            deletedPaths.append(path)
+            return
+        }
         if chars[0] != "." { stagedPaths.append(path) }
         if chars[1] != "." { unstagedPaths.append(path) }
     }

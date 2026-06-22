@@ -115,6 +115,34 @@ enum GitStatusParserTests {
             try expectEqual(status.unstaged, 1)
         }
 
+        test("GitStatusParser/unstagedDeletion_countsAsDeletedNotModified") {
+            // " D" → unchanged in index, deleted in worktree → deleted++,
+            // and crucially NOT unstaged.
+            let output = """
+            # branch.oid 1234567890abcdef
+            # branch.head main
+            1 .D N... 100644 100644 000000 aaa bbb gone.rb
+            """
+            let status = try requireNotNil(GitService.parse(output))
+            try expectEqual(status.deleted, 1)
+            try expectEqual(status.unstaged, 0)
+            try expectEqual(status.staged, 0)
+            try expectEqual(status.deletedPaths, ["gone.rb"])
+        }
+
+        test("GitStatusParser/stagedDeletion_countsAsDeleted") {
+            // "D " → deleted in index → deleted++, not staged.
+            let output = """
+            # branch.oid 1234567890abcdef
+            # branch.head main
+            1 D. N... 100644 000000 000000 aaa bbb removed.rb
+            """
+            let status = try requireNotNil(GitService.parse(output))
+            try expectEqual(status.deleted, 1)
+            try expectEqual(status.staged, 0)
+            try expectEqual(status.unstaged, 0)
+        }
+
         test("GitStatusParser/untrackedFiles") {
             let output = """
             # branch.oid 1234567890abcdef
@@ -136,6 +164,7 @@ enum GitStatusParserTests {
             1 A. N... 000000 100644 100644 000 aaa tax.rb
             1 .M N... 100644 100644 100644 bbb ccc cart.rb
             1 .M N... 100644 100644 100644 ddd eee session.rb
+            1 .D N... 100644 100644 000000 fff ggg legacy.rb
             ? new1.rb
             ? new2.rb
             ? new3.rb
@@ -146,8 +175,9 @@ enum GitStatusParserTests {
             try expectEqual(status.staged, 1)
             try expectEqual(status.unstaged, 2)
             try expectEqual(status.untracked, 3)
+            try expectEqual(status.deleted, 1)
             try expect(status.isClean == false)
-            try expectEqual(status.totalUncommitted, 6)
+            try expectEqual(status.totalUncommitted, 7)
             try expectEqual(status.totalUnpushed, 2)
         }
     }

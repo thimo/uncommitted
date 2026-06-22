@@ -87,6 +87,11 @@ public struct RepoStatus: Equatable {
     public var stagedPaths: [String]
     public var unstagedPaths: [String]
     public var untrackedPaths: [String]
+    /// Repo-relative paths of files deleted in the working tree or index.
+    /// Tracked separately from `unstaged`/`staged` so the UI can label them
+    /// "deleted" instead of lumping them in as "modified". A path lands here
+    /// when either porcelain axis reports `D`, regardless of staged/unstaged.
+    public var deletedPaths: [String]
     /// Commit subjects (first line only) for ahead/behind commits, newest
     /// first. Populated by an extra `git log` call after parsing; empty
     /// when there's no upstream divergence.
@@ -110,6 +115,7 @@ public struct RepoStatus: Equatable {
     public var staged: Int { stagedPaths.count }
     public var unstaged: Int { unstagedPaths.count }
     public var untracked: Int { untrackedPaths.count }
+    public var deleted: Int { deletedPaths.count }
 
     public init(
         branch: String,
@@ -119,6 +125,7 @@ public struct RepoStatus: Equatable {
         stagedPaths: [String] = [],
         unstagedPaths: [String] = [],
         untrackedPaths: [String] = [],
+        deletedPaths: [String] = [],
         aheadCommits: [String] = [],
         behindCommits: [String] = [],
         branches: [BranchStatus] = [],
@@ -131,14 +138,15 @@ public struct RepoStatus: Equatable {
         self.stagedPaths = stagedPaths
         self.unstagedPaths = unstagedPaths
         self.untrackedPaths = untrackedPaths
+        self.deletedPaths = deletedPaths
         self.aheadCommits = aheadCommits
         self.behindCommits = behindCommits
         self.branches = branches
         self.lastActivityDate = lastActivityDate
     }
 
-    /// Number of working-tree files with changes (staged + unstaged + untracked).
-    public var totalUncommitted: Int { staged + unstaged + untracked }
+    /// Number of working-tree files with changes (staged + unstaged + untracked + deleted).
+    public var totalUncommitted: Int { staged + unstaged + untracked + deleted }
     /// Number of commits ahead of the upstream (unpushed).
     public var totalUnpushed: Int { ahead }
     /// Total "dirty" count for compatibility — uncommitted files + unpushed commits.

@@ -1389,6 +1389,17 @@ struct RepoDetailPopover: View {
                 onOpenItem: fileOpener
             )
         }
+        if s.deleted > 0 {
+            DetailSection(
+                glyph: "−",
+                noun: "deleted file",
+                count: s.deleted,
+                items: s.deletedPaths,
+                color: .red,
+                limit: Self.itemLimit,
+                onOpenItem: fileOpener
+            )
+        }
         if s.staged > 0 {
             DetailSection(
                 glyph: "+",
@@ -1656,6 +1667,9 @@ struct StatusBadges: View {
                 }
                 if status.unstaged > 0 {
                     ReadOnlyBadge(glyph: "●", count: status.unstaged, color: .orange)
+                }
+                if status.deleted > 0 {
+                    ReadOnlyBadge(glyph: "−", count: status.deleted, color: .red)
                 }
                 if status.staged > 0 {
                     ReadOnlyBadge(glyph: "+", count: status.staged, color: .teal)
