@@ -51,6 +51,10 @@ final class HoverDetailController {
     private var currentOnAction: ((Action) -> Void)?
     private var currentOnFetch: (() -> Void)?
     private var currentOnOpenFile: ((URL) -> Void)?
+    /// The store, captured so the "Other branches" section can read live
+    /// per-branch counts and in-flight state (and drive pull/push) — the rest
+    /// of the panel uses the snapshot `status` passed at show time.
+    private var currentStore: RepoStore?
 
     /// The repo ID currently being displayed. Used by the right-click
     /// handler in AppDelegate to show a context menu for the right row.
@@ -83,6 +87,7 @@ final class HoverDetailController {
     /// first selection (subsequent ones already swap instantly).
     func showDetail(
         for repo: Repo,
+        store: RepoStore,
         rowFrameOnScreen: NSRect,
         actions: [Action],
         onAction: @escaping (Action) -> Void,
@@ -92,6 +97,7 @@ final class HoverDetailController {
     ) {
         guard let status = repo.status else { return }
 
+        currentStore = store
         currentActions = actions
         currentOnAction = onAction
         currentOnFetch = onFetch
@@ -249,9 +255,12 @@ final class HoverDetailController {
         let onFetch = currentOnFetch
         let onOpenFile = currentOnOpenFile
         let githubStatus = githubStatusLookup?(repo.url)
+        guard let store = currentStore else { return }
         let content = HoverDetailContent(
             repoName: repo.name,
             repoURL: repo.url,
+            repoID: repo.id,
+            store: store,
             status: status,
             arrowSide: currentSide,
             actions: actions,
@@ -425,6 +434,8 @@ enum PanelSide {
 struct HoverDetailContent: View {
     let repoName: String
     let repoURL: URL
+    let repoID: UUID
+    @ObservedObject var store: RepoStore
     let status: RepoStatus
     let arrowSide: PanelSide
     let actions: [Action]
@@ -449,6 +460,8 @@ struct HoverDetailContent: View {
         RepoDetailPopover(
             repoName: repoName,
             repoURL: repoURL,
+            repoID: repoID,
+            store: store,
             status: status,
             actions: actions,
             fetchEnabled: fetchEnabled,

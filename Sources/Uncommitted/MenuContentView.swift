@@ -105,6 +105,7 @@ struct MenuContentView: View {
         guard isPopupOpen else { return }
         hoverDetail?.showDetail(
             for: repo,
+            store: store,
             rowFrameOnScreen: frame,
             actions: configStore.config.actions,
             onAction: { action in
@@ -1061,6 +1062,10 @@ struct RepoRow: View {
 struct RepoDetailPopover: View {
     let repoName: String
     let repoURL: URL
+    /// When set (with `store`), the "Other branches" section renders, reading
+    /// live per-branch counts + in-flight state from the store.
+    var repoID: UUID? = nil
+    var store: RepoStore? = nil
     let status: RepoStatus
     var actions: [Action] = []
     var fetchEnabled: Bool = false
@@ -1084,14 +1089,33 @@ struct RepoDetailPopover: View {
         return { rel in onOpenFile(repoURL.appendingPathComponent(rel)) }
     }
 
+    /// Live repo from the store (when wired) so the current-branch counts and
+    /// in-flight spinner update after a pull/push, like the "Other branches"
+    /// section. Falls back to the snapshot passed at show time.
+    private var liveRepo: Repo? {
+        guard let store, let repoID else { return nil }
+        return store.repos.first { $0.id == repoID }
+    }
+    private var displayStatus: RepoStatus { liveRepo?.status ?? status }
+    private var inFlight: InFlightAction? {
+        guard let store, let repoID else { return nil }
+        return store.inFlight[repoID]
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            if status.isClean && !hasGitHubSignal {
+            // "Clean" here also requires no other-branch drift — otherwise a
+            // repo that's only behind on main (current branch clean) would
+            // show "No pending changes" and hide the very thing we want.
+            if displayStatus.isClean && !hasGitHubSignal && displayStatus.otherBranches.isEmpty {
                 cleanMessage
             } else {
                 sections
                 githubSections
+                if let store, let repoID {
+                    OtherBranchesSection(store: store, repoID: repoID)
+                }
             }
             if fetchEnabled,
                let fetchStateStore,
@@ -1314,65 +1338,90 @@ struct RepoDetailPopover: View {
 
     @ViewBuilder
     private var sections: some View {
-        if status.ahead > 0 {
+        let s = displayStatus
+        if s.ahead > 0 {
             DetailSection(
                 glyph: "↑",
                 noun: "commit to push",
-                count: status.ahead,
-                items: status.aheadCommits,
+                pluralNoun: "commits to push",
+                count: s.ahead,
+                items: s.aheadCommits,
                 color: .blue,
-                limit: Self.itemLimit
+                limit: Self.itemLimit,
+                actionGlyph: pushAction != nil ? "↑" : nil,
+                actionInFlight: inFlight == .push,
+                action: pushAction
             )
         }
-        if status.behind > 0 {
+        if s.behind > 0 {
             DetailSection(
                 glyph: "↓",
                 noun: "commit to pull",
-                count: status.behind,
-                items: status.behindCommits,
+                pluralNoun: "commits to pull",
+                count: s.behind,
+                items: s.behindCommits,
                 color: .purple,
-                limit: Self.itemLimit
+                limit: Self.itemLimit,
+                actionGlyph: pullAction != nil ? "↓" : nil,
+                actionInFlight: inFlight == .pull,
+                action: pullAction
             )
         }
-        if status.untracked > 0 {
+        if s.untracked > 0 {
             DetailSection(
                 glyph: "★",
                 noun: "untracked file",
-                count: status.untracked,
-                items: status.untrackedPaths,
+                count: s.untracked,
+                items: s.untrackedPaths,
                 color: .green,
                 limit: Self.itemLimit,
                 onOpenItem: fileOpener
             )
         }
-        if status.unstaged > 0 {
+        if s.unstaged > 0 {
             DetailSection(
                 glyph: "●",
                 noun: "modified file",
-                count: status.unstaged,
-                items: status.unstagedPaths,
+                count: s.unstaged,
+                items: s.unstagedPaths,
                 color: .orange,
                 limit: Self.itemLimit,
                 onOpenItem: fileOpener
             )
         }
-        if status.staged > 0 {
+        if s.staged > 0 {
             DetailSection(
                 glyph: "+",
                 noun: "staged file",
-                count: status.staged,
-                items: status.stagedPaths,
+                count: s.staged,
+                items: s.stagedPaths,
                 color: .teal,
                 limit: Self.itemLimit,
                 onOpenItem: fileOpener
             )
         }
     }
+
+    /// Pull/push the current branch — wired only when the store and a live
+    /// repo are available. The current branch keeps `--ff-only` pull and a
+    /// plain push, same as the main row's badges.
+    private var pullAction: (() -> Void)? {
+        guard let store, let repo = liveRepo else { return nil }
+        return { store.pull(repo: repo) }
+    }
+    private var pushAction: (() -> Void)? {
+        guard let store, let repo = liveRepo else { return nil }
+        return { store.push(repo: repo) }
+    }
 }
 
 private struct DetailSection: View {
     let glyph: String
     let noun: String
+    /// Explicit plural for nouns where the head word isn't the last one
+    /// ("commit to pull" → "commits to pull", not "commit to pulls").
+    /// Defaults to `noun + "s"`, which is right for the file sections.
+    var pluralNoun: String? = nil
     let count: Int
     let items: [String]
     let color: Color
@@ -1380,6 +1429,12 @@ private struct DetailSection: View {
     /// When set, each listed path becomes a button that opens that file.
     /// Left nil for commit-subject sections (ahead/behind), which aren't paths.
     var onOpenItem: ((String) -> Void)? = nil
+    /// When set, a trailing compact badge in the header runs this action —
+    /// pull/push the current branch, matching the "Other branches" rows.
+    /// `actionGlyph` is the badge arrow; nil leaves the section read-only.
+    var actionGlyph: String? = nil
+    var actionInFlight: Bool = false
+    var action: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1390,6 +1445,12 @@ private struct DetailSection: View {
                 Text(headerText)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
+                if let action, let actionGlyph {
+                    Spacer(minLength: 8)
+                    ActionBadge(glyph: actionGlyph, count: count, color: color,
+                                isInFlight: actionInFlight, compact: true, action: action)
+                        .disabled(actionInFlight)
+                }
             }
 
             if items.isEmpty {
@@ -1420,8 +1481,91 @@ private struct DetailSection: View {
     }
 
     private var headerText: String {
-        let word = count == 1 ? noun : noun + "s"
+        let word = count == 1 ? noun : (pluralNoun ?? noun + "s")
         return "\(count) \(word)"
+    }
+}
+
+/// "Other branches" block in the detail panel: every local tracking branch
+/// except the checked-out one, with its own pull (behind-only) or push
+/// (ahead-only) action. Reads live from the store so counts update and the
+/// header spinner shows while a per-branch action runs; renders nothing when
+/// there's no drift to act on.
+private struct OtherBranchesSection: View {
+    @ObservedObject var store: RepoStore
+    let repoID: UUID
+
+    private var repo: Repo? { store.repos.first { $0.id == repoID } }
+    private var branches: [BranchStatus] { repo?.status?.otherBranches ?? [] }
+    /// In-flight is tracked per repo, not per branch, so any branch action
+    /// disables them all and shows one spinner in the header. Avoids painting
+    /// a misleading spinner on every row when we can't say which one is busy.
+    private var isInFlight: Bool { store.inFlight[repoID] != nil }
+
+    var body: some View {
+        if let repo, !branches.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("Other branches")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if isInFlight {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.6)
+                            .frame(width: 12, height: 12)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(branches, id: \.name) { branch in
+                        OtherBranchRow(
+                            branch: branch,
+                            isInFlight: isInFlight,
+                            onPull: { store.pullBranch(repo: repo, branch: branch) },
+                            onPush: { store.pushBranch(repo: repo, branch: branch) }
+                        )
+                    }
+                }
+                .padding(.leading, 2)
+            }
+        }
+    }
+}
+
+/// One branch row: name on the left, an interactive badge on the right whose
+/// glyph encodes the only safe action — `↓` pull for behind-only, `↑` push for
+/// ahead-only. Diverged branches show both counts greyed with a "diverged"
+/// tag and no action (can't fast-forward either way).
+private struct OtherBranchRow: View {
+    let branch: BranchStatus
+    let isInFlight: Bool
+    let onPull: () -> Void
+    let onPush: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(branch.name)
+                .font(.caption.monospaced())
+                .foregroundStyle(.primary.opacity(branch.isDiverged ? 0.45 : 0.80))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 6)
+            if branch.isDiverged {
+                ReadOnlyBadge(glyph: "↑", count: branch.ahead, color: .secondary, compact: true)
+                ReadOnlyBadge(glyph: "↓", count: branch.behind, color: .secondary, compact: true)
+                Text("diverged")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if branch.isFastForwardable {
+                ActionBadge(glyph: "↓", count: branch.behind, color: .purple,
+                            isInFlight: false, compact: true, action: onPull)
+                    .disabled(isInFlight)
+            } else if branch.isPushable {
+                ActionBadge(glyph: "↑", count: branch.ahead, color: .blue,
+                            isInFlight: false, compact: true, action: onPush)
+                    .disabled(isInFlight)
+            }
+        }
     }
 }
 
@@ -1642,16 +1786,17 @@ private struct ReadOnlyBadge: View {
     let glyph: String
     let count: Int
     let color: Color
+    var compact: Bool = false
 
     var body: some View {
         HStack(spacing: 2) {
             Text(glyph)
             Text("\(count)")
         }
-        .font(.body.weight(.medium).monospacedDigit())
+        .font((compact ? Font.caption : Font.body).weight(.medium).monospacedDigit())
         .foregroundStyle(color)
         .padding(.horizontal, 4)
-        .padding(.vertical, 2)
+        .padding(.vertical, compact ? 1 : 2)
     }
 }
 
@@ -1665,6 +1810,7 @@ private struct ActionBadge: View {
     let count: Int
     let color: Color
     let isInFlight: Bool
+    var compact: Bool = false
     let action: () -> Void
 
     @State private var isHovered = false
@@ -1684,10 +1830,10 @@ private struct ActionBadge: View {
                     }
                 }
             }
-            .font(.body.weight(.medium).monospacedDigit())
+            .font((compact ? Font.caption : Font.body).weight(.medium).monospacedDigit())
             .foregroundStyle(color)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
+            .padding(.horizontal, compact ? 4 : 5)
+            .padding(.vertical, compact ? 1 : 2)
             .background(
                 RoundedRectangle(cornerRadius: interactiveCornerRadius)
                     .fill(isHovered ? color.opacity(0.18) : Color.clear)

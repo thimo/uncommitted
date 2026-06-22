@@ -139,9 +139,39 @@ public final class RepoStore: ObservableObject {
         }
     }
 
+    /// Fast-forwards a single non-current branch to its upstream (ref-only, no
+    /// checkout). Used by the "Other branches" panel section. Reuses the
+    /// per-repo in-flight/refresh/error path. No-op for the current branch or
+    /// a non-fast-forwardable branch — the UI only offers it where valid.
+    public func pullBranch(repo: Repo, branch: BranchStatus) {
+        runAction(.pull, on: repo, context: branch.name) { url in
+            GitService.pullBranch(
+                at: url,
+                remote: branch.remoteName,
+                remoteBranch: branch.remoteBranch,
+                localBranch: branch.name
+            )
+        }
+    }
+
+    /// Pushes a single branch to its upstream. Used by the "Other branches"
+    /// panel section. Never forces — a diverged branch is rejected by the
+    /// remote rather than overwritten.
+    public func pushBranch(repo: Repo, branch: BranchStatus) {
+        runAction(.push, on: repo, context: branch.name) { url in
+            GitService.pushBranch(
+                at: url,
+                remote: branch.remoteName,
+                localBranch: branch.name,
+                remoteBranch: branch.remoteBranch
+            )
+        }
+    }
+
     private func runAction(
         _ kind: InFlightAction,
         on repo: Repo,
+        context: String? = nil,
         command: @escaping (URL) -> GitService.ActionResult
     ) {
         guard inFlight[repo.id] == nil else { return }
@@ -166,8 +196,9 @@ public final class RepoStore: ObservableObject {
                     let message = friendly ?? result.errorOutput ?? "Unknown error"
                     let recovery = self.configStore.config.actions.first(where: { $0.role == .gitClient })
                         .map { (url: url, action: $0) }
+                    let where_ = context.map { "\(repoName) · \($0)" } ?? repoName
                     Self.presentError(
-                        title: "\(kind == .push ? "Push" : "Pull") failed — \(repoName)",
+                        title: "\(kind == .push ? "Push" : "Pull") failed — \(where_)",
                         message: message,
                         detail: friendly != nil ? result.errorOutput : nil,
                         recovery: recovery

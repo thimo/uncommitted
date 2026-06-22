@@ -80,6 +80,7 @@ struct TestRunnerMain {
         GitHubStatusTests.register()
         StalenessTests.register()
         ActionTests.register()
+        BranchStatusTests.register()
 
         var passed = 0
         var failed = 0

@@ -96,8 +96,65 @@ public enum GitService {
         if parsed.behind > 0 {
             parsed.behindCommits = commitSubjects(range: "HEAD..@{u}", at: url)
         }
+        parsed.branches = branchStatuses(at: url, current: parsed.branch)
         parsed.lastActivityDate = lastActivityDate(for: parsed, at: url)
         return parsed
+    }
+
+    /// Per-branch ahead/behind for every local branch that tracks an upstream,
+    /// from a single `git for-each-ref`. `%(upstream:track)` gives us the
+    /// counts directly — no per-branch `rev-list`. Best-effort enrichment:
+    /// empty on any error, never fails the surrounding status. `current` is
+    /// the checked-out branch name so the parser can flag `isCurrent`.
+    static func branchStatuses(at url: URL, current: String) -> [BranchStatus] {
+        let format = "%(refname:short)%09%(upstream:short)%09%(upstream:track,nobracket)"
+        let result = execute(["for-each-ref", "--format=\(format)", "refs/heads"], at: url)
+        guard result.exitStatus == 0,
+              let output = String(data: result.stdout, encoding: .utf8) else {
+            return []
+        }
+        return parseBranchStatuses(output, current: current)
+    }
+
+    /// Parses the tab-separated `for-each-ref` output. Each line is
+    /// `name<TAB>upstream<TAB>track`, where track is "", "gone", "ahead N",
+    /// "behind N", or "ahead N, behind M". Branches with no upstream (empty
+    /// second field) are dropped — nothing to pull or push against. Public so
+    /// the test runner can exercise it directly.
+    public static func parseBranchStatuses(_ output: String, current: String) -> [BranchStatus] {
+        var result: [BranchStatus] = []
+        for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
+            guard fields.count >= 2 else { continue }
+            let name = String(fields[0])
+            let upstream = String(fields[1])
+            guard !upstream.isEmpty else { continue }
+            let track = fields.count >= 3 ? String(fields[2]) : ""
+
+            var ahead = 0
+            var behind = 0
+            var gone = false
+            for token in track.split(separator: ",") {
+                let parts = token.split(separator: " ", omittingEmptySubsequences: true)
+                guard let key = parts.first else { continue }
+                switch key {
+                case "gone": gone = true
+                case "ahead": if parts.count >= 2 { ahead = Int(parts[1]) ?? 0 }
+                case "behind": if parts.count >= 2 { behind = Int(parts[1]) ?? 0 }
+                default: break
+                }
+            }
+
+            result.append(BranchStatus(
+                name: name,
+                upstream: upstream,
+                ahead: ahead,
+                behind: behind,
+                isCurrent: name == current,
+                isGone: gone
+            ))
+        }
+        return result
     }
 
     /// Most recent timestamp of pending local work: the newest working-tree
@@ -183,6 +240,32 @@ public enum GitService {
     /// a merge commit or rebasing local work without user intent.
     public static func pull(at url: URL) -> ActionResult {
         action(Self.lowSpeedGuard + ["pull", "--ff-only"], at: url)
+    }
+
+    /// Fast-forwards a *non-checked-out* local branch to its upstream without a
+    /// checkout: `git fetch <remote> <remoteBranch>:<localBranch>`. The refspec
+    /// has no leading `+`, so git rejects a non-fast-forward (diverged) update
+    /// rather than clobbering local commits, and git itself refuses to update
+    /// the currently checked-out branch — callers only use this for others.
+    public static func pullBranch(
+        at url: URL,
+        remote: String,
+        remoteBranch: String,
+        localBranch: String
+    ) -> ActionResult {
+        action(Self.lowSpeedGuard + ["fetch", remote, "\(remoteBranch):\(localBranch)"], at: url)
+    }
+
+    /// Pushes a single local branch to its upstream by explicit refspec, so the
+    /// result doesn't depend on the user's `push.default`. No `--force`: a
+    /// diverged branch is rejected by the remote rather than overwritten.
+    public static func pushBranch(
+        at url: URL,
+        remote: String,
+        localBranch: String,
+        remoteBranch: String
+    ) -> ActionResult {
+        action(Self.lowSpeedGuard + ["push", remote, "\(localBranch):\(remoteBranch)"], at: url)
     }
 
     /// Background fetch from `origin`. `--quiet --no-tags --prune` keeps

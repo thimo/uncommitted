@@ -14,6 +14,66 @@ public struct Repo: Identifiable, Equatable {
     }
 }
 
+/// Per-branch divergence for a single local branch that tracks an upstream.
+/// Populated by `GitService.branchStatuses` from one `git for-each-ref` call.
+/// Only branches with an upstream are represented — a branch with nothing to
+/// pull or push against isn't actionable here.
+public struct BranchStatus: Equatable {
+    /// Local branch short name (e.g. "main", "release/0.8").
+    public let name: String
+    /// Upstream short name (e.g. "origin/main"). Empty if the upstream ref is
+    /// gone (deleted on the remote) — see `isGone`.
+    public let upstream: String
+    /// Commits the local branch has that the upstream doesn't (unpushed).
+    public let ahead: Int
+    /// Commits the upstream has that the local branch doesn't (to pull).
+    public let behind: Int
+    /// True for the currently checked-out branch. The "Other branches" panel
+    /// section filters this one out — it's already shown in the detail block.
+    public let isCurrent: Bool
+    /// True when the tracked upstream no longer exists on the remote
+    /// (`for-each-ref` reports "gone"). Nothing to pull/push cleanly.
+    public let isGone: Bool
+
+    public init(
+        name: String,
+        upstream: String,
+        ahead: Int,
+        behind: Int,
+        isCurrent: Bool,
+        isGone: Bool = false
+    ) {
+        self.name = name
+        self.upstream = upstream
+        self.ahead = ahead
+        self.behind = behind
+        self.isCurrent = isCurrent
+        self.isGone = isGone
+    }
+
+    /// Both sides have moved — can't be reconciled by a fast-forward, so
+    /// neither the pull nor the push button applies. Rendered greyed out.
+    public var isDiverged: Bool { ahead > 0 && behind > 0 }
+    /// Behind only — `git fetch <remote> <branch>:<branch>` fast-forwards it.
+    public var isFastForwardable: Bool { behind > 0 && ahead == 0 && !isGone }
+    /// Ahead only — a plain `git push` publishes it.
+    public var isPushable: Bool { ahead > 0 && behind == 0 && !isGone }
+
+    /// Remote name from the upstream short ref ("origin/main" → "origin").
+    /// Remote names can't contain "/", so the first segment is the remote and
+    /// everything after is the (possibly slashed) branch.
+    public var remoteName: String {
+        String(upstream.prefix(while: { $0 != "/" }))
+    }
+
+    /// Remote-side branch name ("origin/release/0.8" → "release/0.8"). Empty
+    /// when the upstream has no "/" (shouldn't happen for a real upstream).
+    public var remoteBranch: String {
+        guard let slash = upstream.firstIndex(of: "/") else { return "" }
+        return String(upstream[upstream.index(after: slash)...])
+    }
+}
+
 public struct RepoStatus: Equatable {
     /// Current branch name, or "(detached)" when HEAD is detached.
     public var branch: String
@@ -32,6 +92,10 @@ public struct RepoStatus: Equatable {
     /// when there's no upstream divergence.
     public var aheadCommits: [String]
     public var behindCommits: [String]
+    /// Every local branch that tracks an upstream, including the current one.
+    /// Drives the "Other branches" panel section (which filters out the
+    /// current branch). Populated by `GitService.status`, not by `parse`.
+    public var branches: [BranchStatus]
     /// Most recent timestamp of *local* activity on this repo — the newest
     /// working-tree file modification or, if newer, the newest unpushed
     /// commit. Pull-only "behind" state is excluded: that's remote work, not
@@ -57,6 +121,7 @@ public struct RepoStatus: Equatable {
         untrackedPaths: [String] = [],
         aheadCommits: [String] = [],
         behindCommits: [String] = [],
+        branches: [BranchStatus] = [],
         lastActivityDate: Date? = nil
     ) {
         self.branch = branch
@@ -68,6 +133,7 @@ public struct RepoStatus: Equatable {
         self.untrackedPaths = untrackedPaths
         self.aheadCommits = aheadCommits
         self.behindCommits = behindCommits
+        self.branches = branches
         self.lastActivityDate = lastActivityDate
     }
 
@@ -78,6 +144,13 @@ public struct RepoStatus: Equatable {
     /// Total "dirty" count for compatibility — uncommitted files + unpushed commits.
     public var totalDirty: Int { totalUncommitted + totalUnpushed }
     public var isClean: Bool { totalDirty == 0 && behind == 0 }
+
+    /// Branches for the "Other branches" panel section: every tracking branch
+    /// except the checked-out one, that has actual divergence to act on. Gone
+    /// upstreams are dropped (nothing to pull/push cleanly).
+    public var otherBranches: [BranchStatus] {
+        branches.filter { !$0.isCurrent && !$0.isGone && ($0.ahead > 0 || $0.behind > 0) }
+    }
 
     public var isDetached: Bool { branch == "(detached)" }
 
