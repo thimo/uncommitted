@@ -24,8 +24,9 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
 - `./build.sh` — compiles release, renders the iconset, bundles the `.app`,
   ad-hoc signs, installs to `~/Applications/Uncommitted.app`.
   - **Kills any running instance** with `killall -q uncommitted` before
-    replacing the bundle, so every build terminates the live app. User
-    needs to relaunch from Finder / menu bar after the build.
+    replacing the bundle. If the app *was* running, the build relaunches it
+    automatically at the end (`open`); a build while it's deliberately
+    closed leaves it closed.
 - `.build/release/UncommittedTests` — custom plain-Swift test runner, not
   XCTest/swift-testing (neither ships with the CLT). 122 tests covering
   the `UncommittedCore` logic layer: git status parser, error classifier,
