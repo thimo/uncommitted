@@ -35,6 +35,23 @@ lives in `CHANGELOG.md`; current state is in `CLAUDE.md`.
   runs `git add -A && git commit -m "..."`. Power-user shortcut.
 - **Per-repo overrides.** Right-click a repo row → Pin, Hide, Rename.
   Config gets a `repoOverrides: [path: overrides]` map.
+- **Bulk pull across sibling clones (shared remote).** Several local clones
+  of the same remote is common (e.g. `electrolyte`, `electrolyte-calcium`,
+  `electrolyte-magnesium`, `electrolyte-natrium` — four worktrees of one
+  repo). When you commit+push in one, the other three show "N to pull" and
+  you currently fast-forward them one click at a time. The pain is the
+  repeated clicks, not the visual layout — the clones already cluster by
+  name and sort adjacently, so a group *header* buys almost nothing and
+  taxes the common single-clone case with collapse/sort/label complexity.
+  Lean version instead: detect siblings by shared remote URL
+  (`GitService.remoteURL(at:)` already exists; add the value to `Repo` and
+  compute sibling sets in `RepoStore`), and when ≥2 fast-forwardable
+  siblings exist, offer one batch action — a row context-menu item ("Pull
+  others on this remote (3)") or a hover-panel line ("3 sibling repos
+  behind — pull all"). Open question: scope to same-remote-**and**-same-branch
+  (safest — won't touch a clone parked on a feature branch) vs. same-remote-
+  any-branch (broader). Only fast-forwardable siblings are eligible; diverged
+  ones stay manual.
 - **Custom branch filters.** Hide repos whose current branch matches
   `main`, `master`, `develop` — useful for folks who only care about
   feature branches needing commit/push.
