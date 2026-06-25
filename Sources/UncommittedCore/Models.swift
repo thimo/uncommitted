@@ -160,6 +160,29 @@ public struct RepoStatus: Equatable {
         branches.filter { !$0.isCurrent && !$0.isGone && ($0.ahead > 0 || $0.behind > 0) }
     }
 
+    /// Other branches a plain fast-forward would advance — behind-only, no
+    /// local commits at risk. The common case: you released on `main`, the
+    /// remote moved, and the clone you're standing on (`develop`) could
+    /// fast-forward its local `main` without leaving the branch.
+    public var pullableOtherBranches: [BranchStatus] {
+        otherBranches.filter { $0.isFastForwardable }
+    }
+
+    /// Other branches carrying unpushed commits — a plain `git push` publishes
+    /// them. The "you committed on a branch, switched away, and forgot to push"
+    /// case.
+    public var pushableOtherBranches: [BranchStatus] {
+        otherBranches.filter { $0.isPushable }
+    }
+
+    /// True when a branch you're *not* standing on has a clean action available
+    /// (pull or push). Drives the visibility filter and the muted row badge so
+    /// this work isn't invisible just because the current branch is clean.
+    /// Diverged other branches are excluded — nothing can be done from a badge.
+    public var hasActionableOtherBranch: Bool {
+        !pullableOtherBranches.isEmpty || !pushableOtherBranches.isEmpty
+    }
+
     public var isDetached: Bool { branch == "(detached)" }
 
     /// Friendly branch label for UI — replaces "(detached)" with short SHA.

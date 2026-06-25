@@ -153,6 +153,10 @@ struct MenuContentView: View {
         return store.repos.filter { repo in
             // Local git state needs attention…
             if !(repo.status?.isClean ?? false) { return true }
+            // …or a branch you're not standing on can pull/push (e.g. local
+            // `main` fell behind `origin/main` while you work on `develop`).
+            // The current branch reads clean, but there's still work to do.
+            if repo.status?.hasActionableOtherBranch == true { return true }
             // …or GitHub side does, but only if the user hasn't muted
             // this repo's GitHub status — a muted row is "I don't want
             // to see this", which has to extend to the visibility
@@ -1621,7 +1625,10 @@ struct StatusBadges: View {
         let hasCIBadge = githubStatus?.ciStatus == .failure
                       || githubStatus?.ciStatus == .pending
         let hasPRBadge = githubStatus?.prCount?.isEmpty == false
+        // A pullable/pushable *other* branch also counts as "not clear" — the
+        // muted teaser below would otherwise sit next to a green checkmark.
         let allClear = status.isClean && !hasCIBadge && !hasPRBadge
+                    && !status.hasActionableOtherBranch
 
         HStack(spacing: 4) {
             // GitHub-side signals come first — they're "outside world"
@@ -1674,6 +1681,22 @@ struct StatusBadges: View {
                 if status.staged > 0 {
                     ReadOnlyBadge(glyph: "+", count: status.staged, color: .teal)
                 }
+            }
+
+            // Muted other-branch teaser — shown whether or not the current
+            // branch is dirty. Non-interactive on purpose: the hover panel's
+            // "Other branches" section owns the per-branch pull/push (it knows
+            // which branch). This badge just gets the repo to surface and
+            // nudges you to look. `.secondary` keeps it visually subordinate
+            // to the loud current-branch pills. Counts sum commits across the
+            // actionable other branches, matching the ↑/↓ commit semantics.
+            let otherPull = status.pullableOtherBranches.reduce(0) { $0 + $1.behind }
+            let otherPush = status.pushableOtherBranches.reduce(0) { $0 + $1.ahead }
+            if otherPull > 0 {
+                ReadOnlyBadge(glyph: "↓", count: otherPull, color: .secondary)
+            }
+            if otherPush > 0 {
+                ReadOnlyBadge(glyph: "↑", count: otherPush, color: .secondary)
             }
         }
     }

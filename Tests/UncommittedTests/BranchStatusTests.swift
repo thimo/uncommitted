@@ -95,5 +95,47 @@ enum BranchStatusTests {
             try expectEqual(others.count, 1)
             try expectEqual(others[0].name, "main")
         }
+
+        test("BranchStatus/actionableOtherBranchSplitsPullablePushableDiverged") {
+            let status = RepoStatus(
+                branch: "develop",
+                branches: [
+                    // Current branch clean — must not drag the repo out of clean.
+                    BranchStatus(name: "develop", upstream: "origin/develop",
+                                 ahead: 0, behind: 0, isCurrent: true),
+                    // Behind only → pullable.
+                    BranchStatus(name: "main", upstream: "origin/main",
+                                 ahead: 0, behind: 3, isCurrent: false),
+                    // Ahead only → pushable.
+                    BranchStatus(name: "feature", upstream: "origin/feature",
+                                 ahead: 2, behind: 0, isCurrent: false),
+                    // Diverged → neither pullable nor pushable.
+                    BranchStatus(name: "wip", upstream: "origin/wip",
+                                 ahead: 1, behind: 1, isCurrent: false),
+                ]
+            )
+            try expectEqual(status.pullableOtherBranches.map { $0.name }, ["main"])
+            try expectEqual(status.pushableOtherBranches.map { $0.name }, ["feature"])
+            try expectEqual(status.hasActionableOtherBranch, true)
+            // Current branch carries no work, but the repo is not "all clear".
+            try expectEqual(status.isClean, true)
+        }
+
+        test("BranchStatus/noActionableOtherBranchWhenOnlyDivergedOrGone") {
+            let status = RepoStatus(
+                branch: "develop",
+                branches: [
+                    BranchStatus(name: "develop", upstream: "origin/develop",
+                                 ahead: 0, behind: 0, isCurrent: true),
+                    BranchStatus(name: "wip", upstream: "origin/wip",
+                                 ahead: 1, behind: 1, isCurrent: false),
+                    BranchStatus(name: "old", upstream: "origin/old",
+                                 ahead: 0, behind: 4, isCurrent: false, isGone: true),
+                ]
+            )
+            try expectEqual(status.pullableOtherBranches.isEmpty, true)
+            try expectEqual(status.pushableOtherBranches.isEmpty, true)
+            try expectEqual(status.hasActionableOtherBranch, false)
+        }
     }
 }
