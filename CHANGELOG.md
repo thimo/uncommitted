@@ -3,6 +3,21 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
+## v0.10.0 — 2026-06-29
+
+### New
+- A repo whose current branch is clean but whose *other* local branches have
+  work to pull or push no longer hides itself. A clone parked on `develop`
+  while local `main` quietly falls behind `origin/main` now stays visible with
+  a muted arrow teaser — open the hover panel's "Other branches" section to
+  fast-forward or push it.
+- Deleted files now get their own red − section and badge instead of being
+  lumped in with modified files.
+
+### Bug fixes
+- Removed the colored glow discs behind the app icon's ring nodes — they bled
+  blue/purple/pink past the holes onto the white strokes.
+
 ## v0.9.0 — 2026-06-22
 
 ### New
