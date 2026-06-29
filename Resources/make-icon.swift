@@ -16,8 +16,7 @@
 //
 // Inside the icon body: pink→purple→blue linear gradient, a warm radial
 // hotspot in the upper-left, a subtle top-edge highlight, and the bundled
-// merge glyph in white with its own soft drop shadow. One node (top-right)
-// glows pink through its ring hole as an accent.
+// merge glyph in white with its own soft drop shadow.
 
 import Foundation
 import AppKit
@@ -160,50 +159,6 @@ func render(size: CGFloat) -> NSImage {
         x: rect.midX - glyphSize.width / 2,
         y: rect.midY - glyphSize.height / 2
     )
-    let svgScale = glyphSize.width / svgWidth
-
-    // Coloured glow discs behind each of the three ring nodes. Drawn
-    // BEFORE the glyph so they show through each ring's inner hole (the
-    // glyph uses even-odd fill so the inner disc of each node is
-    // transparent). Same per-node palette as the About page glyph:
-    // pink through the top-left node, purple through the top-right,
-    // blue through the bottom. Clip to the rounded rect so glows
-    // can't spill outside the icon shape.
-    ctx.saveGState()
-    ctx.addPath(path)
-    ctx.clip()
-
-    let glowOuterRadius = innerHoleRadius * svgScale * 3.5
-    let coloredNodes: [(NodeCenter, (CGFloat, CGFloat, CGFloat))] = [
-        (topLeftNode,  (0.878, 0.000, 0.565)), // pink   #E00090
-        (topRightNode, (0.537, 0.000, 0.824)), // purple #8900D2
-        (bottomNode,   (0.310, 0.000, 1.000)), // blue   #4F00FF
-    ]
-    for (node, rgb) in coloredNodes {
-        let center = CGPoint(
-            x: origin.x + node.x * svgScale,
-            y: origin.y + node.y * svgScale
-        )
-        let glowColors = [
-            NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1.0).cgColor,
-            NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 0.9).cgColor,
-            NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 0.0).cgColor,
-        ]
-        let glow = CGGradient(
-            colorsSpace: CGColorSpaceCreateDeviceRGB(),
-            colors: glowColors as CFArray,
-            locations: [0, 0.25, 1]
-        )!
-        ctx.drawRadialGradient(
-            glow,
-            startCenter: center,
-            startRadius: 0,
-            endCenter: center,
-            endRadius: glowOuterRadius,
-            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
-        )
-    }
-    ctx.restoreGState()
 
     // White-tinted glyph, drawn on top with a soft drop shadow for 3D lift.
     // Uses a CGContext-based tint to avoid NSImage compositing quirks that
@@ -221,18 +176,6 @@ func render(size: CGFloat) -> NSImage {
 
     return image
 }
-
-// Known geometry of the bundled glyph SVG (viewBox 0..321, 0..408).
-// The three ring nodes are placed at these coordinates in source space,
-// before the inner `translate(15.5, 15.5)` offset.
-let svgWidth: CGFloat = 321
-let svgHeight: CGFloat = 408
-let innerHoleRadius: CGFloat = 35
-struct NodeCenter { let x: CGFloat; let y: CGFloat }
-// Flipped into Cocoa Y-up coordinates for drawing.
-let topLeftNode  = NodeCenter(x:  50 + 15.5, y: svgHeight - ( 50 + 15.5))
-let topRightNode = NodeCenter(x: 240 + 15.5, y: svgHeight - (119 + 15.5))
-let bottomNode   = NodeCenter(x: 130 + 15.5, y: svgHeight - (327 + 15.5))
 
 /// Builds a white-tinted CGImage from a black glyph SVG. Renders the SVG
 /// into a bitmap at the target size, then uses `.destinationIn` over a
