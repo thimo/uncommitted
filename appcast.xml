@@ -3,6 +3,15 @@
     <channel>
         <title>Uncommitted</title>
         <item>
+            <title>0.10.0</title>
+            <pubDate>Mon, 29 Jun 2026 20:05:36 +0200</pubDate>
+            <link>https://github.com/thimo/uncommitted/releases/tag/v0.10.0</link>
+            <sparkle:version>145</sparkle:version>
+            <sparkle:shortVersionString>0.10.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.10.0/Uncommitted-0.10.0.zip" length="3890108" type="application/octet-stream" sparkle:edSignature="Y7aZrZdHbDZeME+fvZcx06jXyrutxAi6N8RqO+BsNOUmM4XJW6phWTKDcW8ImaX8kAVJR5vUgNMG70YuxrqYDw=="/>
+        </item>
+        <item>
             <title>0.9.0</title>
             <pubDate>Mon, 22 Jun 2026 12:58:16 +0200</pubDate>
             <link>https://github.com/thimo/uncommitted/releases/tag/v0.9.0</link>
@@ -19,22 +28,6 @@
             <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.8.0/Uncommitted-0.8.0.zip" length="3852457" type="application/octet-stream" sparkle:edSignature="+LlMKt9zQebRlUnsL8SWjNqSf/DoLniY/OkMTSuWl+4EOJ/5HMoC9AGStdrsSM6DCPuoWZuy5U6M+iPBp/gbAA=="/>
-        </item>
-        <item>
-            <title>0.7.1</title>
-            <pubDate>Sat, 16 May 2026 14:40:41 +0200</pubDate>
-            <link>https://github.com/thimo/uncommitted/releases/tag/v0.7.1</link>
-            <sparkle:version>119</sparkle:version>
-            <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted-0.7.1.zip" length="3808908" type="application/octet-stream" sparkle:edSignature="Nf/OyZ9RYoashO6H1hQbtXpVcAEf3Q7wHhPPtAufqVDWEuclpCX+ZqvkEM9il19U8QskTXo0NwcQ4Zpn+mR5Ag=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-115.delta" sparkle:deltaFrom="115" length="252506" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="H+0BhsdZvj9qocaeh5E3fBpVYBu+W5uBqbCb9u78r0DQA1vhYENsscVY4EJQZcg02JDNZcxUUdWgzr6OJNQ4BQ=="/>
-                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-110.delta" sparkle:deltaFrom="110" length="425002" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="9rW9P7YLWlbUTn3VK0d3Nv5RG7fDNMFDjK54Fzzez9MOJwYaRIUrW0dwAOlc5fptaeeq2oWPqYGAD+TukMQpAA=="/>
-                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-101.delta" sparkle:deltaFrom="101" length="425294" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="1e5x/WVTKrMLaQ7RXZyKwXPMZ5cUVFxgtoukRj+X7HfXUoG/aedFt0QfrtXjstEehOn0K6pxu/oQdhzt4IjBCg=="/>
-                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-97.delta" sparkle:deltaFrom="97" length="464818" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="I4aLH7/KvHpIYsLiYanmC8anEB305Ot25CjzUZ5l5/R2i0f+DypZK/WLqHDZ3goeYkm9DUHB8h7351mCk1ypAw=="/>
-                <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.7.1/Uncommitted119-91.delta" sparkle:deltaFrom="91" length="479842" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977616" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="aroxfA2b6ST+91QveS4LXpUImjTK33ml7j7f0lqA4vsu38Be4RdIuOhSoiaJjOmCRoS1dU7JdEQsmjJRSEMbBQ=="/>
-            </sparkle:deltas>
         </item>
     </channel>
 </rss>
