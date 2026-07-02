@@ -22,8 +22,6 @@ lives in `CHANGELOG.md`; current state is in `CLAUDE.md`.
   existing FreeAgent-hours prompt scrape (`gh search commits`).
 - **Stash awareness.** `≡ N` badge for stashed changes. Right-click a row
   → `git stash list` in a popover. Prevents forgotten stashes.
-- **Quick commit from menu.** Hover repo row → small text input, Enter
-  runs `git add -A && git commit -m "..."`. Power-user shortcut.
 - **Per-repo overrides.** Right-click a repo row → Pin, Hide, Rename.
   Config gets a `repoOverrides: [path: overrides]` map.
 - **Bulk pull across sibling clones (shared remote).** Several local clones
@@ -46,19 +44,8 @@ lives in `CHANGELOG.md`; current state is in `CLAUDE.md`.
 - **Custom branch filters.** Hide repos whose current branch matches
   `main`, `master`, `develop` — useful for folks who only care about
   feature branches needing commit/push.
-- **Click behavior toggles.** Different click = different action (e.g.
-  left-click default, Opt-click second, etc.) instead of right-click for
-  alternates. Or in addition.
 - **Status tooltips.** Hover a badge → tooltip with the full breakdown
   ("3 new files: `routes.ts`, `models.ts`, `middleware.ts`").
-- **Badge styles setting.** Some people prefer symbols, some prefer
-  letters, some prefer Xcode-style coloured dots. Make it a picker.
-- **Dark mode accent tuning.** Status badge colors work in both modes but
-  could use a pass for readability in dark.
-- **Homebrew tap.** (Unstarted — `thimo/homebrew-tap` doesn't exist yet.)
-  A personal tap with a `Casks/uncommitted.rb` pointing at the latest
-  GitHub Release zip, so `brew install --cask` works. Only worth it if the
-  install-via-Homebrew audience justifies maintaining the cask.
 
 ## README screenshots (mechanical TODO)
 
