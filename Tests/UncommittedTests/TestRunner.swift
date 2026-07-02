@@ -81,6 +81,7 @@ struct TestRunnerMain {
         StalenessTests.register()
         ActionTests.register()
         BranchStatusTests.register()
+        DiagnosticsLogTests.register()
 
         var passed = 0
         var failed = 0

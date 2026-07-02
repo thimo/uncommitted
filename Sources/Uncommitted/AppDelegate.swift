@@ -100,6 +100,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
+        // Lifecycle + last-breath logging first, so even a failure later
+        // in launch leaves a trace in ~/Library/Logs/Uncommitted.
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        DiagnosticsLog.shared.info("app", "launched — version \(version) (\(build))")
+        CrashReporter.install()
         installMinimalMenu()
         setupStatusItem()
         setupPanel()
@@ -174,6 +180,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // The June 2026 "icon vanished" incident was a clean exit with no
+        // trace — every orderly termination path now leaves a line.
+        DiagnosticsLog.shared.info("app", "applicationWillTerminate")
     }
 
     private func resizePanelIfVisible() {

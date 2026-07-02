@@ -267,7 +267,7 @@ public enum GHService {
             if pgid > 0 { Foundation.kill(-pgid, SIGKILL) }
             try? stdoutPipe.fileHandleForReading.close()
             try? stderrPipe.fileHandleForReading.close()
-            log.error("gh \(args.joined(separator: " "), privacy: .public): pipe drain timed out")
+            DiagnosticsLog.shared.warning("github", "gh \(args.joined(separator: " ")): pipe drain timed out")
             return ExecuteResult(
                 exitStatus: process.terminationStatus,
                 stdout: stdoutData,
@@ -298,7 +298,7 @@ public enum GHService {
         guard result.isSuccess else {
             if !result.stderr.isEmpty,
                let text = String(data: result.stderr, encoding: .utf8) {
-                log.error("gh api \(endpoint, privacy: .public) failed: \(text, privacy: .public)")
+                DiagnosticsLog.shared.warning("github", "gh api \(endpoint) failed: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
             }
             return nil
         }
@@ -307,7 +307,7 @@ public enum GHService {
         do {
             return try decoder.decode(T.self, from: result.stdout)
         } catch {
-            log.error("gh api \(endpoint, privacy: .public) decode failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticsLog.shared.warning("github", "gh api \(endpoint) decode failed: \(error.localizedDescription)")
             return nil
         }
     }

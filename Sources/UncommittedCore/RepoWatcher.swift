@@ -73,6 +73,7 @@ public final class RepoWatcher {
             // succeeded — if we get nil here we own the retain ourselves
             // and must release it, otherwise we leak self.
             Unmanaged<RepoWatcher>.fromOpaque(retained).release()
+            DiagnosticsLog.shared.error("watcher", "FSEventStreamCreate failed for \(urls.count) path(s) — live updates are off until the next periodic rebuild")
             return
         }
 

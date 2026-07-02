@@ -109,6 +109,8 @@ struct GeneralSettingsView: View {
                         AppDelegate.shared?.updaterController.updater.automaticallyDownloadsUpdates = newValue
                     }
             }
+
+            DiagnosticsSettingsSection()
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
@@ -119,6 +121,79 @@ struct GeneralSettingsView: View {
                 autoCheckForUpdates = updater.automaticallyChecksForUpdates
                 autoDownloadUpdates = updater.automaticallyDownloadsUpdates
             }
+        }
+    }
+}
+
+/// "Diagnostics" section on the General tab: the most recent error-level
+/// event of this session (git failures, watcher problems, config-save
+/// errors) plus access to the on-disk log files — errors used to vanish
+/// into Console.app where nobody looks.
+private struct DiagnosticsSettingsSection: View {
+    @ObservedObject private var diagnostics = DiagnosticsLog.shared
+
+    var body: some View {
+        Section {
+            if let entry = diagnostics.lastError {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.message)
+                        .font(.callout)
+                        .lineLimit(3)
+                        .truncationMode(.tail)
+                        .textSelection(.enabled)
+                        .help(entry.message)
+                    Text("\(entry.category) · \(entry.date.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.primary.opacity(0.60))
+                }
+            } else {
+                Text("No errors this session.")
+                    .foregroundStyle(.primary.opacity(0.70))
+            }
+            HStack(spacing: 8) {
+                Button("Open Log Folder") {
+                    NSWorkspace.shared.open(diagnostics.directory)
+                }
+                Button("Export Diagnostics…") { exportDiagnostics() }
+            }
+        } header: {
+            Text("Diagnostics")
+        } footer: {
+            Text("Errors from git, the file watcher, and GitHub polling are written to ~/Library/Logs/Uncommitted (last 14 days kept). Export bundles them into a zip for a bug report.")
+                .font(.caption)
+                .foregroundStyle(.primary.opacity(0.60))
+        }
+    }
+
+    private func exportDiagnostics() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.zip]
+        let stamp = Date().formatted(.iso8601.year().month().day())
+        panel.nameFieldStringValue = "Uncommitted-diagnostics-\(stamp).zip"
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        // The save panel already asked about replacing; ditto would
+        // otherwise append into an existing archive.
+        try? FileManager.default.removeItem(at: destination)
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        task.arguments = ["-c", "-k", "--sequesterRsrc", diagnostics.directory.path, destination.path]
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            // fallthrough to the status check below
+        }
+
+        if task.terminationStatus == 0 {
+            NSWorkspace.shared.activateFileViewerSelecting([destination])
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "Export failed"
+            alert.informativeText = "Could not create the zip archive. You can copy the log files manually from ~/Library/Logs/Uncommitted."
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
 }

@@ -28,12 +28,13 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
     automatically at the end (`open`); a build while it's deliberately
     closed leaves it closed.
 - `.build/release/UncommittedTests` — custom plain-Swift test runner, not
-  XCTest/swift-testing (neither ships with the CLT). 122 tests covering
+  XCTest/swift-testing (neither ships with the CLT). 134 tests covering
   the `UncommittedCore` logic layer: git status parser, error classifier,
   config round-trip, repo resolution, fetch scheduler/state, GitHub status
   aggregation, staleness formatting, actions (`{path}` expansion +
-  Codable), and per-branch status (`for-each-ref` parser + ff/diverged
-  classification). UI/orchestration (AppKit/SwiftUI, RepoStore, RepoWatcher)
+  Codable), per-branch status (`for-each-ref` parser + ff/diverged
+  classification), and the diagnostics log (daily files, retention,
+  last-error tracking). UI/orchestration (AppKit/SwiftUI, RepoStore, RepoWatcher)
   is untested — won't run headlessly under the CLT-only toolchain.
 
 ## Target layout
@@ -118,6 +119,10 @@ and usually fix a specific pitfall:
   commit subject fetch for hover detail
 - `Sources/UncommittedCore/Models.swift` — `Repo`, `RepoStatus` (counts are
   computed from `*Paths` arrays so they can't drift)
+- `Sources/UncommittedCore/DiagnosticsLog.swift` + `CrashReporter.swift` —
+  daily log files in `~/Library/Logs/Uncommitted/` (14-day retention,
+  os.log mirror, observable `lastError` for Settings), plus last-breath
+  handlers (atexit, uncaught exception, fatal signals + SIGTERM)
 - `Resources/make-icon.swift` — programmatic iconset renderer
 - `Resources/Info.plist` — LSUIElement, Sparkle keys (SUFeedURL, SUPublicEDKey)
 - `Resources/Uncommitted.entitlements` — hardened runtime for notarization

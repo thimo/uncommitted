@@ -1,8 +1,5 @@
 import Foundation
 import Combine
-import os.log
-
-private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "fetch-state")
 
 /// Persists per-repo fetch bookkeeping to
 /// `~/Library/Application Support/Uncommitted/fetch-state.json`.
@@ -83,7 +80,7 @@ public final class FetchStateStore: ObservableObject {
             let data = try encoder.encode(states)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            log.error("Failed to save fetch state: \(error.localizedDescription, privacy: .public)")
+            DiagnosticsLog.shared.error("fetch-state", "Failed to save fetch state: \(error.localizedDescription)")
         }
     }
 }

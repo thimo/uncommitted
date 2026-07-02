@@ -313,7 +313,7 @@ public final class GitHubStatusScheduler: ObservableObject {
             let data = try encoder.encode(payload)
             try data.write(to: cacheURL, options: .atomic)
         } catch {
-            log.error("github-status save failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticsLog.shared.error("github-status-scheduler", "github-status save failed: \(error.localizedDescription)")
         }
     }
 
@@ -322,7 +322,7 @@ public final class GitHubStatusScheduler: ObservableObject {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let payload = try? decoder.decode(CacheFile.self, from: data) else {
-            log.info("github-status cache present but undecodable, ignoring")
+            DiagnosticsLog.shared.warning("github-status-scheduler", "github-status cache present but undecodable, ignoring")
             return
         }
         let restored = Dictionary(uniqueKeysWithValues: payload.entries.map { (path, status) in

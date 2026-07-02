@@ -341,7 +341,10 @@ public final class FetchScheduler: ObservableObject {
                         state.noRemote = false
                     } else {
                         state.consecutiveFailures += 1
-                        log.info("fetch failed for \(url.lastPathComponent, privacy: .public): \(result.errorOutput ?? "unknown", privacy: .public)")
+                        // Warning, not error: background fetches fail all the
+                        // time for boring reasons (offline, VPN down) and
+                        // shouldn't occupy the "last error" slot in Settings.
+                        DiagnosticsLog.shared.warning("fetch", "fetch failed for \(url.lastPathComponent): \(result.errorOutput ?? "unknown")")
                     }
                 }
                 if result.success {

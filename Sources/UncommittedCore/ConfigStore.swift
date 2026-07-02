@@ -1,8 +1,5 @@
 import Foundation
 import Combine
-import os.log
-
-private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "config")
 
 public final class ConfigStore: ObservableObject {
     @Published public var config: Config {
@@ -53,10 +50,10 @@ public final class ConfigStore: ObservableObject {
             let data = try encoder.encode(config)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            // Logged instead of silently swallowed — a failed write leaves
-            // the user's edits only in memory, which is worth noticing in
-            // Console.app if it ever happens (full disk, sandbox denial, …).
-            log.error("Failed to save config: \(error.localizedDescription, privacy: .public)")
+            // A failed write leaves the user's edits only in memory —
+            // surfaced via the diagnostics log and the Settings "last
+            // error" line (full disk, permissions, …).
+            DiagnosticsLog.shared.error("config", "Failed to save config: \(error.localizedDescription)")
         }
     }
 }

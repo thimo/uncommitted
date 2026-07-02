@@ -78,15 +78,17 @@ public enum GitService {
     public static func status(at url: URL) -> RepoStatus? {
         let result = execute(["--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=all"], at: url)
         guard result.exitStatus == 0 else {
-            log.error("status failed at \(url.path, privacy: .public): exit \(result.exitStatus)")
+            let stderrText = String(data: result.stderr, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            DiagnosticsLog.shared.error("git", "status failed at \(url.path): exit \(result.exitStatus)\(stderrText.isEmpty ? "" : " — \(stderrText)")")
             return nil
         }
         guard let output = String(data: result.stdout, encoding: .utf8) else {
-            log.error("status: non-UTF8 stdout at \(url.path, privacy: .public)")
+            DiagnosticsLog.shared.error("git", "status: non-UTF8 stdout at \(url.path)")
             return nil
         }
         guard var parsed = parse(output) else {
-            log.error("status: parse returned nil at \(url.path, privacy: .public)")
+            DiagnosticsLog.shared.error("git", "status: parse returned nil at \(url.path)")
             return nil
         }
 
@@ -534,7 +536,7 @@ public enum GitService {
         let result = execute(args, at: url)
 
         if let launchFailure = result.launchFailure {
-            log.error("launch failed at \(url.path, privacy: .public): \(launchFailure.localizedDescription, privacy: .public)")
+            DiagnosticsLog.shared.error("git", "launch failed at \(url.path): \(launchFailure.localizedDescription)")
             return ActionResult(
                 success: false,
                 errorOutput: launchFailure.localizedDescription,
@@ -550,7 +552,11 @@ public enum GitService {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let message = !text.isEmpty ? text : "git exited with status \(result.exitStatus)"
         let kind = classify(exitStatus: result.exitStatus, stderr: text)
-        log.error("git \(args.joined(separator: " "), privacy: .public) failed at \(url.path, privacy: .public): \(String(describing: kind), privacy: .public) — \(text, privacy: .public)")
+        // Lock collisions are retried automatically by action() and are
+        // usually transient — log them as warnings so they don't stick as
+        // the "last error" in Settings when the retry succeeds.
+        let level: DiagnosticsLog.Level = kind.isRetryable ? .warning : .error
+        DiagnosticsLog.shared.log(level, "git", "git \(args.joined(separator: " ")) failed at \(url.path): \(String(describing: kind)) — \(text)")
         return ActionResult(success: false, errorOutput: message, kind: kind)
     }
 
