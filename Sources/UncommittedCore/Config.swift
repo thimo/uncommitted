@@ -67,6 +67,14 @@ public struct Config: Codable, Equatable {
     /// ("11d") in the popup — how long the uncommitted/unpushed work has gone
     /// untouched.
     public var flagStaleRepos: Bool
+    /// When true, a single notification fires at `dailyReminderMinutes` if
+    /// any repo still has uncommitted or unpushed work. Off by default —
+    /// enabling it is also the moment the app asks for notification
+    /// permission, so the macOS prompt arrives expected instead of at
+    /// first launch.
+    public var dailyReminderEnabled: Bool
+    /// Reminder time as minutes since midnight (local time). 1050 = 17:30.
+    public var dailyReminderMinutes: Int
 
     public init(
         sources: [Source] = [],
@@ -77,7 +85,9 @@ public struct Config: Codable, Equatable {
         showGitHubStatus: Bool = true,
         gitHubMutedRepos: [String] = [],
         globalShortcut: GlobalShortcut? = .defaultShortcut,
-        flagStaleRepos: Bool = true
+        flagStaleRepos: Bool = true,
+        dailyReminderEnabled: Bool = false,
+        dailyReminderMinutes: Int = 17 * 60 + 30
     ) {
         self.sources = sources
         self.actions = actions
@@ -88,6 +98,8 @@ public struct Config: Codable, Equatable {
         self.gitHubMutedRepos = gitHubMutedRepos
         self.globalShortcut = globalShortcut
         self.flagStaleRepos = flagStaleRepos
+        self.dailyReminderEnabled = dailyReminderEnabled
+        self.dailyReminderMinutes = dailyReminderMinutes
     }
 
     public static var defaultActions: [Action] {
@@ -108,6 +120,8 @@ public struct Config: Codable, Equatable {
         case gitHubMutedRepos
         case globalShortcut
         case flagStaleRepos
+        case dailyReminderEnabled
+        case dailyReminderMinutes
     }
 
     public init(from decoder: Decoder) throws {
@@ -126,5 +140,7 @@ public struct Config: Codable, Equatable {
             self.globalShortcut = .defaultShortcut
         }
         self.flagStaleRepos = try container.decodeIfPresent(Bool.self, forKey: .flagStaleRepos) ?? true
+        self.dailyReminderEnabled = try container.decodeIfPresent(Bool.self, forKey: .dailyReminderEnabled) ?? false
+        self.dailyReminderMinutes = try container.decodeIfPresent(Int.self, forKey: .dailyReminderMinutes) ?? (17 * 60 + 30)
     }
 }

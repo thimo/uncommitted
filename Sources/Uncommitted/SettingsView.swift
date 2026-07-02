@@ -61,6 +61,23 @@ struct GeneralSettingsView: View {
     @State private var autoCheckForUpdates: Bool = true
     @State private var autoDownloadUpdates: Bool = false
 
+    /// DatePicker wants a Date; the config stores minutes-since-midnight
+    /// (timezone-proof and trivially Codable). Convert at the UI boundary.
+    private var reminderTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                let minutes = configStore.config.dailyReminderMinutes
+                return Calendar.current.date(
+                    bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date()
+                ) ?? Date()
+            },
+            set: { newDate in
+                let parts = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                configStore.config.dailyReminderMinutes = (parts.hour ?? 17) * 60 + (parts.minute ?? 30)
+            }
+        )
+    }
+
     var body: some View {
         Form {
             Section("Menu bar") {
@@ -80,6 +97,23 @@ struct GeneralSettingsView: View {
                 Text("Pending work")
             } footer: {
                 Text("Shows a compact age (\"11d\") next to every repo with uncommitted or unpushed work — how long it's gone untouched. The hover panel spells it out in full.")
+                    .font(.caption)
+                    .foregroundStyle(.primary.opacity(0.60))
+            }
+
+            Section {
+                Toggle("Remind me of pending work", isOn: $configStore.config.dailyReminderEnabled)
+                if configStore.config.dailyReminderEnabled {
+                    DatePicker(
+                        "Remind at",
+                        selection: reminderTimeBinding,
+                        displayedComponents: .hourAndMinute
+                    )
+                }
+            } header: {
+                Text("Daily reminder")
+            } footer: {
+                Text("One notification at this time when any repository still has uncommitted or unpushed work — nothing pending, no notification. Clicking it opens the popup. Enabling asks for notification permission.")
                     .font(.caption)
                     .foregroundStyle(.primary.opacity(0.60))
             }

@@ -809,6 +809,15 @@ struct RepoRow: View {
                             .foregroundStyle(.primary.opacity(0.70))
                             .lineLimit(1)
                             .layoutPriority(0)
+                        if let op = repo.status?.operation {
+                            // A parked merge/rebase outranks any other
+                            // subtitle info — orange so it reads as "needs
+                            // finishing", higher priority than the branch
+                            // name so it never truncates away.
+                            Text("· \(op.compactLabel)")
+                                .foregroundStyle(Color.orange)
+                                .layoutPriority(1)
+                        }
                         if let age = pendingAge {
                             // Ambient "how long pending" on every dirty row.
                             // Muted so it reads as metadata, not an alarm;
@@ -1112,7 +1121,8 @@ struct RepoDetailPopover: View {
             // "Clean" here also requires no other-branch drift — otherwise a
             // repo that's only behind on main (current branch clean) would
             // show "No pending changes" and hide the very thing we want.
-            if displayStatus.isClean && !hasGitHubSignal && displayStatus.otherBranches.isEmpty {
+            if displayStatus.isClean && !hasGitHubSignal
+                && displayStatus.otherBranches.isEmpty && displayStatus.goneBranches.isEmpty {
                 cleanMessage
             } else {
                 sections
@@ -1343,6 +1353,28 @@ struct RepoDetailPopover: View {
     @ViewBuilder
     private var sections: some View {
         let s = displayStatus
+        if let op = s.operation {
+            // Same visual language as the GitHub signal lines: icon +
+            // one sentence. There's no safe menu-bar action for a parked
+            // operation (continue/abort both need context), so the line
+            // explains instead of offering buttons.
+            GitHubLine(
+                systemImage: "exclamationmark.triangle.fill",
+                color: .orange,
+                text: "\(op.panelLabel) — finish or abort it in your editor or terminal"
+            )
+        }
+        if s.conflicted > 0 {
+            DetailSection(
+                glyph: "⚠",
+                noun: "conflicted file",
+                count: s.conflicted,
+                items: s.conflictedPaths,
+                color: .red,
+                limit: Self.itemLimit,
+                onOpenItem: fileOpener
+            )
+        }
         if s.ahead > 0 {
             DetailSection(
                 glyph: "↑",
@@ -1512,13 +1544,14 @@ private struct OtherBranchesSection: View {
 
     private var repo: Repo? { store.repos.first { $0.id == repoID } }
     private var branches: [BranchStatus] { repo?.status?.otherBranches ?? [] }
+    private var goneBranches: [BranchStatus] { repo?.status?.goneBranches ?? [] }
     /// In-flight is tracked per repo, not per branch, so any branch action
     /// disables them all and shows one spinner in the header. Avoids painting
     /// a misleading spinner on every row when we can't say which one is busy.
     private var isInFlight: Bool { store.inFlight[repoID] != nil }
 
     var body: some View {
-        if let repo, !branches.isEmpty {
+        if let repo, !branches.isEmpty || !goneBranches.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text("Other branches")
@@ -1540,9 +1573,73 @@ private struct OtherBranchesSection: View {
                             onPush: { store.pushBranch(repo: repo, branch: branch) }
                         )
                     }
+                    // Leftovers last — they're housekeeping, not pending work.
+                    ForEach(goneBranches, id: \.name) { branch in
+                        GoneBranchRow(
+                            branch: branch,
+                            isInFlight: isInFlight,
+                            onDelete: { confirmDelete(repo: repo, branch: branch) }
+                        )
+                    }
                 }
                 .padding(.leading, 2)
             }
+        }
+    }
+
+    /// Deleting uses `-D` (squash-merged branches never register as merged,
+    /// so `-d` would refuse) — which can genuinely discard commits. That
+    /// earns a modal confirmation, same pattern as the push/pull error alerts.
+    private func confirmDelete(repo: Repo, branch: BranchStatus) {
+        let alert = NSAlert()
+        alert.messageText = "Delete branch “\(branch.name)”?"
+        alert.informativeText = "Its upstream \(branch.upstream) no longer exists on the remote — usually a merged PR whose branch was cleaned up. Deleting can discard commits git can't verify as merged (e.g. after a squash merge)."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            store.deleteBranch(repo: repo, branch: branch)
+        }
+    }
+}
+
+/// One upstream-gone branch: muted name, a "gone" tag explaining why it's
+/// listed, and a trash button. No counts — ahead/behind are meaningless
+/// against an upstream that no longer exists.
+private struct GoneBranchRow: View {
+    let branch: BranchStatus
+    let isInFlight: Bool
+    let onDelete: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(branch.name)
+                .font(.caption.monospaced())
+                .foregroundStyle(.primary.opacity(0.45))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 6)
+            Text("upstream gone")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundStyle(isHovered ? Color.red : Color.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                            .fill(isHovered ? Color.red.opacity(0.15) : .clear)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: interactiveCornerRadius))
+            }
+            .buttonStyle(.plain)
+            .disabled(isInFlight)
+            .pointingHandCursor(!isInFlight)
+            .onHover { isHovered = $0 }
+            .help("Delete this local branch")
         }
     }
 }
@@ -1668,6 +1765,11 @@ struct StatusBadges: View {
                         isInFlight: inFlight == .pull,
                         action: onPull
                     )
+                }
+                // Conflicts lead the file badges — they block everything
+                // else and are the one state that can't wait.
+                if status.conflicted > 0 {
+                    ReadOnlyBadge(glyph: "⚠", count: status.conflicted, color: .red)
                 }
                 if status.untracked > 0 {
                     ReadOnlyBadge(glyph: "★", count: status.untracked, color: .green)

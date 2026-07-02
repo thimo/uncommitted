@@ -5,6 +5,7 @@ import AppKit
 public enum InFlightAction {
     case push
     case pull
+    case deleteBranch
 }
 
 public final class RepoStore: ObservableObject {
@@ -168,6 +169,14 @@ public final class RepoStore: ObservableObject {
         }
     }
 
+    /// Deletes a local branch whose upstream is gone. The UI confirms
+    /// first — this runs `git branch -D`, which discards unmerged commits.
+    public func deleteBranch(repo: Repo, branch: BranchStatus) {
+        runAction(.deleteBranch, on: repo, context: branch.name) { url in
+            GitService.deleteBranch(at: url, name: branch.name)
+        }
+    }
+
     private func runAction(
         _ kind: InFlightAction,
         on repo: Repo,
@@ -197,8 +206,14 @@ public final class RepoStore: ObservableObject {
                     let recovery = self.configStore.config.actions.first(where: { $0.role == .gitClient })
                         .map { (url: url, action: $0) }
                     let where_ = context.map { "\(repoName) · \($0)" } ?? repoName
+                    let verb: String
+                    switch kind {
+                    case .push: verb = "Push"
+                    case .pull: verb = "Pull"
+                    case .deleteBranch: verb = "Delete branch"
+                    }
                     Self.presentError(
-                        title: "\(kind == .push ? "Push" : "Pull") failed — \(where_)",
+                        title: "\(verb) failed — \(where_)",
                         message: message,
                         detail: friendly != nil ? result.errorOutput : nil,
                         recovery: recovery

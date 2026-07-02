@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let fetchScheduler: FetchScheduler
     let githubScheduler: GitHubStatusScheduler
     let hoverDetail: HoverDetailController
+    /// End-of-day "you still have pending work" notification (opt-in).
+    let reminderScheduler: ReminderScheduler
     /// Sparkle auto-updater. Starts checking on launch; the "Check for
     /// Updates" action in Settings calls through to it.
     let updaterController: SPUStandardUpdaterController
@@ -90,6 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if configStore.config.gitHubMutedRepos.contains(key) { return nil }
             return githubScheduler?.statuses[url]
         }
+        self.reminderScheduler = ReminderScheduler(
+            configStore: configStore,
+            repoStore: repoStore
+        )
         self.updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
@@ -459,6 +465,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             showPopup(from: button)
         }
+    }
+
+    /// Opens the popup (if not already showing) when the user clicks the
+    /// daily-reminder notification — the pending-work list is exactly what
+    /// the notification promised.
+    func showPopupFromNotification() {
+        guard let panel, !panel.isVisible, let button = statusItem?.button else { return }
+        showPopup(from: button)
     }
 
     private func showPopup(from button: NSStatusBarButton) {

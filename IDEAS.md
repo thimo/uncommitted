@@ -43,23 +43,6 @@ lives in `CHANGELOG.md`; current state is in `CLAUDE.md`.
   (safest — won't touch a clone parked on a feature branch) vs. same-remote-
   any-branch (broader). Only fast-forwardable siblings are eligible; diverged
   ones stay manual.
-- **Merge/rebase/conflict-state detection.** A repo mid-rebase, mid-merge, or
-  mid-cherry-pick with conflicts currently shows as plain "N modified" — the
-  porcelain-v2 parser (`GitService.parse()`) handles `1`/`2`/`?` lines but has
-  no case for `u` (unmerged), so conflicted files are silently dropped. Add
-  `conflictedPaths` to `RepoStatus` plus an in-progress-operation signal
-  (`MERGE_HEAD` / `rebase-merge` / `rebase-apply` / `CHERRY_PICK_HEAD` in the
-  git dir), and surface both as a distinct badge ("⚠ conflict", "mid-rebase")
-  in the row and a section in the hover panel. This is exactly the "you forgot
-  to finish something" state the app exists for.
-- **Upstream-gone branch cleanup.** The natural follow-up to the v0.9/0.10
-  "Other branches" work: branches whose upstream was deleted after a merge on
-  GitHub are already detected (`BranchStatus.isGone`) but only used to grey
-  the row out. Mark them explicitly in the hover panel ("upstream gone") and
-  offer a click action to delete the local branch. Needs `-D` rather than
-  `-d` — squash-merged branches never register as merged into HEAD — so gate
-  it behind a confirmation. Forgotten feature branches are the same kind of
-  rot as forgotten stashes.
 - **Custom branch filters.** Hide repos whose current branch matches
   `main`, `master`, `develop` — useful for folks who only care about
   feature branches needing commit/push.

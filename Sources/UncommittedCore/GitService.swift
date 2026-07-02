@@ -99,8 +99,54 @@ public enum GitService {
             parsed.behindCommits = commitSubjects(range: "HEAD..@{u}", at: url)
         }
         parsed.branches = branchStatuses(at: url, current: parsed.branch)
+        parsed.operation = operationInProgress(at: url)
         parsed.lastActivityDate = lastActivityDate(for: parsed, at: url)
         return parsed
+    }
+
+    /// Resolves the actual git directory for a repo. `.git` is a directory
+    /// in a normal clone, but a *file* containing `gitdir: <path>` in
+    /// worktrees and submodules — the marker files live behind that
+    /// indirection. Relative gitdir paths resolve against the repo root.
+    /// Public for the test runner.
+    public static func gitDirectory(for repoURL: URL) -> URL? {
+        let dotGit = repoURL.appendingPathComponent(".git")
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dotGit.path, isDirectory: &isDir) else {
+            return nil
+        }
+        if isDir.boolValue { return dotGit }
+
+        guard let contents = try? String(contentsOf: dotGit, encoding: .utf8),
+              let line = contents.split(separator: "\n").first(where: { $0.hasPrefix("gitdir:") }) else {
+            return nil
+        }
+        let path = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
+        guard !path.isEmpty else { return nil }
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
+        return repoURL.appendingPathComponent(path).standardizedFileURL
+    }
+
+    /// Detects a started-but-unfinished multi-step operation from the
+    /// marker files git leaves in the git dir. Pure filesystem checks —
+    /// no subprocess. Rebase is checked first: a rebase stopped on a
+    /// conflict also writes CHERRY_PICK_HEAD (each rebased commit is
+    /// cherry-picked internally), which must not read as "cherry-pick in
+    /// progress". Public for the test runner.
+    public static func operationInProgress(at repoURL: URL) -> RepoOperation? {
+        guard let gitDir = gitDirectory(for: repoURL) else { return nil }
+        let fm = FileManager.default
+        let exists = { (name: String) in
+            fm.fileExists(atPath: gitDir.appendingPathComponent(name).path)
+        }
+        if exists("rebase-merge") || exists("rebase-apply") { return .rebase }
+        if exists("MERGE_HEAD") { return .merge }
+        if exists("CHERRY_PICK_HEAD") { return .cherryPick }
+        if exists("REVERT_HEAD") { return .revert }
+        if exists("BISECT_LOG") { return .bisect }
+        return nil
     }
 
     /// Per-branch ahead/behind for every local branch that tracks an upstream,
@@ -268,6 +314,14 @@ public enum GitService {
         remoteBranch: String
     ) -> ActionResult {
         action(Self.lowSpeedGuard + ["push", remote, "\(localBranch):\(remoteBranch)"], at: url)
+    }
+
+    /// Deletes a local branch with `-D`. Only offered by the UI for
+    /// branches whose upstream is gone, and only after an explicit
+    /// confirmation: `-d` is not an option because a squash-merged branch
+    /// never registers as merged into HEAD and would be refused.
+    public static func deleteBranch(at url: URL, name: String) -> ActionResult {
+        action(["branch", "-D", name], at: url)
     }
 
     /// Background fetch from `origin`. `--quiet --no-tags --prune` keeps
@@ -608,6 +662,7 @@ public enum GitService {
         var unstagedPaths: [String] = []
         var untrackedPaths: [String] = []
         var deletedPaths: [String] = []
+        var conflictedPaths: [String] = []
 
         for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
             guard let head = line.first else { continue }
@@ -650,6 +705,15 @@ public enum GitService {
                 let path = String(pathField.split(separator: "\t").first ?? pathField)
                 recordEntry(xy: xy, path: path, stagedPaths: &stagedPaths, unstagedPaths: &unstagedPaths, deletedPaths: &deletedPaths)
 
+            case "u":
+                // Unmerged: `u XY sub m1 m2 m3 mW h1 h2 h3 path` — ten
+                // fields before the path, which may contain spaces. These
+                // are the files blocking a merge/rebase; they belong in
+                // their own bucket, not in staged/unstaged.
+                let parts = line.split(separator: " ", maxSplits: 10, omittingEmptySubsequences: false)
+                guard parts.count >= 11 else { continue }
+                conflictedPaths.append(String(parts[10]))
+
             case "?":
                 // `? path` — everything after the space-after-? is the path.
                 let afterMarker = line.index(line.startIndex, offsetBy: 2, limitedBy: line.endIndex) ?? line.endIndex
@@ -673,7 +737,8 @@ public enum GitService {
             stagedPaths: stagedPaths,
             unstagedPaths: unstagedPaths,
             untrackedPaths: untrackedPaths,
-            deletedPaths: deletedPaths
+            deletedPaths: deletedPaths,
+            conflictedPaths: conflictedPaths
         )
     }
 

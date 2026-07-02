@@ -74,6 +74,40 @@ public struct BranchStatus: Equatable {
     }
 }
 
+/// A multi-step git operation that was started but not finished — the repo
+/// is parked halfway through and porcelain's file counts alone misrepresent
+/// it. Detected from marker files in the git dir, not from `git status`
+/// output (porcelain v2 doesn't report operation state).
+public enum RepoOperation: Equatable {
+    case merge
+    case rebase
+    case cherryPick
+    case revert
+    case bisect
+
+    /// Row-suffix form, matching the "· 3d" age suffix style.
+    public var compactLabel: String {
+        switch self {
+        case .merge:      return "merging"
+        case .rebase:     return "rebasing"
+        case .cherryPick: return "cherry-picking"
+        case .revert:     return "reverting"
+        case .bisect:     return "bisecting"
+        }
+    }
+
+    /// Hover-panel form.
+    public var panelLabel: String {
+        switch self {
+        case .merge:      return "Merge in progress"
+        case .rebase:     return "Rebase in progress"
+        case .cherryPick: return "Cherry-pick in progress"
+        case .revert:     return "Revert in progress"
+        case .bisect:     return "Bisect in progress"
+        }
+    }
+}
+
 public struct RepoStatus: Equatable {
     /// Current branch name, or "(detached)" when HEAD is detached.
     public var branch: String
@@ -92,6 +126,15 @@ public struct RepoStatus: Equatable {
     /// "deleted" instead of lumping them in as "modified". A path lands here
     /// when either porcelain axis reports `D`, regardless of staged/unstaged.
     public var deletedPaths: [String]
+    /// Repo-relative paths of unmerged files (porcelain `u` lines — `UU`,
+    /// `AA`, `DU`, …). These are the files blocking a merge/rebase from
+    /// finishing; they were silently dropped before this existed.
+    public var conflictedPaths: [String]
+    /// A merge/rebase/cherry-pick/revert/bisect that was started but not
+    /// finished. Set by `GitService.status` from git-dir marker files, not
+    /// by `parse`. Non-nil keeps the repo visible even with zero counts —
+    /// a rebase parked with everything resolved still needs a `--continue`.
+    public var operation: RepoOperation?
     /// Commit subjects (first line only) for ahead/behind commits, newest
     /// first. Populated by an extra `git log` call after parsing; empty
     /// when there's no upstream divergence.
@@ -116,6 +159,7 @@ public struct RepoStatus: Equatable {
     public var unstaged: Int { unstagedPaths.count }
     public var untracked: Int { untrackedPaths.count }
     public var deleted: Int { deletedPaths.count }
+    public var conflicted: Int { conflictedPaths.count }
 
     public init(
         branch: String,
@@ -126,6 +170,8 @@ public struct RepoStatus: Equatable {
         unstagedPaths: [String] = [],
         untrackedPaths: [String] = [],
         deletedPaths: [String] = [],
+        conflictedPaths: [String] = [],
+        operation: RepoOperation? = nil,
         aheadCommits: [String] = [],
         behindCommits: [String] = [],
         branches: [BranchStatus] = [],
@@ -139,19 +185,23 @@ public struct RepoStatus: Equatable {
         self.unstagedPaths = unstagedPaths
         self.untrackedPaths = untrackedPaths
         self.deletedPaths = deletedPaths
+        self.conflictedPaths = conflictedPaths
+        self.operation = operation
         self.aheadCommits = aheadCommits
         self.behindCommits = behindCommits
         self.branches = branches
         self.lastActivityDate = lastActivityDate
     }
 
-    /// Number of working-tree files with changes (staged + unstaged + untracked + deleted).
-    public var totalUncommitted: Int { staged + unstaged + untracked + deleted }
+    /// Number of working-tree files with changes (staged + unstaged + untracked + deleted + conflicted).
+    public var totalUncommitted: Int { staged + unstaged + untracked + deleted + conflicted }
     /// Number of commits ahead of the upstream (unpushed).
     public var totalUnpushed: Int { ahead }
     /// Total "dirty" count for compatibility — uncommitted files + unpushed commits.
     public var totalDirty: Int { totalUncommitted + totalUnpushed }
-    public var isClean: Bool { totalDirty == 0 && behind == 0 }
+    /// An in-progress operation makes a repo dirty even at zero counts —
+    /// a rebase parked with all conflicts resolved still needs `--continue`.
+    public var isClean: Bool { totalDirty == 0 && behind == 0 && operation == nil }
 
     /// Branches for the "Other branches" panel section: every tracking branch
     /// except the checked-out one, that has actual divergence to act on. Gone
@@ -181,6 +231,16 @@ public struct RepoStatus: Equatable {
     /// Diverged other branches are excluded — nothing can be done from a badge.
     public var hasActionableOtherBranch: Bool {
         !pullableOtherBranches.isEmpty || !pushableOtherBranches.isEmpty
+    }
+
+    /// Local branches whose upstream was deleted on the remote — typically
+    /// merged feature branches whose remote side got cleaned up by GitHub.
+    /// Shown in the panel's "Other branches" section with a delete action.
+    /// The checked-out branch is excluded: git won't delete it, and neither
+    /// should a menu-bar app. Deliberately *not* part of the visibility
+    /// filter or badges — leftover branches are clutter, not pending work.
+    public var goneBranches: [BranchStatus] {
+        branches.filter { !$0.isCurrent && $0.isGone }
     }
 
     public var isDetached: Bool { branch == "(detached)" }

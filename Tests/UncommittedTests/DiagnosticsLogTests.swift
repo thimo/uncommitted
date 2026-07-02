@@ -9,7 +9,7 @@ enum DiagnosticsLogTests {
     }
 
     /// 2026-06-15 12:00:00 UTC — fixed so filenames are deterministic.
-    private static let fixedNow = Date(timeIntervalSince1970: 1_781_784_000)
+    private static let fixedNow = Date(timeIntervalSince1970: 1_781_524_800)
 
     static func register() {
         // MARK: - writing
