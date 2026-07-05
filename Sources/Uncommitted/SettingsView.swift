@@ -92,16 +92,6 @@ struct GeneralSettingsView: View {
             }
 
             Section {
-                Toggle("Show age of pending work", isOn: $configStore.config.flagStaleRepos)
-            } header: {
-                Text("Pending work")
-            } footer: {
-                Text("Shows a compact age (\"11d\") next to every repo with uncommitted or unpushed work — how long it's gone untouched. The hover panel spells it out in full.")
-                    .font(.caption)
-                    .foregroundStyle(.primary.opacity(0.60))
-            }
-
-            Section {
                 Toggle("Remind me of pending work", isOn: $configStore.config.dailyReminderEnabled)
                 if configStore.config.dailyReminderEnabled {
                     DatePicker(
@@ -249,6 +239,20 @@ struct RemoteSettingsView: View {
                 Text("Refresh")
             } footer: {
                 Text("Background `git fetch` so unpulled counts stay current — daily for active repos, weekly for idle. The Refresh button or a row's right-click menu fetches manually regardless of this setting.")
+                    .font(.caption)
+                    .foregroundStyle(.primary.opacity(0.60))
+            }
+
+            Section {
+                Picker("On pull", selection: $configStore.config.pullStrategy) {
+                    ForEach(PullStrategy.allCases, id: \.self) { strategy in
+                        Text(strategy.displayName).tag(strategy)
+                    }
+                }
+            } header: {
+                Text("Diverged branches")
+            } footer: {
+                Text(configStore.config.pullStrategy.explanation)
                     .font(.caption)
                     .foregroundStyle(.primary.opacity(0.60))
             }

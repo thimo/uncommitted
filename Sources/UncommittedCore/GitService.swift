@@ -28,7 +28,7 @@ public enum GitError: Equatable {
     public var userMessage: String? {
         switch self {
         case .divergedFFOnly:
-            return "Your branch and the remote have both moved on independently. Git won't auto-merge or rebase them from the menu bar — resolve it in your editor or terminal and try again."
+            return "Your branch and the remote have both moved on independently, so this can't be a clean fast-forward. Choose Rebase or Merge to reconcile them here, or open your git client to sort it out by hand."
         case .pushRejectedNonFastForward:
             return "The remote has commits your branch doesn't. Pull first, resolve any conflicts, then push again."
         case .lockFileExists:
@@ -284,10 +284,23 @@ public enum GitService {
         action(Self.lowSpeedGuard + ["push"], at: url)
     }
 
-    /// Uses `--ff-only` so a diverged branch fails loudly rather than creating
-    /// a merge commit or rebasing local work without user intent.
-    public static func pull(at url: URL) -> ActionResult {
-        action(Self.lowSpeedGuard + ["pull", "--ff-only"], at: url)
+    /// Pull arguments for a given reconciliation strategy. Pure and public so
+    /// tests can assert the flag mapping without invoking git. `--ff-only`
+    /// refuses a diverged branch; `--rebase` replays local commits; `--no-rebase`
+    /// makes a merge commit.
+    public static func pullArguments(strategy: PullStrategy) -> [String] {
+        switch strategy {
+        case .ffOnly: return ["pull", "--ff-only"]
+        case .rebase: return ["pull", "--rebase"]
+        case .merge:  return ["pull", "--no-rebase"]
+        }
+    }
+
+    /// Runs `git pull` with the caller's reconciliation strategy. `.ffOnly`
+    /// (the default) fails loudly on a diverged branch rather than merging or
+    /// rebasing without intent; `.rebase`/`.merge` reconcile a divergence.
+    public static func pull(at url: URL, strategy: PullStrategy = .ffOnly) -> ActionResult {
+        action(Self.lowSpeedGuard + Self.pullArguments(strategy: strategy), at: url)
     }
 
     /// Fast-forwards a *non-checked-out* local branch to its upstream without a

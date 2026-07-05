@@ -131,12 +131,16 @@ public final class RepoStore: ObservableObject {
         }
     }
 
-    /// Runs `git pull --ff-only` on the given repo. Uses `--ff-only` so a
-    /// diverged branch fails loudly instead of silently rebasing or creating
-    /// a merge commit.
-    public func pull(repo: Repo) {
-        runAction(.pull, on: repo) { url in
-            GitService.pull(at: url)
+    /// Runs `git pull` on the given repo with the given strategy (defaulting to
+    /// the user's configured `pullStrategy`). On an `.ffOnly` divergence the
+    /// failure dialog offers one-off Rebase/Merge buttons that re-run the pull
+    /// with that strategy.
+    public func pull(repo: Repo, strategy: PullStrategy? = nil) {
+        let strategy = strategy ?? configStore.config.pullStrategy
+        runAction(.pull, on: repo, reconcile: { [weak self] retryStrategy in
+            self?.pull(repo: repo, strategy: retryStrategy)
+        }) { url in
+            GitService.pull(at: url, strategy: strategy)
         }
     }
 
@@ -181,6 +185,7 @@ public final class RepoStore: ObservableObject {
         _ kind: InFlightAction,
         on repo: Repo,
         context: String? = nil,
+        reconcile: ((PullStrategy) -> Void)? = nil,
         command: @escaping (URL) -> GitService.ActionResult
     ) {
         guard inFlight[repo.id] == nil else { return }
@@ -212,11 +217,13 @@ public final class RepoStore: ObservableObject {
                     case .pull: verb = "Pull"
                     case .deleteBranch: verb = "Delete branch"
                     }
+                    let canReconcile = result.kind == .divergedFFOnly ? reconcile : nil
                     Self.presentError(
                         title: "\(verb) failed — \(where_)",
                         message: message,
                         detail: friendly != nil ? result.errorOutput : nil,
-                        recovery: recovery
+                        recovery: recovery,
+                        reconcile: canReconcile
                     )
                 }
                 if let index = self.repos.firstIndex(where: { $0.id == id }) {
@@ -230,7 +237,8 @@ public final class RepoStore: ObservableObject {
         title: String,
         message: String,
         detail: String? = nil,
-        recovery: (url: URL, action: Action)? = nil
+        recovery: (url: URL, action: Action)? = nil,
+        reconcile: ((PullStrategy) -> Void)? = nil
     ) {
         // NSAlert.runModal() takes focus on its own — don't yank the whole
         // app forward just to display a warning sheet.
@@ -238,11 +246,32 @@ public final class RepoStore: ObservableObject {
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
-        if let recovery {
+
+        // Buttons are added in order; each gets a matching handler so the
+        // response index maps straight to an action. The first button added
+        // is the default (Return). For a diverged pull we lead with Merge —
+        // it rewrites nothing, so an accidental Return is the safe outcome.
+        var handlers: [() -> Void] = []
+        if let reconcile {
+            alert.addButton(withTitle: "Merge")
+            handlers.append { reconcile(.merge) }
+            alert.addButton(withTitle: "Rebase")
+            handlers.append { reconcile(.rebase) }
+            if let recovery {
+                alert.addButton(withTitle: "Open in \(recovery.action.name)")
+                handlers.append { ActionRunner.run(repoURL: recovery.url, action: recovery.action) }
+            }
+            let cancel = alert.addButton(withTitle: "Cancel")
+            cancel.keyEquivalent = "\u{1b}" // Escape
+            handlers.append {}
+        } else if let recovery {
             // Recovery button first → becomes the default (Return key).
             alert.addButton(withTitle: "Open in \(recovery.action.name)")
+            handlers.append { ActionRunner.run(repoURL: recovery.url, action: recovery.action) }
             alert.addButton(withTitle: "OK")
+            handlers.append {}
         }
+
         if let detail, !detail.isEmpty {
             // Raw git stderr available via a disclosure so the friendly
             // message can stay short but power users can still read
@@ -261,8 +290,9 @@ public final class RepoStore: ObservableObject {
             alert.accessoryView = scroll
         }
         let response = alert.runModal()
-        if let recovery, response == .alertFirstButtonReturn {
-            ActionRunner.run(repoURL: recovery.url, action: recovery.action)
+        let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+        if index >= 0, index < handlers.count {
+            handlers[index]()
         }
     }
 

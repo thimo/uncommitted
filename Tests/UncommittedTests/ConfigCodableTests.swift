@@ -133,24 +133,32 @@ enum ConfigCodableTests {
             try expectNil(decoded.globalShortcut)
         }
 
-        test("Config/flagStaleRepos_defaultsOn") {
-            try expect(Config().flagStaleRepos)
+        test("Config/pullStrategy_defaultsToFFOnly") {
+            try expectEqual(Config().pullStrategy, .ffOnly)
         }
 
-        test("Config/flagStaleRepos_roundTrips") {
-            let original = Config(flagStaleRepos: false)
-            let data = try JSONEncoder().encode(original)
-            let decoded = try JSONDecoder().decode(Config.self, from: data)
-            try expect(decoded.flagStaleRepos == false)
+        test("Config/pullStrategy_roundTrips") {
+            for strategy in PullStrategy.allCases {
+                let original = Config(pullStrategy: strategy)
+                let data = try JSONEncoder().encode(original)
+                let decoded = try JSONDecoder().decode(Config.self, from: data)
+                try expectEqual(decoded.pullStrategy, strategy)
+            }
         }
 
-        test("Config/legacyConfig_withoutFlagStaleRepos_defaultsOn") {
-            // A config saved before the field existed keeps the feature on.
+        test("Config/legacyConfig_withoutPullStrategy_defaultsToFFOnly") {
             let json = """
             { "sources": [], "actions": [] }
             """.data(using: .utf8)!
             let decoded = try JSONDecoder().decode(Config.self, from: json)
-            try expect(decoded.flagStaleRepos)
+            try expectEqual(decoded.pullStrategy, .ffOnly)
+        }
+
+        test("Config/pullStrategy_rawValuesAreStable") {
+            // Raw values land in config.json — changing them orphans user settings.
+            try expectEqual(PullStrategy.ffOnly.rawValue, "ffOnly")
+            try expectEqual(PullStrategy.rebase.rawValue, "rebase")
+            try expectEqual(PullStrategy.merge.rawValue, "merge")
         }
 
         test("Config/menuBarLabelStyle_rawValuesAreStable") {

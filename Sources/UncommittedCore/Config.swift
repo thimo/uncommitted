@@ -43,6 +43,42 @@ public enum MenuBarLabelStyle: String, Codable, CaseIterable, Hashable {
     }
 }
 
+/// How a `git pull` reconciles a *diverged* branch — one where the local
+/// branch and its upstream have each gained commits the other lacks, so a
+/// fast-forward is impossible. Behind-only branches always just fast-forward
+/// regardless of this setting.
+public enum PullStrategy: String, Codable, CaseIterable, Hashable {
+    /// `git pull --ff-only`. Refuses a diverged branch outright — the safe
+    /// default. The failure dialog still offers one-off Rebase/Merge buttons.
+    case ffOnly
+    /// `git pull --rebase`. Replays local commits on top of the upstream.
+    /// Linear history, no merge commit, but local commit hashes are rewritten.
+    case rebase
+    /// `git pull --no-rebase`. Joins both sides with a merge commit. Rewrites
+    /// nothing; easy to abort on conflict, at the cost of a merge commit.
+    case merge
+
+    public var displayName: String {
+        switch self {
+        case .ffOnly: return "Fast-forward only"
+        case .rebase: return "Rebase"
+        case .merge:  return "Merge"
+        }
+    }
+
+    /// One-line description for the settings picker footer.
+    public var explanation: String {
+        switch self {
+        case .ffOnly:
+            return "Only pull when it's a clean fast-forward. If your branch and the remote have both moved on, the pull stops and asks — nothing is rewritten or merged behind your back."
+        case .rebase:
+            return "Replay your local commits on top of the remote's. Keeps history in a straight line with no merge commits, but your local commits get new identities."
+        case .merge:
+            return "Join both sides with a merge commit. Nothing you already have is rewritten, and a conflict is easy to back out of — at the cost of a merge commit in the history."
+        }
+    }
+}
+
 public struct Config: Codable, Equatable {
     public var sources: [Source]
     public var actions: [Action]
@@ -63,10 +99,6 @@ public struct Config: Codable, Equatable {
     public var gitHubMutedRepos: [String]
     /// Global hotkey to open/close the popup. Nil means no hotkey registered.
     public var globalShortcut: GlobalShortcut?
-    /// When true, every repo with pending work shows a compact age suffix
-    /// ("11d") in the popup — how long the uncommitted/unpushed work has gone
-    /// untouched.
-    public var flagStaleRepos: Bool
     /// When true, a single notification fires at `dailyReminderMinutes` if
     /// any repo still has uncommitted or unpushed work. Off by default —
     /// enabling it is also the moment the app asks for notification
@@ -75,6 +107,10 @@ public struct Config: Codable, Equatable {
     public var dailyReminderEnabled: Bool
     /// Reminder time as minutes since midnight (local time). 1050 = 17:30.
     public var dailyReminderMinutes: Int
+    /// Reconciliation strategy for a diverged `git pull`. Defaults to
+    /// `.ffOnly` so existing installs keep the loud-refusal behaviour; the
+    /// user opts into Rebase or Merge to make diverged pulls "just work".
+    public var pullStrategy: PullStrategy
 
     public init(
         sources: [Source] = [],
@@ -85,9 +121,9 @@ public struct Config: Codable, Equatable {
         showGitHubStatus: Bool = true,
         gitHubMutedRepos: [String] = [],
         globalShortcut: GlobalShortcut? = .defaultShortcut,
-        flagStaleRepos: Bool = true,
         dailyReminderEnabled: Bool = false,
-        dailyReminderMinutes: Int = 17 * 60 + 30
+        dailyReminderMinutes: Int = 17 * 60 + 30,
+        pullStrategy: PullStrategy = .ffOnly
     ) {
         self.sources = sources
         self.actions = actions
@@ -97,9 +133,9 @@ public struct Config: Codable, Equatable {
         self.showGitHubStatus = showGitHubStatus
         self.gitHubMutedRepos = gitHubMutedRepos
         self.globalShortcut = globalShortcut
-        self.flagStaleRepos = flagStaleRepos
         self.dailyReminderEnabled = dailyReminderEnabled
         self.dailyReminderMinutes = dailyReminderMinutes
+        self.pullStrategy = pullStrategy
     }
 
     public static var defaultActions: [Action] {
@@ -119,9 +155,9 @@ public struct Config: Codable, Equatable {
         case showGitHubStatus
         case gitHubMutedRepos
         case globalShortcut
-        case flagStaleRepos
         case dailyReminderEnabled
         case dailyReminderMinutes
+        case pullStrategy
     }
 
     public init(from decoder: Decoder) throws {
@@ -139,8 +175,8 @@ public struct Config: Codable, Equatable {
         } else {
             self.globalShortcut = .defaultShortcut
         }
-        self.flagStaleRepos = try container.decodeIfPresent(Bool.self, forKey: .flagStaleRepos) ?? true
         self.dailyReminderEnabled = try container.decodeIfPresent(Bool.self, forKey: .dailyReminderEnabled) ?? false
         self.dailyReminderMinutes = try container.decodeIfPresent(Int.self, forKey: .dailyReminderMinutes) ?? (17 * 60 + 30)
+        self.pullStrategy = try container.decodeIfPresent(PullStrategy.self, forKey: .pullStrategy) ?? .ffOnly
     }
 }

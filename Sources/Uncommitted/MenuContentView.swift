@@ -943,12 +943,11 @@ struct RepoRow: View {
     }
 
     /// Compact age of the repo's pending work for the row suffix, or nil when
-    /// the feature is off or there's no pending local work. Shown on every
-    /// dirty row (no threshold) — it's ambient "how long has this been
-    /// sitting" info, so a stale repo simply shows a bigger number.
+    /// there's no pending local work. Shown on every dirty row (no threshold) —
+    /// it's ambient "how long has this been sitting" info, so a stale repo
+    /// simply shows a bigger number.
     private var pendingAge: String? {
-        guard configStore.config.flagStaleRepos,
-              let date = repo.status?.lastActivityDate else { return nil }
+        guard let date = repo.status?.lastActivityDate else { return nil }
         return Staleness.age(since: date).compact
     }
 

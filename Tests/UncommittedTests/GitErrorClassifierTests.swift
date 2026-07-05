@@ -125,5 +125,17 @@ enum GitErrorClassifierTests {
                 )
             }
         }
+
+        // MARK: - pullArguments
+
+        test("GitService/pullArguments_ffOnly") {
+            try expectEqual(GitService.pullArguments(strategy: .ffOnly), ["pull", "--ff-only"])
+        }
+        test("GitService/pullArguments_rebase") {
+            try expectEqual(GitService.pullArguments(strategy: .rebase), ["pull", "--rebase"])
+        }
+        test("GitService/pullArguments_merge") {
+            try expectEqual(GitService.pullArguments(strategy: .merge), ["pull", "--no-rebase"])
+        }
     }
 }
