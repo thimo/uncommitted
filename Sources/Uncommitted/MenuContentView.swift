@@ -795,6 +795,9 @@ struct RepoRow: View {
                         Text(repo.name)
                             .font(.body.weight(.medium))
                             .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .layoutPriority(0)
                         if let fetchState, FetchScheduler.shouldSurfaceFailure(fetchState) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.caption2)
@@ -1841,6 +1844,7 @@ private struct PRBadge: View {
                         .foregroundStyle(primary.opacity(0.4))
                 }
             }
+            .fixedSize()
             .font(.body.weight(.medium).monospacedDigit())
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
@@ -1931,6 +1935,7 @@ private struct ReadOnlyBadge: View {
             Text(glyph)
             Text("\(count)")
         }
+        .fixedSize()
         .font((compact ? Font.caption : Font.body).weight(.medium).monospacedDigit())
         .foregroundStyle(color)
         .padding(.horizontal, 4)
@@ -1968,6 +1973,7 @@ private struct ActionBadge: View {
                     }
                 }
             }
+            .fixedSize()
             .font((compact ? Font.caption : Font.body).weight(.medium).monospacedDigit())
             .foregroundStyle(color)
             .padding(.horizontal, compact ? 4 : 5)
