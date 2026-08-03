@@ -21,12 +21,19 @@ Two tiers, classified per repo on every check:
 
 | Tier | Definition | Fetch interval |
 |---|---|---|
-| **Active** | local or remote HEAD commit in the last 7 days | 24 hours |
+| **Active** | HEAD-moving git operation in the last 7 days | 24 hours |
 | **Idle** | older than that | 7 days |
 | **Disabled** | see [Failure handling](#failure-handling) | never (manual only) |
 
 Tier is recomputed each cycle, so an idle repo that just got a commit
 naturally promotes back to active.
+
+The activity signal is the mtime of the HEAD reflog (`logs/HEAD` in the
+repo's git dir), which git appends to on commit, checkout, merge, pull,
+rebase and reset. Not `.git/HEAD` itself — that file only changes on a
+branch switch, so reading it demotes actively-developed single-branch
+repos to the idle tier. `.git/HEAD` remains a fallback for repos with
+`core.logAllRefUpdates=false`.
 
 ## Scheduler
 

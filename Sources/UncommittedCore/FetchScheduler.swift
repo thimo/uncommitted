@@ -178,7 +178,7 @@ public final class FetchScheduler: ObservableObject {
     /// True if this repo is overdue based on its tier (active vs idle)
     /// and any back-off from prior failures.
     private func shouldFetch(repo: Repo, state: FetchState, now: Date) -> Bool {
-        Self.shouldFetch(active: isActive(repo: repo), state: state, now: now)
+        Self.shouldFetch(active: Self.isActive(repoURL: repo.url, now: now), state: state, now: now)
     }
 
     /// Pure-function counterpart of `shouldFetch(repo:state:now:)`.
@@ -203,18 +203,31 @@ public final class FetchScheduler: ObservableObject {
         return min(base * multiplier, Self.maxBackoff)
     }
 
-    /// "Active" if the repo's `.git/HEAD` was touched within the activity
-    /// window. Cheap proxy for "had a local commit, checkout, merge, or
-    /// rebase recently" — every git op that moves HEAD bumps that mtime.
-    private func isActive(repo: Repo) -> Bool {
-        let head = repo.url.appendingPathComponent(".git/HEAD")
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: head.path),
-              let mtime = attrs[.modificationDate] as? Date else {
-            // Couldn't read mtime — treat as idle to err on the side of
-            // less network traffic.
-            return false
+    /// "Active" if a HEAD-moving git operation happened within the activity
+    /// window. The signal is the mtime of `logs/HEAD` — the HEAD reflog,
+    /// which git appends to on commit, checkout, merge, pull, rebase and
+    /// reset.
+    ///
+    /// `.git/HEAD` on its own is *not* a usable proxy, which is what this
+    /// used to read: that file is only rewritten when HEAD itself changes
+    /// (a branch switch), so a repo you commit to every day without ever
+    /// leaving the branch looks untouched after a week and gets demoted to
+    /// the 7-day idle tier — exactly the repo the 24h tier exists for. We
+    /// still consult it as a fallback for repos with reflogs disabled
+    /// (`core.logAllRefUpdates=false`), and take whichever is newer.
+    ///
+    /// Public so unit tests can drive it against a fixture directory.
+    public static func isActive(repoURL: URL, now: Date = Date()) -> Bool {
+        guard let gitDir = GitService.gitDirectory(for: repoURL) else { return false }
+        let fm = FileManager.default
+        let mtimes = ["logs/HEAD", "HEAD"].compactMap { name -> Date? in
+            let path = gitDir.appendingPathComponent(name).path
+            return (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date
         }
-        return Date().timeIntervalSince(mtime) <= Self.activeThreshold
+        // Couldn't read either — treat as idle to err on the side of less
+        // network traffic.
+        guard let newest = mtimes.max() else { return false }
+        return now.timeIntervalSince(newest) <= Self.activeThreshold
     }
 
     /// True once the next computed back-off would push the next attempt

@@ -2,7 +2,100 @@ import Foundation
 import UncommittedCore
 
 enum FetchSchedulerTests {
+    /// Temp repo-shaped directory with the two files the tier heuristic
+    /// looks at, stamped to the given ages. Passing nil for either leaves
+    /// that file absent. No real git needed — the check is pure filesystem.
+    private static func makeTempRepo(
+        headAge: TimeInterval?,
+        reflogAge: TimeInterval?,
+        gitIsDirectory: Bool = true
+    ) throws -> URL {
+        let fm = FileManager.default
+        let repo = fm.temporaryDirectory
+            .appendingPathComponent("uncommitted-fetch-tier-\(UUID().uuidString)")
+        try fm.createDirectory(at: repo, withIntermediateDirectories: true)
+
+        // Worktrees and submodules point at a git dir elsewhere via a
+        // `.git` file; make sure the heuristic follows that indirection.
+        let gitDir: URL
+        if gitIsDirectory {
+            gitDir = repo.appendingPathComponent(".git")
+        } else {
+            gitDir = repo.appendingPathComponent("elsewhere-gitdir")
+            try "gitdir: \(gitDir.path)\n".write(
+                to: repo.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+        }
+        try fm.createDirectory(at: gitDir, withIntermediateDirectories: true)
+
+        func stamp(_ url: URL, age: TimeInterval) throws {
+            try fm.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            fm.createFile(atPath: url.path, contents: Data())
+            try fm.setAttributes(
+                [.modificationDate: Date().addingTimeInterval(-age)], ofItemAtPath: url.path)
+        }
+        if let headAge {
+            try stamp(gitDir.appendingPathComponent("HEAD"), age: headAge)
+        }
+        if let reflogAge {
+            try stamp(gitDir.appendingPathComponent("logs/HEAD"), age: reflogAge)
+        }
+        return repo
+    }
+
     static func register() {
+        // MARK: - isActive (tier classification)
+
+        test("FetchScheduler/isActive_recentReflog_staleHEAD_returnsTrue") {
+            // The regression this heuristic was rewritten for: you commit
+            // daily on one branch, so the reflog moves but `.git/HEAD` —
+            // rewritten only on a branch switch — hasn't changed in weeks.
+            // Reading HEAD alone demoted these to the 7-day idle tier.
+            let repo = try makeTempRepo(headAge: 30 * 24 * 3600, reflogAge: 3600)
+            try expect(FetchScheduler.isActive(repoURL: repo))
+        }
+
+        test("FetchScheduler/isActive_bothStale_returnsFalse") {
+            let old = FetchScheduler.activeThreshold + 24 * 3600
+            let repo = try makeTempRepo(headAge: old, reflogAge: old)
+            try expect(!FetchScheduler.isActive(repoURL: repo))
+        }
+
+        test("FetchScheduler/isActive_noReflog_recentHEAD_returnsTrue") {
+            // Fallback path: `core.logAllRefUpdates=false`, so there's no
+            // reflog to read and HEAD is all we have.
+            let repo = try makeTempRepo(headAge: 3600, reflogAge: nil)
+            try expect(FetchScheduler.isActive(repoURL: repo))
+        }
+
+        test("FetchScheduler/isActive_noReflog_staleHEAD_returnsFalse") {
+            let repo = try makeTempRepo(
+                headAge: FetchScheduler.activeThreshold + 24 * 3600, reflogAge: nil)
+            try expect(!FetchScheduler.isActive(repoURL: repo))
+        }
+
+        test("FetchScheduler/isActive_worktreeGitdirFile_followsIndirection") {
+            let repo = try makeTempRepo(
+                headAge: 30 * 24 * 3600, reflogAge: 3600, gitIsDirectory: false)
+            try expect(FetchScheduler.isActive(repoURL: repo))
+        }
+
+        test("FetchScheduler/isActive_noGitDir_returnsFalse") {
+            // Unreadable — err toward idle rather than extra network traffic.
+            let repo = FileManager.default.temporaryDirectory
+                .appendingPathComponent("uncommitted-fetch-tier-missing-\(UUID().uuidString)")
+            try expect(!FetchScheduler.isActive(repoURL: repo))
+        }
+
+        test("FetchScheduler/isActive_respectsNowParameter") {
+            // Same repo reads active today, idle when asked about a date
+            // well past the activity window.
+            let repo = try makeTempRepo(headAge: 3600, reflogAge: 3600)
+            try expect(FetchScheduler.isActive(repoURL: repo))
+            let later = Date().addingTimeInterval(FetchScheduler.activeThreshold + 24 * 3600)
+            try expect(!FetchScheduler.isActive(repoURL: repo, now: later))
+        }
+
         // MARK: - shouldFetch
 
         test("FetchScheduler/shouldFetch_neverAttempted_returnsTrue") {

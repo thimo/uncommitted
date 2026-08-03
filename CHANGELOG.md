@@ -3,6 +3,17 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
+## Unreleased
+
+### Bug fixes
+- Auto-fetch no longer demotes actively-developed repos to the weekly
+  cadence. The "active in the last 7 days" check read `.git/HEAD`, which
+  only changes when you switch branches — so a repo you commit to daily
+  without leaving the branch looked untouched and got fetched once a week.
+  It now reads the HEAD reflog. Visible symptom: repos silently missing
+  from the list because their remote-tracking refs were days stale and the
+  app therefore believed they were up to date.
+
 ## v0.10.0 — 2026-06-29
 
 ### New
