@@ -2,8 +2,15 @@
 # Full release pipeline for Uncommitted.
 #
 # Usage:
-#   ./release.sh 0.5.0            # build, sign, notarize, GitHub release
-#   ./release.sh 0.5.0 --dry-run  # build only, ad-hoc sign, no upload
+#   ./release.sh 0.5.0            # build, sign, notarize, commit, tag,
+#                                 # push, GitHub release
+#   ./release.sh 0.5.0 --dry-run  # build only, ad-hoc sign, no commit,
+#                                 # no push, no upload
+#
+# Note: a real (non-dry) run pushes the release commit and its tag to
+# origin. It has to — the tag must name the commit carrying the version
+# bump and the appcast, and GitHub needs that commit before the release
+# can point at it.
 #
 # Prerequisites:
 #   - .env.local with UNCOMMITTED_SIGN_IDENTITY and
@@ -183,7 +190,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# GitHub release
+# Commit, tag, push
 # ---------------------------------------------------------------------------
 if [ "$DRY_RUN" = true ]; then
   echo
@@ -191,8 +198,39 @@ if [ "$DRY_RUN" = true ]; then
   exit 0
 fi
 
+TAG="v${VERSION}"
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# This has to happen *before* the GitHub release. `gh release create` tags
+# whatever the default branch points at server-side, so when the release
+# came first the tag landed on the last pushed commit and the version bump
+# + appcast — committed afterwards — fell outside it. Every tag up to and
+# including v0.11.0 names a tree that doesn't build the artifact it's
+# attached to. Commit, tag, push, then release.
+if ! git diff --quiet Resources/Info.plist appcast.xml 2>/dev/null; then
+  git add Resources/Info.plist
+  if [ -f appcast.xml ]; then git add appcast.xml; fi
+  git commit -m "Release v${VERSION}"
+  echo "==> Committed version bump + appcast"
+fi
+
+if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+  echo "==> Tag $TAG already exists — leaving it where it is"
+else
+  git tag -a "$TAG" -m "Uncommitted ${VERSION}"
+  echo "==> Tagged $TAG"
+fi
+
+# --follow-tags pushes annotated tags reachable from the branch, so the
+# commit and its tag go up together. A rejected push aborts here (set -e)
+# rather than publishing a release that points at commits nobody has.
+echo "==> Pushing $BRANCH + tag to origin"
+git push origin "$BRANCH" --follow-tags
+
+# ---------------------------------------------------------------------------
+# GitHub release
+# ---------------------------------------------------------------------------
 if command -v gh &>/dev/null; then
-  TAG="v${VERSION}"
   echo "==> Creating GitHub release $TAG"
 
   # Extract the entry for this version from CHANGELOG.md as the release
@@ -213,8 +251,11 @@ if command -v gh &>/dev/null; then
     fi
   fi
 
-  if git rev-parse "$TAG" &>/dev/null; then
-    echo "   Tag exists — uploading to existing release."
+  # Ask GitHub whether the *release* exists, not whether the tag does — the
+  # tag is always present by now, so testing it would send every run down
+  # the upload path and never create a release.
+  if gh release view "$TAG" &>/dev/null; then
+    echo "   Release exists — uploading to it."
     gh release upload "$TAG" "$ZIP_PATH" --clobber
     if [ -n "$NOTES_FILE" ]; then
       gh release edit "$TAG" --notes-file "$NOTES_FILE"
@@ -228,20 +269,13 @@ if command -v gh &>/dev/null; then
       --title "Uncommitted ${VERSION}" \
       --generate-notes
   fi
-  [ -n "$NOTES_FILE" ] && rm -f "$NOTES_FILE"
+  # Not `[ -n … ] && rm …`: as the last command in the block that returns
+  # 1 when NOTES_FILE is empty, and `set -e` would abort the script one
+  # line before it prints the release URL.
+  if [ -n "$NOTES_FILE" ]; then rm -f "$NOTES_FILE"; fi
   echo "   https://github.com/thimo/uncommitted/releases/tag/$TAG"
 else
   echo "   gh CLI not found — upload $ZIP_PATH manually."
-fi
-
-# ---------------------------------------------------------------------------
-# Commit version bump + appcast
-# ---------------------------------------------------------------------------
-if ! git diff --quiet Resources/Info.plist appcast.xml 2>/dev/null; then
-  git add Resources/Info.plist
-  [ -f appcast.xml ] && git add appcast.xml
-  git commit -m "Release v${VERSION}"
-  echo "==> Committed. Push to main when ready."
 fi
 
 echo
