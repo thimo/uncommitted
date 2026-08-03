@@ -3,14 +3,42 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
-## Unreleased
+## v0.11.0 — 2026-08-03
 
 ### New
+- A repo stopped mid-merge, mid-rebase, mid-cherry-pick, mid-revert or
+  mid-bisect now says so — an orange suffix on the row and a line in the
+  hover panel. Previously a rebase parked on a conflict looked like any
+  other repo with a few changed files.
+- Conflicted files are called out separately with a red ⚠ badge instead of
+  being counted as ordinary modifications.
+- Branches whose upstream is gone (the remote branch was deleted after a
+  merge) get an "upstream gone" row in the hover panel with a delete
+  button, so cleaning up after a merged pull request doesn't need a
+  terminal. Confirmation required — it's a `-D`.
+- Optional daily reminder: pick a time under Settings → General and get a
+  notification if any repo is still holding uncommitted or unpushed work.
+  Clicking it opens the popup. Off by default.
+- Diverged branches can now be pulled from the menu bar. Settings → Remote
+  has a pull strategy — fast-forward only (default), rebase, or merge — and
+  when a fast-forward-only pull fails, the dialog offers a one-off rebase
+  or merge instead of sending you to the command line.
 - Opening the popup now refreshes remote-tracking refs for any repo not
   fetched in the last 15 minutes, so the list reflects the remote at the
   moment you look instead of whenever the background cadence last ran.
   Throttled per repo, and repos whose remote is failing keep their
   back-off instead of being retried on every open.
+- Errors now leave a trail. Failures from git, the file watcher and GitHub
+  polling are written to daily files in `~/Library/Logs/Uncommitted`
+  (14-day retention, mirrored to `os.log`), with the most recent error and
+  an export button in Settings → About. The app also installs exit,
+  exception and signal handlers, so a process that disappears leaves
+  something behind to look at — June's vanishing-icon incident left nothing.
+
+### Improvements
+- The age of pending work is always shown now; the toggle for it is gone.
+  Nobody wants the version of this app that hides how long something has
+  been sitting there.
 
 ### Bug fixes
 - Auto-fetch no longer demotes actively-developed repos to the weekly
@@ -20,6 +48,8 @@ mapping of commits.
   It now reads the HEAD reflog. Visible symptom: repos silently missing
   from the list because their remote-tracking refs were days stale and the
   app therefore believed they were up to date.
+- Multi-digit badge counts no longer break across two lines on a crowded
+  row. The pills stay atomic and the repo name truncates instead.
 
 ## v0.10.0 — 2026-06-29
 
