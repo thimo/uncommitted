@@ -3,6 +3,15 @@
     <channel>
         <title>Uncommitted</title>
         <item>
+            <title>0.11.0</title>
+            <pubDate>Mon, 03 Aug 2026 15:14:11 +0200</pubDate>
+            <link>https://github.com/thimo/uncommitted/releases/tag/v0.11.0</link>
+            <sparkle:version>155</sparkle:version>
+            <sparkle:shortVersionString>0.11.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.11.0/Uncommitted-0.11.0.zip" length="4018235" type="application/octet-stream" sparkle:edSignature="Egd5PXLsNOdICBzbFNPBW6erLxYrsWlj4GtZxSuDeRuoyE4H2dJ3PILOGlVkztjZA2NlM8VCw6G8nnmKHHuADw=="/>
+        </item>
+        <item>
             <title>0.10.0</title>
             <pubDate>Mon, 29 Jun 2026 20:05:36 +0200</pubDate>
             <link>https://github.com/thimo/uncommitted/releases/tag/v0.10.0</link>
@@ -19,15 +28,6 @@
             <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.9.0/Uncommitted-0.9.0.zip" length="3898668" type="application/octet-stream" sparkle:edSignature="4O/YuElneAbzbfBEttCIIOeQU223yZjkLmP8EpouTUhoUmYTjXJY6Y2egWTJqoSKDAtwmZzbtiP1FIIgv0IXAw=="/>
-        </item>
-        <item>
-            <title>0.8.0</title>
-            <pubDate>Fri, 19 Jun 2026 20:12:13 +0200</pubDate>
-            <link>https://github.com/thimo/uncommitted/releases/tag/v0.8.0</link>
-            <sparkle:version>131</sparkle:version>
-            <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.8.0/Uncommitted-0.8.0.zip" length="3852457" type="application/octet-stream" sparkle:edSignature="+LlMKt9zQebRlUnsL8SWjNqSf/DoLniY/OkMTSuWl+4EOJ/5HMoC9AGStdrsSM6DCPuoWZuy5U6M+iPBp/gbAA=="/>
         </item>
     </channel>
 </rss>
