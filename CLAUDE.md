@@ -9,14 +9,13 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
 
 ## Current state
 
-- **v0.10.0** released; v0.11.0 staged in `CHANGELOG.md`, not yet tagged.
-  MIT-licensed on GitHub at `thimo/uncommitted`. Staged for v0.11.0:
-  conflict/operation state, upstream-gone cleanup, daily reminder, pull
-  strategy for diverged branches, diagnostics log + crash reporting, and
-  the popup-open fetch sweep. Earlier milestones: per-branch pull/push in
-  the hover panel, per-repo GitHub PR + CI signals via `gh`, search +
-  keyboard nav, pending-work age. See `CHANGELOG.md` for the full
-  per-version log.
+- **v0.11.0** released. MIT-licensed on GitHub at `thimo/uncommitted`.
+  Shipped in v0.11.0: conflict/operation state, upstream-gone cleanup,
+  daily reminder, pull strategy for diverged branches, diagnostics log +
+  crash reporting, and the popup-open fetch sweep. Earlier milestones:
+  per-branch pull/push in the hover panel, per-repo GitHub PR + CI signals
+  via `gh`, search + keyboard nav, pending-work age. See `CHANGELOG.md`
+  for the full per-version log.
 - **Distribution is live.** `release.sh` does the full pipeline — universal
   build, Developer ID signing, Apple notarization + stapling, Sparkle appcast,
   GitHub release. Signing creds live in `.env.local` (see `.env.example`).
