@@ -33,8 +33,13 @@ public final class FetchScheduler: ObservableObject {
     public static let activeInterval: TimeInterval = 24 * 60 * 60
     /// Cadence for everything else.
     public static let idleInterval: TimeInterval = 7 * 24 * 60 * 60
-    /// "Active" if `.git/HEAD` was touched within this window.
+    /// "Active" if the HEAD reflog moved within this window.
     public static let activeThreshold: TimeInterval = 7 * 24 * 60 * 60
+    /// Minimum age before the popup-open sweep re-fetches a repo. Opening
+    /// the popup is the moment the answer has to be true, so this is much
+    /// shorter than either tier — but repeatedly opening the popup must
+    /// not turn into repeated network traffic.
+    public static let openInterval: TimeInterval = 15 * 60
     /// Once the back-off interval would exceed this, the repo is disabled
     /// and the scheduler stops touching it until a manual fetch.
     public static let maxBackoff: TimeInterval = 30 * 24 * 60 * 60
@@ -263,6 +268,45 @@ public final class FetchScheduler: ObservableObject {
         for repo in repos {
             enqueueFetch(repo: repo, manual: true)
         }
+    }
+
+    // MARK: - Popup-open sweep
+
+    /// Refreshes anything older than `openInterval` when the user opens the
+    /// popup. The tiers alone leave remote-tracking refs up to a day (active)
+    /// or a week (idle) stale, and with "hide clean repos" on that isn't a
+    /// late badge — a repo that's only *behind* looks clean and drops out of
+    /// the list entirely, so stale refs read as "nothing to do here."
+    ///
+    /// Deliberately sweeps every tracked repo, not just the visible ones:
+    /// the rows that need this most are precisely the ones missing from the
+    /// list. Repos already in back-off are skipped so a flaky remote keeps
+    /// its penalty instead of being retried on every open, and the attempt
+    /// counts as automatic — the user asked to see the list, not to fetch.
+    ///
+    /// Cheap enough for the main thread: pure in-memory state lookups, no
+    /// git shelling on the caller's side (unlike `GitHubStatusScheduler`'s
+    /// eager path, which had to resolve remotes and got moved off-main).
+    public func eagerFetch(_ repos: [Repo]) {
+        guard !stopped else { return }
+        let now = Date()
+        for repo in repos where Self.shouldEagerFetch(
+            state: fetchStateStore.state(for: repo.url), now: now
+        ) {
+            enqueueFetch(repo: repo, manual: false)
+        }
+    }
+
+    /// Pure-function counterpart of `eagerFetch`. Public so unit tests can
+    /// drive it without a real Repo on disk.
+    public static func shouldEagerFetch(state: FetchState, now: Date) -> Bool {
+        if state.noRemote { return false }
+        if isDisabled(state) { return false }
+        // Anything that has failed at least once stays on the back-off
+        // ladder the tick path applies; the open sweep is for healthy repos.
+        if state.consecutiveFailures > 0 { return false }
+        guard let last = state.lastAttemptAt else { return true }
+        return now.timeIntervalSince(last) >= Self.openInterval
     }
 
     // MARK: - Fetch execution

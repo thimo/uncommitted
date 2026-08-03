@@ -49,6 +49,24 @@ A `FetchScheduler` lives on `AppDelegate`, started when the toggle is on.
   catch-up. Don't fire every overdue fetch immediately; let the normal
   cadence absorb them over the next few ticks.
 
+### Popup-open sweep
+
+The tiers are a background backstop; they are not fresh enough for the
+moment the user actually looks. Opening the popup therefore calls
+`eagerFetch`, which re-fetches anything not attempted in the last
+**15 minutes** — alongside the existing `GitHubStatusScheduler.eagerRefresh`
+on the same code path.
+
+Two deliberate choices:
+
+- **Every tracked repo, not just the visible ones.** With "hide clean
+  repos" on, a repo that is only *behind* looks clean and drops out of the
+  list, so stale refs don't show as a late badge — they show as nothing at
+  all. The rows that need this most are the ones you can't see.
+- **Repos in back-off are skipped.** A flaky remote keeps its penalty
+  rather than being retried on every open. The attempt is recorded as
+  automatic, so failures still need 3 before they surface.
+
 ## What we run
 
 A new method on `GitService`:

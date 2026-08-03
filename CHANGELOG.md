@@ -5,6 +5,13 @@ mapping of commits.
 
 ## Unreleased
 
+### New
+- Opening the popup now refreshes remote-tracking refs for any repo not
+  fetched in the last 15 minutes, so the list reflects the remote at the
+  moment you look instead of whenever the background cadence last ran.
+  Throttled per repo, and repos whose remote is failing keep their
+  back-off instead of being retried on every open.
+
 ### Bug fixes
 - Auto-fetch no longer demotes actively-developed repos to the weekly
   cadence. The "active in the last 7 days" check read `.git/HEAD`, which

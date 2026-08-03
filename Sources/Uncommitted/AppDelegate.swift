@@ -528,6 +528,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so this is cheap even when the cadence has just fired.
         githubScheduler.eagerRefresh(repoStore.repos)
 
+        // Same idea for remote-tracking refs: the 24h/7d tiers are a
+        // background backstop, not fresh enough for the moment the user
+        // actually looks. Throttled per repo, so opening the popup twice
+        // in a row costs nothing.
+        fetchScheduler.eagerFetch(repoStore.repos)
+
         hoverDetail.popupHostingView = hView
 
         // Native status item highlight while the panel is open.

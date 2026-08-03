@@ -176,6 +176,53 @@ enum FetchSchedulerTests {
             )
         }
 
+        // MARK: - shouldEagerFetch (popup-open sweep)
+
+        test("FetchScheduler/eager_neverAttempted_returnsTrue") {
+            try expect(FetchScheduler.shouldEagerFetch(state: FetchState(), now: Date()))
+        }
+
+        test("FetchScheduler/eager_withinOpenInterval_returnsFalse") {
+            // Opening the popup again a minute later must not re-fetch.
+            let now = Date()
+            let state = FetchState(lastAttemptAt: now.addingTimeInterval(-60))
+            try expect(!FetchScheduler.shouldEagerFetch(state: state, now: now))
+        }
+
+        test("FetchScheduler/eager_afterOpenInterval_returnsTrue") {
+            let now = Date()
+            let state = FetchState(
+                lastAttemptAt: now.addingTimeInterval(-FetchScheduler.openInterval - 60))
+            try expect(FetchScheduler.shouldEagerFetch(state: state, now: now))
+        }
+
+        test("FetchScheduler/eager_beatsTierInterval") {
+            // The whole point: an hour-old fetch is fresh by the 24h active
+            // tier but stale for someone staring at the list right now.
+            let now = Date()
+            let state = FetchState(lastAttemptAt: now.addingTimeInterval(-3600))
+            try expect(!FetchScheduler.shouldFetch(active: true, state: state, now: now))
+            try expect(FetchScheduler.shouldEagerFetch(state: state, now: now))
+        }
+
+        test("FetchScheduler/eager_noRemote_returnsFalse") {
+            let state = FetchState(noRemote: true)
+            try expect(!FetchScheduler.shouldEagerFetch(state: state, now: Date()))
+        }
+
+        test("FetchScheduler/eager_inBackoff_returnsFalse") {
+            // A repo that failed keeps its back-off penalty instead of being
+            // retried every time the popup opens.
+            let state = FetchState(
+                lastAttemptAt: Date().addingTimeInterval(-24 * 3600), consecutiveFailures: 1)
+            try expect(!FetchScheduler.shouldEagerFetch(state: state, now: Date()))
+        }
+
+        test("FetchScheduler/eager_disabled_returnsFalse") {
+            let state = FetchState(consecutiveFailures: 5)
+            try expect(!FetchScheduler.shouldEagerFetch(state: state, now: Date()))
+        }
+
         // MARK: - isDisabled
 
         test("FetchScheduler/isDisabled_zeroFailures_returnsFalse") {
