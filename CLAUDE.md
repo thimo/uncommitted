@@ -33,11 +33,12 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
   XCTest/swift-testing (neither ships with the CLT). Covers
   the `UncommittedCore` logic layer: git status parser, error classifier,
   config round-trip, repo resolution, fetch scheduler/state, GitHub status
-  aggregation, staleness formatting, actions (`{path}` expansion +
-  Codable), per-branch status (`for-each-ref` parser + ff/diverged
-  classification), conflict/operation state (`u` lines + git-dir markers),
-  daily-reminder date math, and the diagnostics log (daily files,
-  retention, last-error tracking). UI/orchestration (AppKit/SwiftUI, RepoStore, RepoWatcher)
+  aggregation, the per-PR attention classifier (whose turn a PR is, and
+  why), staleness formatting, actions (`{path}` expansion + Codable),
+  per-branch status (`for-each-ref` parser + ff/diverged classification),
+  conflict/operation state (`u` lines + git-dir markers), daily-reminder
+  date math, and the diagnostics log (daily files, retention, last-error
+  tracking). UI/orchestration (AppKit/SwiftUI, RepoStore, RepoWatcher)
   is untested — won't run headlessly under the CLT-only toolchain.
 
 ## Target layout

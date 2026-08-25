@@ -3,6 +3,21 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
+## Unreleased
+
+### Changed
+- The PR badge no longer counts humans vs. bots — it now shows how many
+  open PRs actually need you vs. how many are just open. Each PR is
+  classified per-viewer: yours with changes requested, CI failing, or
+  approved and ready to merge; someone else's where your review was
+  requested or there are new commits since you last reviewed — all count
+  as "mine". Everything else (awaiting the author, a bot's PR, one you're
+  not involved in) counts as "waiting". The badge turns fully grey the
+  moment nothing needs you, even if PRs are still open. The hover panel's
+  single PR line is now a full list — every open PR by title, sorted so
+  what needs you floats to the top, with drafts shown only there (they
+  never make the row badge appear).
+
 ## v0.11.0 — 2026-08-03
 
 ### New

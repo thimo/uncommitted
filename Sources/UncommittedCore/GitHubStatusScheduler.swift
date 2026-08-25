@@ -236,12 +236,12 @@ public final class GitHubStatusScheduler: ObservableObject {
 
             for (_, slugRepos) in bySlug {
                 guard let firstRemote = slugRepos.first?.remote else { continue }
-                guard let prCount = GitHubAPI.fetchPRCount(for: firstRemote) else { continue }
+                guard let prs = GitHubAPI.fetchPullRequests(for: firstRemote) else { continue }
                 let urlsForSlug = slugRepos.map(\.url)
                 DispatchQueue.main.async {
                     let now = Date()
                     for url in urlsForSlug {
-                        self.applyPR(prCount, to: url, at: now)
+                        self.applyPR(prs, to: url, at: now)
                     }
                 }
             }
@@ -272,9 +272,9 @@ public final class GitHubStatusScheduler: ObservableObject {
 
     // MARK: - State writes (main thread)
 
-    private func applyPR(_ count: PRCount, to url: URL, at when: Date) {
+    private func applyPR(_ prs: [PRSummary], to url: URL, at when: Date) {
         var current = statuses[url] ?? GitHubRepoStatus()
-        current.prCount = count
+        current.prs = prs
         current.fetchedAt = when
         statuses[url] = current
     }

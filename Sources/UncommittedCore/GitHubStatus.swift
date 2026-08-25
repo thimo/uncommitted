@@ -30,24 +30,147 @@ public enum CIStatus: String, Equatable, Codable {
     case none
 }
 
-/// Open PR breakdown for one repo. Bots are dependabot/renovate and
-/// anyone else GitHub flags as `user.type == "Bot"`.
-public struct PRCount: Equatable, Codable {
-    public let humans: Int
-    public let bots: Int
+/// Why a PR lands in `.mine` or `.waiting` — drives the trailing caption
+/// in the hover panel's PR list. `.label` is the human-readable phrase;
+/// `.waitingOnAuthor`'s carries a literal `<author>` placeholder that the
+/// UI substitutes with `pr.authorLogin` (it's the one reason that needs
+/// to say who it's waiting on, so the caption doesn't repeat "@author").
+public enum PRReason: String, Codable, Equatable {
+    // mine
+    case changesRequestedOnMine
+    case ciFailingOnMine
+    case approvedReadyToMerge
+    case reviewRequested
+    case newCommitsSinceReview
+    // waiting
+    case awaitingReview
+    case waitingOnAuthor
+    case notInvolved
+    case bot
+    // draft
+    case draft
 
-    public var total: Int { humans + bots }
+    public var label: String {
+        switch self {
+        case .changesRequestedOnMine: return "changes requested"
+        case .ciFailingOnMine: return "CI failing"
+        case .approvedReadyToMerge: return "approved · merge"
+        case .reviewRequested: return "your review requested"
+        case .newCommitsSinceReview: return "new commits since your review"
+        case .awaitingReview: return "waiting for review"
+        case .waitingOnAuthor: return "waiting on @<author>"
+        case .notInvolved: return ""
+        case .bot: return "bot"
+        case .draft: return "draft"
+        }
+    }
+}
+
+/// Whose turn a PR is, plus why. `.mine` means the viewer has something
+/// to do; `.waiting` means it's someone else's move (or the viewer isn't
+/// involved, or the author is a bot); `.draft` is neither — GitHub hides
+/// drafts from reviewers, so they never need the viewer's attention.
+public enum PRAttention: Equatable, Codable {
+    case mine(PRReason)
+    case waiting(PRReason)
+    case draft
+
+    public var isMine: Bool {
+        if case .mine = self { return true }
+        return false
+    }
+
+    public var isDraft: Bool {
+        if case .draft = self { return true }
+        return false
+    }
+
+    public var reason: PRReason {
+        switch self {
+        case .mine(let reason), .waiting(let reason): return reason
+        case .draft: return .draft
+        }
+    }
+
+    /// Sort rank for the hover panel's PR list: mine first, then waiting
+    /// (non-bot before bot, so dependabot piles sink to the bottom without
+    /// needing a separate section), drafts last.
+    public var sortRank: Int {
+        switch self {
+        case .mine: return 0
+        case .waiting(let reason): return reason == .bot ? 2 : 1
+        case .draft: return 3
+        }
+    }
+}
+
+/// One open PR, already classified against the viewer. `authorLogin` is
+/// "" for a deleted GitHub account (the API returns a null author).
+public struct PRSummary: Equatable, Codable, Identifiable {
+    public var id: Int { number }
+    public let number: Int
+    public let title: String
+    public let url: String
+    public let authorLogin: String
+    public let isBotAuthor: Bool
+    public let isDraft: Bool
+    public let attention: PRAttention
+    public let updatedAt: Date
+
+    public init(
+        number: Int,
+        title: String,
+        url: String,
+        authorLogin: String,
+        isBotAuthor: Bool,
+        isDraft: Bool,
+        attention: PRAttention,
+        updatedAt: Date
+    ) {
+        self.number = number
+        self.title = title
+        self.url = url
+        self.authorLogin = authorLogin
+        self.isBotAuthor = isBotAuthor
+        self.isDraft = isDraft
+        self.attention = attention
+        self.updatedAt = updatedAt
+    }
+}
+
+/// Open PR breakdown for one repo's badge: how many need the viewer vs.
+/// how many are just open. Drafts don't count either way — they never
+/// need the viewer and GitHub hides them from reviewers anyway.
+public struct PRCount: Equatable, Codable {
+    public let mine: Int
+    public let waiting: Int
+
+    public var total: Int { mine + waiting }
     public var isEmpty: Bool { total == 0 }
 
-    public init(humans: Int, bots: Int) {
-        self.humans = humans
-        self.bots = bots
+    public init(mine: Int, waiting: Int) {
+        self.mine = mine
+        self.waiting = waiting
+    }
+
+    /// Derives the badge counts from a repo's full PR list.
+    public init(prs: [PRSummary]) {
+        var mine = 0
+        var waiting = 0
+        for pr in prs {
+            switch pr.attention {
+            case .mine: mine += 1
+            case .waiting: waiting += 1
+            case .draft: continue
+            }
+        }
+        self.init(mine: mine, waiting: waiting)
     }
 }
 
 /// Aggregate GitHub state for a repo at a moment in time.
 public struct GitHubRepoStatus: Equatable, Codable {
-    public var prCount: PRCount?
+    public var prs: [PRSummary]
     public var ciStatus: CIStatus
     /// Names of the check-runs whose conclusion put the aggregate into
     /// `.failure`. Useful for the detail popover so the user knows
@@ -58,34 +181,131 @@ public struct GitHubRepoStatus: Equatable, Codable {
     public var ciTargetSHA: String?
     public var fetchedAt: Date
 
+    /// Badge counts derived from `prs`. Drafts excluded.
+    public var prCount: PRCount { PRCount(prs: prs) }
+    public var hasOpenPRs: Bool { !prCount.isEmpty }
+
     public init(
-        prCount: PRCount? = nil,
+        prs: [PRSummary] = [],
         ciStatus: CIStatus = .none,
         failingCheckNames: [String] = [],
         ciTargetSHA: String? = nil,
         fetchedAt: Date = Date()
     ) {
-        self.prCount = prCount
+        self.prs = prs
         self.ciStatus = ciStatus
         self.failingCheckNames = failingCheckNames
         self.ciTargetSHA = ciTargetSHA
         self.fetchedAt = fetchedAt
     }
 
-    // Custom decoder so adding a new field (failingCheckNames) doesn't
-    // invalidate cache files written by older versions — missing keys
-    // fall back to the type's default rather than nuking the entry.
+    // Custom decoder so adding/renaming a field doesn't invalidate cache
+    // files written by older versions — missing keys fall back to the
+    // type's default rather than nuking the entry. `prs` replaced the old
+    // `prCount: {humans, bots}` key; old cache files simply lose their
+    // stale PR data for one refresh cycle instead of failing to decode.
     enum CodingKeys: String, CodingKey {
-        case prCount, ciStatus, failingCheckNames, ciTargetSHA, fetchedAt
+        case prs, ciStatus, failingCheckNames, ciTargetSHA, fetchedAt
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.prCount = try c.decodeIfPresent(PRCount.self, forKey: .prCount)
+        self.prs = try c.decodeIfPresent([PRSummary].self, forKey: .prs) ?? []
         self.ciStatus = try c.decodeIfPresent(CIStatus.self, forKey: .ciStatus) ?? .none
         self.failingCheckNames = try c.decodeIfPresent([String].self, forKey: .failingCheckNames) ?? []
         self.ciTargetSHA = try c.decodeIfPresent(String.self, forKey: .ciTargetSHA)
         self.fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt) ?? Date()
+    }
+}
+
+// MARK: - Classifier
+
+/// Pure "whose turn is it" logic for one PR — no networking, fully
+/// testable. Kept separate from the GraphQL decoding so the rules can be
+/// pinned in tests without a fixture round-trip.
+public enum PRClassifier {
+    /// Raw facts pulled from GraphQL for one PR — everything `classify`
+    /// needs and nothing it has to re-derive.
+    public struct Facts: Equatable {
+        public var authorLogin: String
+        public var authorIsBot: Bool
+        public var isDraft: Bool
+        /// REVIEW_REQUIRED | CHANGES_REQUESTED | APPROVED | nil
+        public var reviewDecision: String?
+        public var requestedUserLogins: [String]
+        /// Any Team in `reviewRequests` — counted as "mine" deliberately.
+        /// We can't cheaply know the viewer's team memberships; a false
+        /// positive here beats a missed review.
+        public var teamReviewRequested: Bool
+        /// APPROVED | CHANGES_REQUESTED | COMMENTED | nil
+        public var myLatestReviewState: String?
+        public var myLatestReviewAt: Date?
+        public var lastCommitAt: Date?
+        /// statusCheckRollup.state: SUCCESS|FAILURE|ERROR|PENDING|EXPECTED|nil
+        public var ciState: String?
+
+        public init(
+            authorLogin: String,
+            authorIsBot: Bool = false,
+            isDraft: Bool = false,
+            reviewDecision: String? = nil,
+            requestedUserLogins: [String] = [],
+            teamReviewRequested: Bool = false,
+            myLatestReviewState: String? = nil,
+            myLatestReviewAt: Date? = nil,
+            lastCommitAt: Date? = nil,
+            ciState: String? = nil
+        ) {
+            self.authorLogin = authorLogin
+            self.authorIsBot = authorIsBot
+            self.isDraft = isDraft
+            self.reviewDecision = reviewDecision
+            self.requestedUserLogins = requestedUserLogins
+            self.teamReviewRequested = teamReviewRequested
+            self.myLatestReviewState = myLatestReviewState
+            self.myLatestReviewAt = myLatestReviewAt
+            self.lastCommitAt = lastCommitAt
+            self.ciState = ciState
+        }
+    }
+
+    /// `viewer` is compared case-insensitively throughout — GitHub logins
+    /// are case-insensitive but GraphQL returns them as typed.
+    public static func classify(_ f: Facts, viewer: String) -> PRAttention {
+        if f.isDraft { return .draft }
+
+        let viewerLC = viewer.lowercased()
+        if f.authorLogin.lowercased() == viewerLC {
+            // My own PR.
+            if f.reviewDecision == "CHANGES_REQUESTED" {
+                return .mine(.changesRequestedOnMine)
+            }
+            if f.ciState == "FAILURE" || f.ciState == "ERROR" {
+                return .mine(.ciFailingOnMine)
+            }
+            if f.reviewDecision == "APPROVED" {
+                return .mine(.approvedReadyToMerge)
+            }
+            return .waiting(.awaitingReview)
+        }
+
+        // Someone else's PR.
+        let requested = f.requestedUserLogins.contains { $0.lowercased() == viewerLC }
+        if requested || f.teamReviewRequested {
+            return .mine(.reviewRequested)
+        }
+        if let reviewedAt = f.myLatestReviewAt,
+           let lastCommit = f.lastCommitAt,
+           lastCommit > reviewedAt {
+            return .mine(.newCommitsSinceReview)
+        }
+        if f.myLatestReviewAt != nil {
+            return .waiting(.waitingOnAuthor)
+        }
+        if f.authorIsBot {
+            return .waiting(.bot)
+        }
+        return .waiting(.notInvolved)
     }
 }
 
@@ -312,6 +532,35 @@ public enum GHService {
         }
     }
 
+    /// Runs `gh api graphql -f query=<query> -F key=value ...` and decodes
+    /// stdout into `T`. Unlike `api()`, does NOT convert snake_case — GraphQL
+    /// field names are camelCase already — and uses ISO-8601 dates, since
+    /// that's what GraphQL's `DateTime` scalar serializes to. Logs failures
+    /// the same way `api()` does.
+    public static func graphql<T: Decodable>(query: String, variables: [String: String], as: T.Type) -> T? {
+        var args = ["api", "graphql", "-f", "query=\(query)"]
+        for (key, value) in variables {
+            args.append("-F")
+            args.append("\(key)=\(value)")
+        }
+        let result = execute(args)
+        guard result.isSuccess else {
+            if !result.stderr.isEmpty,
+               let text = String(data: result.stderr, encoding: .utf8) {
+                DiagnosticsLog.shared.warning("github", "gh api graphql failed: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+            }
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            return try decoder.decode(T.self, from: result.stdout)
+        } catch {
+            DiagnosticsLog.shared.warning("github", "gh api graphql decode failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     private static let pipeDrainTimeoutSeconds: Int = 2
 
     private static func buildEnvironment() -> [String: String] {
@@ -327,36 +576,163 @@ public enum GHService {
 /// on any failure (auth, decode, network) — callers treat that as "no
 /// data this cycle, try again next refresh."
 public enum GitHubAPI {
-    /// Slim subset of the `pulls` response — only the fields we need to
-    /// classify a PR as human-or-bot. Decoder ignores everything else.
-    struct PullSummary: Decodable {
-        struct User: Decodable {
-            let login: String
-            let type: String?
+    // MARK: - Pull requests (GraphQL)
+
+    /// Slim decode target for the `fetchPullRequests` GraphQL query —
+    /// only the fields `PRClassifier.Facts` needs. Nested to mirror the
+    /// query's own nesting so the two stay easy to compare by eye.
+    public struct PullRequestsResponse: Decodable {
+        public let data: ResponseData
+
+        public struct ResponseData: Decodable {
+            public let viewer: Viewer?
+            public let repository: Repository?
         }
-        let user: User?
+        public struct Viewer: Decodable {
+            public let login: String
+        }
+        public struct Repository: Decodable {
+            public let pullRequests: PullRequestConnection
+        }
+        public struct PullRequestConnection: Decodable {
+            public let nodes: [PullRequestNode]
+        }
+        public struct PullRequestNode: Decodable {
+            public let number: Int
+            public let title: String
+            public let url: String
+            public let isDraft: Bool
+            public let updatedAt: Date
+            public let author: Author?
+            public let reviewDecision: String?
+            public let reviewRequests: ReviewRequestConnection
+            public let latestReviews: ReviewConnection
+            public let commits: CommitConnection
+        }
+        public struct Author: Decodable {
+            public let login: String
+            public let __typename: String
+        }
+        public struct ReviewRequestConnection: Decodable {
+            public let nodes: [ReviewRequestNode]
+        }
+        public struct ReviewRequestNode: Decodable {
+            public let requestedReviewer: RequestedReviewer?
+        }
+        public struct RequestedReviewer: Decodable {
+            public let __typename: String
+            public let login: String?
+            public let slug: String?
+        }
+        public struct ReviewConnection: Decodable {
+            public let nodes: [ReviewSummary]
+        }
+        public struct ReviewSummary: Decodable {
+            public let author: ReviewAuthor?
+            public let state: String
+            public let submittedAt: Date?
+        }
+        public struct ReviewAuthor: Decodable {
+            public let login: String
+        }
+        public struct CommitConnection: Decodable {
+            public let nodes: [CommitEntry]
+        }
+        public struct CommitEntry: Decodable {
+            public let commit: CommitDetail
+        }
+        public struct CommitDetail: Decodable {
+            public let committedDate: Date
+            public let statusCheckRollup: StatusCheckRollup?
+        }
+        public struct StatusCheckRollup: Decodable {
+            public let state: String
+        }
     }
 
-    /// Fetches the open PRs for a repo and returns the human-vs-bot
-    /// breakdown. `per_page=100` covers any realistic repo in one call;
-    /// repos with >100 open PRs are vanishingly rare and the under-count
-    /// just means the badge caps at 100 — acceptable for a glanceable
-    /// signal.
-    public static func fetchPRCount(for remote: GitHubRemote) -> PRCount? {
-        let endpoint = "repos/\(remote.owner)/\(remote.repo)/pulls?state=open&per_page=100"
-        guard let pulls = GHService.api(endpoint, as: [PullSummary].self) else {
+    private static let pullRequestsQuery = """
+    query($owner:String!,$name:String!){
+      viewer { login }
+      repository(owner:$owner,name:$name){
+        pullRequests(states:OPEN, first:100, orderBy:{field:UPDATED_AT,direction:DESC}){
+          nodes {
+            number title url isDraft updatedAt
+            author { login __typename }
+            reviewDecision
+            reviewRequests(first:20){ nodes { requestedReviewer { __typename ... on User { login } ... on Team { slug } } } }
+            latestReviews(first:30){ nodes { author { login } state submittedAt } }
+            commits(last:1){ nodes { commit { committedDate statusCheckRollup { state } } } }
+          }
+        }
+      }
+    }
+    """
+
+    /// Pure transform from the raw GraphQL response to classified,
+    /// display-ready summaries. Split out from `fetchPullRequests` so
+    /// tests can feed fixture JSON without shelling out to `gh`.
+    public static func summaries(from response: PullRequestsResponse, viewer: String) -> [PRSummary] {
+        guard let nodes = response.data.repository?.pullRequests.nodes else { return [] }
+        let viewerLC = viewer.lowercased()
+
+        return nodes.map { node in
+            let authorLogin = node.author?.login ?? ""
+            let authorIsBot = isBotAuthor(
+                login: authorLogin.isEmpty ? nil : authorLogin,
+                type: node.author?.__typename
+            )
+            let requestedUserLogins = node.reviewRequests.nodes.compactMap { $0.requestedReviewer?.login }
+            let teamReviewRequested = node.reviewRequests.nodes.contains {
+                $0.requestedReviewer?.__typename == "Team"
+            }
+            // "My latest review" = the most recent non-pending, non-dismissed
+            // review authored by the viewer.
+            let myReviews = node.latestReviews.nodes.filter {
+                $0.author?.login.lowercased() == viewerLC
+                    && $0.state != "PENDING" && $0.state != "DISMISSED"
+            }
+            let myReview = myReviews.max { ($0.submittedAt ?? .distantPast) < ($1.submittedAt ?? .distantPast) }
+            let lastCommitAt = node.commits.nodes.first?.commit.committedDate
+            let ciState = node.commits.nodes.first?.commit.statusCheckRollup?.state
+
+            let facts = PRClassifier.Facts(
+                authorLogin: authorLogin,
+                authorIsBot: authorIsBot,
+                isDraft: node.isDraft,
+                reviewDecision: node.reviewDecision,
+                requestedUserLogins: requestedUserLogins,
+                teamReviewRequested: teamReviewRequested,
+                myLatestReviewState: myReview?.state,
+                myLatestReviewAt: myReview?.submittedAt,
+                lastCommitAt: lastCommitAt,
+                ciState: ciState
+            )
+
+            return PRSummary(
+                number: node.number,
+                title: node.title,
+                url: node.url,
+                authorLogin: authorLogin,
+                isBotAuthor: authorIsBot,
+                isDraft: node.isDraft,
+                attention: PRClassifier.classify(facts, viewer: viewer),
+                updatedAt: node.updatedAt
+            )
+        }
+    }
+
+    /// Fetches every open PR for a repo, classified against the
+    /// authenticated `gh` user. `first:100` covers any realistic repo in
+    /// one call; returns nil on any failure (auth, decode, network) or
+    /// when `repository` comes back null (no access to the repo).
+    public static func fetchPullRequests(for remote: GitHubRemote) -> [PRSummary]? {
+        let variables = ["owner": remote.owner, "name": remote.repo]
+        guard let response = GHService.graphql(query: pullRequestsQuery, variables: variables, as: PullRequestsResponse.self),
+              response.data.repository != nil else {
             return nil
         }
-        var humans = 0
-        var bots = 0
-        for pr in pulls {
-            if isBotAuthor(login: pr.user?.login, type: pr.user?.type) {
-                bots += 1
-            } else {
-                humans += 1
-            }
-        }
-        return PRCount(humans: humans, bots: bots)
+        let viewer = response.data.viewer?.login ?? ""
+        return summaries(from: response, viewer: viewer)
     }
 
     /// Bot heuristic. Public so tests can exercise the patterns directly.

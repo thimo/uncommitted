@@ -168,7 +168,7 @@ struct MenuContentView: View {
             if gh.ciStatus == .failure || gh.ciStatus == .pending { return true }
             // Open PRs (any author) — keep visible too. Dependabot pile-ups
             // are still "something to deal with", just at lower urgency.
-            if gh.prCount?.isEmpty == false { return true }
+            if gh.hasOpenPRs { return true }
             return false
         }
     }
@@ -1129,6 +1129,9 @@ struct RepoDetailPopover: View {
             } else {
                 sections
                 githubSections
+                if let gh = githubStatus, !gh.prs.isEmpty {
+                    PullRequestsSection(prs: gh.prs, onOpenAll: openPRsListPage)
+                }
                 if let store, let repoID {
                     OtherBranchesSection(store: store, repoID: repoID)
                 }
@@ -1150,10 +1153,13 @@ struct RepoDetailPopover: View {
 
     /// True if there's a non-trivial GitHub signal worth explaining —
     /// otherwise we still show "No pending changes" for clean repos.
+    /// Any open PR counts here, including drafts — the hover panel is
+    /// the one place drafts show at all, so a draft-only repo still
+    /// needs to skip the "clean" message to surface it.
     private var hasGitHubSignal: Bool {
         guard let gh = githubStatus else { return false }
         if gh.ciStatus == .failure || gh.ciStatus == .pending { return true }
-        if let prs = gh.prCount, !prs.isEmpty { return true }
+        if !gh.prs.isEmpty { return true }
         return false
     }
 
@@ -1181,16 +1187,6 @@ struct RepoDetailPopover: View {
             default:
                 EmptyView()
             }
-            // PRs: only render when there's something open. Phrase the
-            // line so the human/bot split is unambiguous in plain text.
-            // Color matches the popover badge (.indigo) for consistency.
-            if let prs = gh.prCount, !prs.isEmpty {
-                GitHubLine(
-                    systemImage: "arrow.triangle.pull",
-                    color: .indigo,
-                    text: prText(prs)
-                )
-            }
         }
     }
 
@@ -1206,20 +1202,18 @@ struct RepoDetailPopover: View {
         return "CI failed: \(head)"
     }
 
-    private func prText(_ prs: PRCount) -> String {
-        // Same shape across all three cases ("X PR(s) by humans/bots")
-        // so the wording is predictable. Mixed-case symmetry — both
-        // halves use "by …" — keeps the second number from reading as
-        // a subset of the first.
-        let prWord = { (n: Int) in n == 1 ? "PR" : "PRs" }
-        switch (prs.humans, prs.bots) {
-        case (0, let b):
-            return "\(b) \(prWord(b)) by bots"
-        case (let h, 0):
-            return "\(h) \(prWord(h)) by humans"
-        case (let h, let b):
-            return "\(h) \(prWord(h)) by humans · \(b) by bots"
+    /// Opens the repo's PR list page on github.com — same destination the
+    /// row's PR badge opens. Rebuilt from `repoURL` rather than plumbed in
+    /// from the row view: this popover already resolves its own remote,
+    /// and threading a closure through `HoverDetailWindow` for one link
+    /// would be more surface area than it's worth.
+    private func openPRsListPage() {
+        guard let urlString = GitService.remoteURL(at: repoURL),
+              let remote = GitHubRemoteParser.parse(urlString),
+              let url = URL(string: "https://github.com/\(remote.owner)/\(remote.repo)/pulls") else {
+            return
         }
+        NSWorkspace.shared.open(url)
     }
 
     /// Bottom-row "Last fetched X ago" line, observing FetchStateStore +
@@ -1605,6 +1599,137 @@ private struct OtherBranchesSection: View {
     }
 }
 
+/// "Pull requests" block in the detail panel: every open PR, drafts
+/// included — this is the one place drafts show at all, since they never
+/// make the row badge appear. Sorted so whatever needs the viewer floats
+/// to the top; capped at `rowLimit` with a "+N more" row that opens the
+/// repo's full PR list on github.com. Modeled on `OtherBranchesSection`.
+private struct PullRequestsSection: View {
+    let prs: [PRSummary]
+    let onOpenAll: () -> Void
+
+    private static let rowLimit = 8
+
+    private var sorted: [PRSummary] {
+        prs.sorted { lhs, rhs in
+            if lhs.attention.sortRank != rhs.attention.sortRank {
+                return lhs.attention.sortRank < rhs.attention.sortRank
+            }
+            return lhs.updatedAt > rhs.updatedAt
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Pull requests")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(sorted.prefix(Self.rowLimit)) { pr in
+                    PullRequestRow(pr: pr)
+                }
+                if sorted.count > Self.rowLimit {
+                    Button(action: onOpenAll) {
+                        Text("+\(sorted.count - Self.rowLimit) more")
+                            .font(.caption)
+                            .foregroundStyle(.primary.opacity(0.50))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor()
+                }
+            }
+            .padding(.leading, 2)
+        }
+    }
+}
+
+/// One PR row: an attention dot, the number, the title, and a trailing
+/// "@author · reason" caption. The whole row opens the PR on github.com —
+/// there's no single safe inline action the way pull/push have one, so
+/// unlike `OtherBranchRow` this doesn't carry a badge.
+private struct PullRequestRow: View {
+    let pr: PRSummary
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: openPR) {
+            HStack(spacing: 6) {
+                dot
+                Text("#\(pr.number)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Text(pr.title)
+                    .font(.callout)
+                    .foregroundStyle(pr.attention.isMine ? .primary : .secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(0)
+                Spacer(minLength: 6)
+                Text(trailingText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .onHover { isHovered = $0 }
+    }
+
+    @ViewBuilder
+    private var dot: some View {
+        switch pr.attention {
+        case .mine:
+            Image(systemName: "circle.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(.indigo)
+        case .waiting:
+            Image(systemName: "circle.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(.secondary)
+        case .draft:
+            Image(systemName: "circle")
+                .font(.system(size: 8))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// "@author · reason", collapsing the redundant halves: bot rows drop
+    /// the reason ("bot" just repeats what the login already says), the
+    /// waiting-on-author reason folds the author into itself (so we don't
+    /// say "@author · waiting on @author"), and a blank reason
+    /// (not-involved) leaves just the author.
+    private var trailingText: String {
+        let author = pr.authorLogin.isEmpty ? "" : "@\(pr.authorLogin)"
+        let reason = pr.attention.reason
+        if reason == .bot {
+            return author
+        }
+        if reason == .waitingOnAuthor {
+            return reason.label.replacingOccurrences(of: "<author>", with: pr.authorLogin)
+        }
+        let label = reason.label
+        if label.isEmpty {
+            return author
+        }
+        return author.isEmpty ? label : "\(author) · \(label)"
+    }
+
+    private func openPR() {
+        guard let url = URL(string: pr.url) else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
 /// One upstream-gone branch: muted name, a "gone" tag explaining why it's
 /// listed, and a trash button. No counts — ahead/behind are meaningless
 /// against an upstream that no longer exists.
@@ -1723,7 +1848,7 @@ struct StatusBadges: View {
         // the very badges it contradicts.
         let hasCIBadge = githubStatus?.ciStatus == .failure
                       || githubStatus?.ciStatus == .pending
-        let hasPRBadge = githubStatus?.prCount?.isEmpty == false
+        let hasPRBadge = githubStatus?.hasOpenPRs == true
         // A pullable/pushable *other* branch also counts as "not clear" — the
         // muted teaser below would otherwise sit next to a green checkmark.
         let allClear = status.isClean && !hasCIBadge && !hasPRBadge
@@ -1736,8 +1861,8 @@ struct StatusBadges: View {
             // pill shows the human/bot split with the bot tail muted.
             if let gh = githubStatus {
                 CIBadge(status: gh.ciStatus, action: onOpenCI)
-                if let prs = gh.prCount, !prs.isEmpty {
-                    PRBadge(count: prs, action: onOpenPRs)
+                if gh.hasOpenPRs {
+                    PRBadge(count: gh.prCount, action: onOpenPRs)
                 }
             }
 
@@ -1806,12 +1931,14 @@ struct StatusBadges: View {
     }
 }
 
-/// Compact PR pill: `⤴ 4 / 2` where `4` is human-authored open PRs in
-/// the primary color and `/ 2` is bot PRs in a muted secondary color.
-/// Bots stay visible but recede so dependabot pile-ups don't shout.
-/// Edge cases:
-///   - Only humans → just `⤴ N`
-///   - Only bots   → `⤴ N` rendered fully muted
+/// Compact PR pill: `⤴ 2 / 3` where `2` is PRs that need the viewer's
+/// action (indigo) and `/ 3` is everything else still open — waiting on
+/// someone else, or a bot's — in a muted indigo tail. When nothing needs
+/// the viewer the whole pill (icon, number, border) turns `.secondary`
+/// instead, so it reads as background noise rather than a call to
+/// action; it still shows the waiting count so the repo doesn't look
+/// PR-free. Drafts never factor in here — they only ever show up in the
+/// hover panel's PR list.
 private struct PRBadge: View {
     let count: PRCount
     let action: () -> Void
@@ -1819,28 +1946,24 @@ private struct PRBadge: View {
     @State private var isHovered = false
 
     var body: some View {
-        // .indigo so the pill never reads as a push/pull badge — the
-        // existing ↑/↓ pills already own .blue/.purple. Border and icon
-        // are always indigo so the pill's identity stays consistent
-        // across human-only, bot-only, and mixed cases. The numeric
-        // weight follows authorship: human counts in primary, bot
-        // counts in muted secondary — so a bot-only pile-up reads as
-        // "low priority noise" while humans-needed-attention stays
-        // visually loud.
-        let primary: Color = .indigo
-        let isBotOnly = count.humans == 0
+        let needsMe = count.mine > 0
+        // Indigo when something needs the viewer, otherwise the pill
+        // fully desaturates to .secondary — icon, number and border all
+        // follow `primary` so there's one flip between the two states
+        // instead of three independent ones to keep in sync.
+        let primary: Color = needsMe ? .indigo : .secondary
         Button(action: action) {
             HStack(spacing: 3) {
                 Image(systemName: "arrow.triangle.pull")
                     .foregroundStyle(primary)
-                Text("\(count.humans > 0 ? count.humans : count.bots)")
-                    .foregroundStyle(isBotOnly ? .secondary : primary)
-                if count.humans > 0 && count.bots > 0 {
+                Text("\(needsMe ? count.mine : count.waiting)")
+                    .foregroundStyle(primary)
+                if needsMe && count.waiting > 0 {
                     // Stay in the indigo family but much lighter, so the
-                    // bot tail recedes visually while still feeling like
-                    // part of the same pill rather than disconnected
+                    // waiting tail recedes visually while still feeling
+                    // like part of the same pill rather than disconnected
                     // grey text.
-                    Text("/ \(count.bots)")
+                    Text("/ \(count.waiting)")
                         .foregroundStyle(primary.opacity(0.4))
                 }
             }
@@ -1865,11 +1988,15 @@ private struct PRBadge: View {
     }
 
     private var prTooltip: String {
-        switch (count.humans, count.bots) {
-        case (0, let b): return "\(b) bot PR\(b == 1 ? "" : "s") open"
-        case (let h, 0): return "\(h) PR\(h == 1 ? "" : "s") open"
-        case (let h, let b): return "\(h) PR\(h == 1 ? "" : "s") · \(b) by bots"
+        let m = count.mine
+        let w = count.waiting
+        if m > 0 && w > 0 {
+            return "\(m) need\(m == 1 ? "s" : "") you · \(w) waiting"
         }
+        if m > 0 {
+            return "\(m) need\(m == 1 ? "s" : "") you"
+        }
+        return "\(w) open, none need you"
     }
 }
 
