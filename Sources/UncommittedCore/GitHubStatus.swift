@@ -180,6 +180,11 @@ public struct GitHubRepoStatus: Equatable, Codable {
     public var failingCheckNames: [String]
     public var ciTargetSHA: String?
     public var fetchedAt: Date
+    /// `owner/repo` this status was fetched for. Lets the scheduler tell
+    /// which repos are clones of the same remote without shelling out to
+    /// `git remote get-url` on the main thread — PR signals are shown on
+    /// one clone per slug, not on every clone.
+    public var slug: String?
 
     /// Badge counts derived from `prs`. Drafts excluded.
     public var prCount: PRCount { PRCount(prs: prs) }
@@ -190,13 +195,15 @@ public struct GitHubRepoStatus: Equatable, Codable {
         ciStatus: CIStatus = .none,
         failingCheckNames: [String] = [],
         ciTargetSHA: String? = nil,
-        fetchedAt: Date = Date()
+        fetchedAt: Date = Date(),
+        slug: String? = nil
     ) {
         self.prs = prs
         self.ciStatus = ciStatus
         self.failingCheckNames = failingCheckNames
         self.ciTargetSHA = ciTargetSHA
         self.fetchedAt = fetchedAt
+        self.slug = slug
     }
 
     // Custom decoder so adding/renaming a field doesn't invalidate cache
@@ -205,7 +212,7 @@ public struct GitHubRepoStatus: Equatable, Codable {
     // `prCount: {humans, bots}` key; old cache files simply lose their
     // stale PR data for one refresh cycle instead of failing to decode.
     enum CodingKeys: String, CodingKey {
-        case prs, ciStatus, failingCheckNames, ciTargetSHA, fetchedAt
+        case prs, ciStatus, failingCheckNames, ciTargetSHA, fetchedAt, slug
     }
 
     public init(from decoder: Decoder) throws {
@@ -215,6 +222,38 @@ public struct GitHubRepoStatus: Equatable, Codable {
         self.failingCheckNames = try c.decodeIfPresent([String].self, forKey: .failingCheckNames) ?? []
         self.ciTargetSHA = try c.decodeIfPresent(String.self, forKey: .ciTargetSHA)
         self.fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt) ?? Date()
+        self.slug = try c.decodeIfPresent(String.self, forKey: .slug)
+    }
+
+    /// Copy with PR data removed — what a non-primary clone of a remote
+    /// gets to display. CI stays, since that's per branch and each clone
+    /// may sit on a different one.
+    public var withoutPRs: GitHubRepoStatus {
+        var copy = self
+        copy.prs = []
+        return copy
+    }
+}
+
+/// Picks one "primary" clone per `owner/repo` slug: the first in the
+/// user's repo order. PRs are a property of the remote, so showing the
+/// same badge on four clones of one repo is noise — only the primary
+/// carries it. Repos without a known slug are all primary (nothing to
+/// collapse). Pure so the choice can be pinned in tests.
+public enum PrimaryClonePicker {
+    public static func primaryURLs(orderedURLs: [URL], slugs: [URL: String]) -> Set<URL> {
+        var seen = Set<String>()
+        var primary = Set<URL>()
+        for url in orderedURLs {
+            guard let slug = slugs[url] else {
+                primary.insert(url)
+                continue
+            }
+            if seen.insert(slug).inserted {
+                primary.insert(url)
+            }
+        }
+        return primary
     }
 }
 

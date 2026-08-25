@@ -11,6 +11,7 @@ enum GitHubStatusTests {
         registerSummariesFixtureTests()
         registerLegacyCacheTests()
         registerPRReasonLabelTests()
+        registerPrimaryCloneTests()
     }
 
     // MARK: - GitHubRemoteParser
@@ -412,6 +413,42 @@ enum GitHubStatusTests {
             let status = try decoder.decode(GitHubRepoStatus.self, from: Data(json.utf8))
             try expectEqual(status.prs, [])
             try expect(status.prCount.isEmpty)
+            try expect(status.slug == nil)
+        }
+    }
+
+    // MARK: - Primary clone per slug
+
+    private static func registerPrimaryCloneTests() {
+        let a = URL(fileURLWithPath: "/r/electrolyte")
+        let b = URL(fileURLWithPath: "/r/electrolyte-calcium")
+        let c = URL(fileURLWithPath: "/r/electrolyte-natrium")
+        let other = URL(fileURLWithPath: "/r/web")
+        let unknown = URL(fileURLWithPath: "/r/local-only")
+
+        test("PrimaryClonePicker/firstInOrderWinsPerSlug") {
+            let slugs = [a: "org/el", b: "org/el", c: "org/el", other: "org/web"]
+            let primary = PrimaryClonePicker.primaryURLs(orderedURLs: [b, a, c, other], slugs: slugs)
+            try expectEqual(primary, [b, other])
+        }
+
+        test("PrimaryClonePicker/unknownSlugIsAlwaysPrimary") {
+            let slugs = [a: "org/el", b: "org/el"]
+            let primary = PrimaryClonePicker.primaryURLs(orderedURLs: [a, unknown, b], slugs: slugs)
+            try expectEqual(primary, [a, unknown])
+        }
+
+        test("GitHubRepoStatus/withoutPRs_keepsCI") {
+            let pr = PRSummary(
+                number: 1, title: "t", url: "u", authorLogin: "x", isBotAuthor: false,
+                isDraft: false, attention: .waiting(.notInvolved), updatedAt: Date()
+            )
+            let status = GitHubRepoStatus(prs: [pr], ciStatus: .failure, failingCheckNames: ["lint"], slug: "org/el")
+            let stripped = status.withoutPRs
+            try expectEqual(stripped.prs, [])
+            try expectEqual(stripped.ciStatus, .failure)
+            try expectEqual(stripped.failingCheckNames, ["lint"])
+            try expectEqual(stripped.slug, "org/el")
         }
     }
 

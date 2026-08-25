@@ -17,6 +17,10 @@ mapping of commits.
   single PR line is now a full list — every open PR by title, sorted so
   what needs you floats to the top, with drafts shown only there (they
   never make the row badge appear).
+- Several clones of the same GitHub repo now show the PR badge on one of
+  them only — the first in your repo list. PRs belong to the remote, not
+  the clone, so the other clones stop repeating it (their CI status is
+  still per branch and unaffected).
 
 ## v0.11.0 — 2026-08-03
 

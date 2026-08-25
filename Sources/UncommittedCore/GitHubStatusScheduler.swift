@@ -238,10 +238,11 @@ public final class GitHubStatusScheduler: ObservableObject {
                 guard let firstRemote = slugRepos.first?.remote else { continue }
                 guard let prs = GitHubAPI.fetchPullRequests(for: firstRemote) else { continue }
                 let urlsForSlug = slugRepos.map(\.url)
+                let slug = firstRemote.slug
                 DispatchQueue.main.async {
                     let now = Date()
                     for url in urlsForSlug {
-                        self.applyPR(prs, to: url, at: now)
+                        self.applyPR(prs, slug: slug, to: url, at: now)
                     }
                 }
             }
@@ -272,11 +273,32 @@ public final class GitHubStatusScheduler: ObservableObject {
 
     // MARK: - State writes (main thread)
 
-    private func applyPR(_ prs: [PRSummary], to url: URL, at when: Date) {
+    private func applyPR(_ prs: [PRSummary], slug: String, to url: URL, at when: Date) {
         var current = statuses[url] ?? GitHubRepoStatus()
         current.prs = prs
+        current.slug = slug
         current.fetchedAt = when
         statuses[url] = current
+    }
+
+    // MARK: - Display lookup
+
+    /// What the UI should render for a repo. Same as `statuses[url]`
+    /// except that PR data is stripped for every clone of a remote but
+    /// the first in the user's repo order — PRs belong to the remote, so
+    /// four clones of one repo shouldn't shout the same badge four times.
+    /// CI is left alone: it's per branch, and clones may differ there.
+    /// Main thread only (reads `repoStore.repos`).
+    public func status(for url: URL) -> GitHubRepoStatus? {
+        guard let status = statuses[url] else { return nil }
+        guard status.slug != nil, !status.prs.isEmpty else { return status }
+        return primaryPRURLs.contains(url) ? status : status.withoutPRs
+    }
+
+    private var primaryPRURLs: Set<URL> {
+        let ordered = repoStore.repos.map(\.url)
+        let slugs = statuses.compactMapValues(\.slug)
+        return PrimaryClonePicker.primaryURLs(orderedURLs: ordered, slugs: slugs)
     }
 
     private func applyCI(_ status: CIStatus, failingNames: [String], to url: URL, at when: Date) {

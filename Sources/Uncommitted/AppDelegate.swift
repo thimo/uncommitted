@@ -90,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let configStore, configStore.config.showGitHubStatus else { return nil }
             let key = url.standardizedFileURL.path
             if configStore.config.gitHubMutedRepos.contains(key) { return nil }
-            return githubScheduler?.statuses[url]
+            return githubScheduler?.status(for: url)
         }
         self.reminderScheduler = ReminderScheduler(
             configStore: configStore,

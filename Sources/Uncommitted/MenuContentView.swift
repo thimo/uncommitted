@@ -163,7 +163,7 @@ struct MenuContentView: View {
             // filter, not just the badges.
             let isMuted = muted.contains(repo.url.standardizedFileURL.path)
             guard !isMuted else { return false }
-            guard let gh = githubScheduler.statuses[repo.url] else { return false }
+            guard let gh = githubScheduler.status(for: repo.url) else { return false }
             // Failing or running CI — keep visible.
             if gh.ciStatus == .failure || gh.ciStatus == .pending { return true }
             // Open PRs (any author) — keep visible too. Dependabot pile-ups
@@ -845,7 +845,7 @@ struct RepoRow: View {
                 StatusBadges(
                     status: status,
                     githubStatus: showGitHubStatusForThisRepo
-                        ? githubScheduler.statuses[repo.url]
+                        ? githubScheduler.status(for: repo.url)
                         : nil,
                     inFlight: store.inFlight[repo.id],
                     onPush: { store.push(repo: repo) },
