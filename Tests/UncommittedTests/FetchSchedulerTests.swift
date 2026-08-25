@@ -257,6 +257,18 @@ enum FetchSchedulerTests {
             try expect(FetchScheduler.shouldSurfaceFailure(state))
         }
 
+        // MARK: - failureCountsAgainstRepo (back-off policy)
+
+        test("FetchScheduler/failureCounts_networkUnreachable_doesNot") {
+            try expect(!FetchScheduler.failureCountsAgainstRepo(.networkUnreachable))
+        }
+
+        test("FetchScheduler/failureCounts_unknownAndNil_do") {
+            try expect(FetchScheduler.failureCountsAgainstRepo(.unknown(stderr: "x", exitStatus: 128)))
+            try expect(FetchScheduler.failureCountsAgainstRepo(.lockFileExists))
+            try expect(FetchScheduler.failureCountsAgainstRepo(nil))
+        }
+
         test("FetchScheduler/shouldSurfaceFailure_threeAuto_returnsTrue") {
             let state = FetchState(consecutiveFailures: 3, lastAttemptWasManual: false)
             try expect(FetchScheduler.shouldSurfaceFailure(state))

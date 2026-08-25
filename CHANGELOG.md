@@ -22,6 +22,16 @@ mapping of commits.
   the clone, so the other clones stop repeating it (their CI status is
   still per branch and unaffected).
 
+### Fixed
+- A fetch that fails because the network is down (DNS, connection refused
+  or timed out) no longer counts against the repo. Previously one offline
+  moment put whichever repos happened to be fetching on a 24-hour back-off
+  and excluded them from the popup-open refresh, so clones of the same
+  remote could sit hours apart in freshness. Real failures (auth, missing
+  remote) still back off as before.
+- Successful fetches are now written to the diagnostics log too, so a
+  repo's fetch history can be reconstructed instead of only its failures.
+
 ## v0.11.0 — 2026-08-03
 
 ### New

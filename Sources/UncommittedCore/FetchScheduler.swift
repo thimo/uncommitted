@@ -249,6 +249,17 @@ public final class FetchScheduler: ObservableObject {
         return Self.idleInterval * multiplier >= Self.maxBackoff
     }
 
+    /// Whether a failed fetch should advance the repo's back-off ladder.
+    /// Network-unreachable failures don't: they say nothing about the
+    /// repo, and counting them splits clones of one remote into "fresh"
+    /// and "penalised" groups depending on which happened to be fetching
+    /// when the link dropped. Everything else (auth, missing remote,
+    /// unknown) does. Public so tests can pin the policy.
+    public static func failureCountsAgainstRepo(_ kind: GitError?) -> Bool {
+        if case .networkUnreachable = kind { return false }
+        return true
+    }
+
     /// True if this repo's fetch failures should already be visible to
     /// the user. Auto failures need 3+ to surface; manual failures
     /// surface on the very first one (the user just asked, they should
@@ -387,6 +398,7 @@ public final class FetchScheduler: ObservableObject {
                 if self.stopped && !manual { return }
                 guard self.repoStore.repos.contains(where: { $0.url == url }) else { return }
 
+                let name = url.lastPathComponent
                 self.fetchStateStore.update(url) { state in
                     state.lastAttemptAt = now
                     state.lastAttemptWasManual = manual
@@ -396,12 +408,24 @@ public final class FetchScheduler: ObservableObject {
                         // A successful fetch on a repo we'd previously
                         // marked "no remote" means a remote got added.
                         state.noRemote = false
-                    } else {
+                        // Logged so the fetch history per repo can be
+                        // reconstructed from the diagnostics log — without
+                        // this only failures leave a trace, and "why did
+                        // clone A refresh but clone B not" is unanswerable.
+                        DiagnosticsLog.shared.info("fetch", "fetched \(name) (\(manual ? "manual" : "auto"))")
+                    } else if Self.failureCountsAgainstRepo(result.kind) {
                         state.consecutiveFailures += 1
                         // Warning, not error: background fetches fail all the
-                        // time for boring reasons (offline, VPN down) and
-                        // shouldn't occupy the "last error" slot in Settings.
-                        DiagnosticsLog.shared.warning("fetch", "fetch failed for \(url.lastPathComponent): \(result.errorOutput ?? "unknown")")
+                        // time for boring reasons and shouldn't occupy the
+                        // "last error" slot in Settings.
+                        DiagnosticsLog.shared.warning("fetch", "fetch failed for \(name): \(result.errorOutput ?? "unknown")")
+                    } else {
+                        // Offline / host unreachable: the machine's problem,
+                        // not the repo's. Leave the back-off ladder alone so
+                        // the next popup-open sweep retries as soon as the
+                        // network is back, instead of penalising this clone
+                        // for a day while its siblings stay fresh.
+                        DiagnosticsLog.shared.info("fetch", "fetch skipped for \(name): remote unreachable")
                     }
                 }
                 if result.success {

@@ -19,6 +19,11 @@ public enum GitError: Equatable {
     /// is (or was) running. Transient in the common case; retried
     /// automatically before surfacing to the user.
     case lockFileExists
+    /// The remote couldn't be reached at all — DNS failed, TCP connect
+    /// refused or timed out, no route. Says something about this machine's
+    /// network, not about the repo, so background schedulers shouldn't
+    /// count it against the repo's back-off ladder.
+    case networkUnreachable
     /// Fallback: git exited non-zero but we didn't recognise the stderr
     /// pattern. The raw text is preserved so the alert can still show it.
     case unknown(stderr: String, exitStatus: Int32)
@@ -33,6 +38,8 @@ public enum GitError: Equatable {
             return "The remote has commits your branch doesn't. Pull first, resolve any conflicts, then push again."
         case .lockFileExists:
             return "Another git process is using this repo. If nothing else is running, the lock file may be stale — delete the .lock file inside .git/ to clear it."
+        case .networkUnreachable:
+            return "Couldn't reach the remote. Check your network connection (or VPN) and try again."
         case .unknown:
             return nil
         }
@@ -654,6 +661,25 @@ public enum GitService {
         // locks like `.git/refs/heads/main.lock`.
         if lower.contains("unable to create") && lower.contains(".lock") && lower.contains("file exists") {
             return .lockFileExists
+        }
+
+        // Network down / host unreachable. Phrasing differs between curl
+        // (https remotes) and ssh, so match the common fragments of both.
+        // "Operation too slow" is git aborting on our own
+        // http.lowSpeedLimit — same root cause, a link that's gone away.
+        let networkFragments = [
+            "could not resolve host",
+            "could not resolve hostname",
+            "couldn't connect to server",
+            "failed to connect to",
+            "network is unreachable",
+            "connection timed out",
+            "operation timed out",
+            "no route to host",
+            "operation too slow",
+        ]
+        if networkFragments.contains(where: lower.contains) {
+            return .networkUnreachable
         }
 
         return .unknown(stderr: stderr, exitStatus: exitStatus)

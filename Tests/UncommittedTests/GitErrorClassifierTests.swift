@@ -3,6 +3,42 @@ import UncommittedCore
 
 enum GitErrorClassifierTests {
     static func register() {
+        // MARK: - networkUnreachable
+
+        test("GitError/network_curlCouldntConnect") {
+            // Verbatim from the diagnostics log, 2026-08-14.
+            let stderr = "fatal: unable to access 'https://github.com/sportcity-nl/electrolyte.git/': Failed to connect to github.com port 443 after 75004 ms: Couldn't connect to server"
+            try expectEqual(GitService.classify(exitStatus: 128, stderr: stderr), .networkUnreachable)
+        }
+
+        test("GitError/network_curlCouldNotResolveHost") {
+            let stderr = "fatal: unable to access 'https://github.com/foo/bar.git/': Could not resolve host: github.com"
+            try expectEqual(GitService.classify(exitStatus: 128, stderr: stderr), .networkUnreachable)
+        }
+
+        test("GitError/network_sshUnreachable") {
+            let stderr = """
+            ssh: connect to host github.com port 22: Network is unreachable
+            fatal: Could not read from remote repository.
+            """
+            try expectEqual(GitService.classify(exitStatus: 128, stderr: stderr), .networkUnreachable)
+        }
+
+        test("GitError/network_lowSpeedAbort") {
+            let stderr = "fatal: unable to access 'https://github.com/foo/bar.git/': Operation too slow. Less than 1000 bytes/sec transferred the last 20 seconds"
+            try expectEqual(GitService.classify(exitStatus: 128, stderr: stderr), .networkUnreachable)
+        }
+
+        test("GitError/network_authFailureStaysUnknown") {
+            // "Could not read from remote repository" alone is also what a
+            // bad ssh key produces — must not be mistaken for offline.
+            let stderr = """
+            git@github.com: Permission denied (publickey).
+            fatal: Could not read from remote repository.
+            """
+            try expectEqual(GitService.classify(exitStatus: 128, stderr: stderr), .unknown(stderr: stderr, exitStatus: 128))
+        }
+
         // MARK: - divergedFFOnly
 
         test("GitError/pullDiverged_notPossibleToFastForward") {
@@ -100,20 +136,6 @@ enum GitErrorClassifierTests {
         }
 
         // MARK: - unknown fallback
-
-        test("GitError/networkFailure_fallsThroughToUnknown") {
-            // Network errors aren't classified yet — they should stay in
-            // `.unknown` so the raw stderr still reaches the alert.
-            let stderr = "fatal: unable to access 'https://example.com/repo.git/': Could not resolve host: example.com"
-            let result = GitService.classify(exitStatus: 128, stderr: stderr)
-            if case .unknown = result { } else {
-                throw TestFailure(
-                    message: "expected .unknown, got \(result)",
-                    file: #file,
-                    line: #line
-                )
-            }
-        }
 
         test("GitError/emptyStderr_fallsThroughToUnknown") {
             let result = GitService.classify(exitStatus: 1, stderr: "")
