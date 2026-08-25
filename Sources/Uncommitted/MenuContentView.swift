@@ -1645,35 +1645,42 @@ private struct PullRequestsSection: View {
     }
 }
 
-/// One PR row: an attention dot, the number, the title, and a trailing
-/// "@author · reason" caption. The whole row opens the PR on github.com —
-/// there's no single safe inline action the way pull/push have one, so
-/// unlike `OtherBranchRow` this doesn't carry a badge.
+/// One PR row: an attention dot, the number and title on the first line,
+/// and an "@author · reason" caption underneath. Two lines on purpose —
+/// the panel is ~320pt wide and a trailing caption like "waiting on
+/// @some-long-login" squeezed the title down to an ellipsis and wrapped
+/// the number. The whole row opens the PR on github.com — there's no
+/// single safe inline action the way pull/push have one, so unlike
+/// `OtherBranchRow` this doesn't carry a badge.
 private struct PullRequestRow: View {
     let pr: PRSummary
     @State private var isHovered = false
 
     var body: some View {
         Button(action: openPR) {
-            HStack(spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 dot
                 Text("#\(pr.number)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
-                Text(pr.title)
-                    .font(.callout)
-                    .foregroundStyle(pr.attention.isMine ? .primary : .secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(0)
-                Spacer(minLength: 6)
-                Text(trailingText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                     .fixedSize()
-                    .layoutPriority(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(pr.title)
+                        .font(.callout)
+                        .foregroundStyle(pr.attention.isMine ? .primary : .secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if !trailingText.isEmpty {
+                        Text(trailingText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.vertical, 1)
+            .padding(.vertical, 2)
             .background(
                 RoundedRectangle(cornerRadius: interactiveCornerRadius)
                     .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
