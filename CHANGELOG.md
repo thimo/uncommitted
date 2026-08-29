@@ -31,6 +31,14 @@ mapping of commits.
   remote) still back off as before.
 - Successful fetches are now written to the diagnostics log too, so a
   repo's fetch history can be reconstructed instead of only its failures.
+- Pull no longer fails with "Cannot rebase onto multiple branches" when it
+  lands on top of a background fetch of the same repo — most often right
+  after opening the popup, which kicks off a fetch sweep. Git writes
+  `FETCH_HEAD` without a lock, so the two commands were corrupting each
+  other's output; git commands that talk to a remote are now serialized per
+  repo, and a pull waits out a running fetch instead of racing it.
+- The refresh spinner no longer stays lit forever when a push or pull
+  cancels a fetch that hadn't started yet.
 
 ## v0.11.0 — 2026-08-03
 

@@ -324,6 +324,13 @@ public final class FetchScheduler: ObservableObject {
 
     private func enqueueFetch(repo: Repo, manual: Bool) {
         let url = repo.url
+        // One fetch per repo at a time, and never one on top of a user's
+        // push/pull. `RepoGitLock` makes an overlap safe rather than
+        // corrupting FETCH_HEAD, but the work would be redundant: a second
+        // fetch would just sit on the lock and then re-fetch what the first
+        // one (or the pull) already brought in.
+        guard !inFlightURLs.contains(url) else { return }
+        guard repoStore.inFlight[repo.id] == nil else { return }
         let key = url.standardizedFileURL.path
         // Decide on the main thread whether we need to verify the remote
         // configuration this launch. Reading and updating the
@@ -340,29 +347,32 @@ public final class FetchScheduler: ObservableObject {
         inFlightFetches += 1
         inFlightURLs.insert(url)
         let operation = BlockOperation()
-        operation.addExecutionBlock { [weak self, weak operation] in
-            // Always decrement on every exit path. Local helper so we
-            // can't forget an early-return path.
-            let finish: () -> Void = {
+        // Bookkeeping is cleared here rather than on each exit path of the
+        // work block: the queue runs a completion block whether the
+        // operation did its work or was cancelled before it ever started,
+        // and a push/pull cancels queued fetches. Clearing it inside the
+        // work block would leak the entry in that case — a spinner stuck on,
+        // and (since we now skip a URL that's already in flight) a repo that
+        // never fetches again this session. Runs after the completion path's
+        // own main-thread block, so the spinner still outlives the state
+        // write.
+        operation.completionBlock = { [weak self] in
+            DispatchQueue.main.async {
                 guard let self else { return }
-                DispatchQueue.main.async {
-                    self.inFlightFetches = max(0, self.inFlightFetches - 1)
-                    self.inFlightURLs.remove(url)
-                    self.inFlightOperations.removeValue(forKey: url)
-                }
+                self.inFlightFetches = max(0, self.inFlightFetches - 1)
+                self.inFlightURLs.remove(url)
+                self.inFlightOperations.removeValue(forKey: url)
             }
-            guard let self, let operation, !operation.isCancelled else {
-                finish(); return
-            }
-            if isStopped && !manual { finish(); return }
+        }
+        operation.addExecutionBlock { [weak self, weak operation] in
+            guard let self, let operation, !operation.isCancelled else { return }
+            if isStopped && !manual { return }
 
             // Skip silently if we already know this repo has no remote
             // — but only once per launch. `remoteCheckedThisLaunch` is
             // populated below as soon as a verification finishes, so we
             // don't repeatedly hit `git remote` for the same repo.
-            if cachedNoRemote && !shouldVerifyRemote && !manual {
-                finish(); return
-            }
+            if cachedNoRemote && !shouldVerifyRemote && !manual { return }
 
             // First check this launch (or a manual fetch) — verify the
             // remote configuration. If absent, mark noRemote and bail
@@ -375,22 +385,14 @@ public final class FetchScheduler: ObservableObject {
                     self.remoteCheckedThisLaunch.insert(key)
                     self.fetchStateStore.update(url) { $0.noRemote = !hasRemote }
                 }
-                if !hasRemote { finish(); return }
+                if !hasRemote { return }
             }
 
-            if operation.isCancelled || (isStopped && !manual) {
-                finish(); return
-            }
+            if operation.isCancelled || (isStopped && !manual) { return }
             let result = GitService.fetch(at: url)
             let now = Date()
 
             DispatchQueue.main.async {
-                // Decrement is the last thing we do on this path so the
-                // spinner stays up until the state write lands.
-                defer {
-                    self.inFlightFetches = max(0, self.inFlightFetches - 1)
-                    self.inFlightURLs.remove(url)
-                }
                 // Bail if the user disabled the feature while this
                 // operation was running, OR if the repo was removed
                 // from sources between scheduling and completion. In
@@ -438,8 +440,10 @@ public final class FetchScheduler: ObservableObject {
     }
 
     /// Cancel any in-flight fetch for a repo. Called by RepoStore before
-    /// starting a push or pull so the two git operations don't collide
-    /// on index.lock.
+    /// starting a push or pull, so a fetch that hasn't started yet never
+    /// runs. A fetch already inside `git` keeps going — cancellation can't
+    /// reach the subprocess — and `RepoGitLock` is what keeps that case from
+    /// colliding with the user's command.
     public func cancelFetch(for url: URL) {
         if let op = inFlightOperations.removeValue(forKey: url) {
             op.cancel()

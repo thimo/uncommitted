@@ -189,8 +189,10 @@ public final class RepoStore: ObservableObject {
         command: @escaping (URL) -> GitService.ActionResult
     ) {
         guard inFlight[repo.id] == nil else { return }
-        // Cancel any in-flight background fetch for this repo so the
-        // push/pull doesn't collide on index.lock.
+        // Drop any background fetch for this repo that hasn't started
+        // yet. One that's already running can't be called back — the
+        // git command itself is serialized per repo by `RepoGitLock`,
+        // so this action waits for it instead of racing it.
         onCancelFetch?(repo.url)
         inFlight[repo.id] = kind
         let url = repo.url

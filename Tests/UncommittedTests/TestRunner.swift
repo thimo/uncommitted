@@ -84,6 +84,8 @@ struct TestRunnerMain {
         DiagnosticsLogTests.register()
         ConflictStateTests.register()
         DailyReminderTests.register()
+        RepoGitLockTests.register()
+        GitConcurrencyTests.register()
 
         var passed = 0
         var failed = 0

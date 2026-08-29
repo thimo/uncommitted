@@ -288,7 +288,7 @@ public enum GitService {
     ]
 
     public static func push(at url: URL) -> ActionResult {
-        action(Self.lowSpeedGuard + ["push"], at: url)
+        remoteAction(Self.lowSpeedGuard + ["push"], at: url)
     }
 
     /// Pull arguments for a given reconciliation strategy. Pure and public so
@@ -307,7 +307,7 @@ public enum GitService {
     /// (the default) fails loudly on a diverged branch rather than merging or
     /// rebasing without intent; `.rebase`/`.merge` reconcile a divergence.
     public static func pull(at url: URL, strategy: PullStrategy = .ffOnly) -> ActionResult {
-        action(Self.lowSpeedGuard + Self.pullArguments(strategy: strategy), at: url)
+        remoteAction(Self.lowSpeedGuard + Self.pullArguments(strategy: strategy), at: url)
     }
 
     /// Fast-forwards a *non-checked-out* local branch to its upstream without a
@@ -321,7 +321,7 @@ public enum GitService {
         remoteBranch: String,
         localBranch: String
     ) -> ActionResult {
-        action(Self.lowSpeedGuard + ["fetch", remote, "\(remoteBranch):\(localBranch)"], at: url)
+        remoteAction(Self.lowSpeedGuard + ["fetch", remote, "\(remoteBranch):\(localBranch)"], at: url)
     }
 
     /// Pushes a single local branch to its upstream by explicit refspec, so the
@@ -333,7 +333,7 @@ public enum GitService {
         localBranch: String,
         remoteBranch: String
     ) -> ActionResult {
-        action(Self.lowSpeedGuard + ["push", remote, "\(localBranch):\(remoteBranch)"], at: url)
+        remoteAction(Self.lowSpeedGuard + ["push", remote, "\(localBranch):\(remoteBranch)"], at: url)
     }
 
     /// Deletes a local branch with `-D`. Only offered by the UI for
@@ -349,7 +349,7 @@ public enum GitService {
     /// `FetchScheduler`; goes through the same execute() pipeline as
     /// push/pull so SIGKILL-on-timeout still applies for stuck ssh helpers.
     public static func fetch(at url: URL) -> ActionResult {
-        action(Self.lowSpeedGuard + ["fetch", "--quiet", "--no-tags", "--prune", "origin"], at: url)
+        remoteAction(Self.lowSpeedGuard + ["fetch", "--quiet", "--no-tags", "--prune", "origin"], at: url)
     }
 
     /// Returns the URL configured for the named remote (default: `origin`),
@@ -544,6 +544,19 @@ public enum GitService {
 
     /// How long to watch a lock file before giving up.
     private static let lockWatchTimeout: TimeInterval = 5.0
+
+    /// `action()` for anything that talks to a remote. Holds the repo's
+    /// `RepoGitLock` for the duration, so a user's pull/push and a background
+    /// fetch on the same repo queue up instead of overlapping — two git
+    /// processes writing `.git/FETCH_HEAD` at once tear it, and the pull then
+    /// fails with "Cannot rebase onto multiple branches". Local-only commands
+    /// stay on the unlocked path; they don't touch FETCH_HEAD and git's own
+    /// ref/index locking covers them.
+    private static func remoteAction(_ args: [String], at url: URL) -> ActionResult {
+        RepoGitLock.shared.withLock(url) {
+            action(args, at: url)
+        }
+    }
 
     private static func action(_ args: [String], at url: URL) -> ActionResult {
         let firstResult = singleAttempt(args, at: url)

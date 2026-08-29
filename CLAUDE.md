@@ -37,8 +37,9 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
   why), staleness formatting, actions (`{path}` expansion + Codable),
   per-branch status (`for-each-ref` parser + ff/diverged classification),
   conflict/operation state (`u` lines + git-dir markers), daily-reminder
-  date math, and the diagnostics log (daily files, retention, last-error
-  tracking). UI/orchestration (AppKit/SwiftUI, RepoStore, RepoWatcher)
+  date math, the per-repo git lock (plus a real-git regression test for
+  the concurrent fetch/pull race), and the diagnostics log (daily files,
+  retention, last-error tracking). UI/orchestration (AppKit/SwiftUI, RepoStore, RepoWatcher)
   is untested — won't run headlessly under the CLT-only toolchain.
 
 ## Target layout
@@ -110,6 +111,16 @@ and usually fix a specific pitfall:
    50% black). Drawing full-bleed made macOS Quick Look wrap the icon in
    its generic grey container — the template geometry is the fix.
 
+8. **Remote git commands are serialized per repo** (`RepoGitLock.swift`,
+   used by `GitService.remoteAction()`). Git writes `.git/FETCH_HEAD`
+   without locking it, so a background `git fetch` overlapping the fetch
+   that `git pull` runs internally tears the file; pull reads the fragment
+   as a second merge head and dies with "Cannot rebase onto multiple
+   branches". Cancelling the background operation isn't enough — by then
+   the subprocess is already running and `Operation.cancel()` can't reach
+   it. `FetchScheduler` additionally skips a repo that already has a fetch
+   or a user action in flight. Local-only commands stay unlocked.
+
 ## Key files
 
 - `Sources/Uncommitted/AppDelegate.swift` — menu bar + NSMenu-based popup
@@ -121,6 +132,8 @@ and usually fix a specific pitfall:
 - `Sources/UncommittedCore/RepoStore.swift` — repos + FSEvents + backstops
 - `Sources/UncommittedCore/GitService.swift` — subprocess runner, parser,
   commit subject fetch for hover detail
+- `Sources/UncommittedCore/RepoGitLock.swift` — per-repo mutex around
+  remote git commands (fetch/pull/push)
 - `Sources/UncommittedCore/Models.swift` — `Repo`, `RepoStatus` (counts are
   computed from `*Paths` arrays so they can't drift)
 - `Sources/UncommittedCore/DiagnosticsLog.swift` + `CrashReporter.swift` —
