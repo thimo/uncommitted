@@ -126,6 +126,16 @@ Multi-clone repos share API calls automatically.
 Toggle the feature in Settings → General → GitHub. Full details:
 [docs/github-integration.md](docs/github-integration.md).
 
+**Muting a single repo.** For a repo you track but don't own — a fork,
+a dependency you keep checked out, a team repo where the PRs aren't
+yours to review — right-click its row and choose **Mute GitHub
+status**. That hides the PR pill and CI badges for that repo and keeps
+its red CI out of the menu bar icon. Everything git-side stays exactly
+as it was: uncommitted files, unpushed commits, the behind count, the
+pull and push buttons, and auto-fetch. Muted repos are listed in
+Settings → General under "Muted repositories", where you can unmute
+them again.
+
 [gh]: https://cli.github.com
 
 ## Auto-fetch from remotes

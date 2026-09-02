@@ -39,6 +39,24 @@ info at a glance:
 - **Click the CI badge (red or yellow)** → opens the Actions tab,
   pre-filtered to the current branch.
 
+## Muting a single repo
+
+Right-click a repo row and choose **Mute GitHub status** to hide the PR
+pill and CI badges for that repo only. A muted repo also stops
+contributing to the red menu bar icon and, when "Hide repositories with
+no changes" is on, no longer stays visible just because it has open PRs
+or failing CI.
+
+Nothing git-side changes: uncommitted files, unpushed commits, the
+behind count, pull/push buttons and auto-fetch all keep working. The
+scheduler still polls the repo (multi-clone caching makes this cheap);
+only the rendering is suppressed.
+
+The mute is per clone path, so two checkouts of the same repository are
+muted separately. Muted repos are listed in Settings → General under
+"Muted repositories" with an unmute button per row; the config key is
+`gitHubMutedRepos`.
+
 ## Prerequisites
 
 GitHub access goes through the [`gh` CLI][gh] — Uncommitted shells out
