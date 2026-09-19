@@ -169,7 +169,11 @@ struct MenuContentView: View {
             // Open PRs (any author) — keep visible too. Dependabot pile-ups
             // are still "something to deal with", just at lower urgency.
             if gh.hasOpenPRs { return true }
-            return false
+            // Open issues count the same way — but never issues carrying
+            // the ignored label (a repo whose only open issues are
+            // "backlog" reads as clean, same as the badge). With issues
+            // turned off, `status(for:)` has already dropped them.
+            return gh.hasOpenIssues(ignoringLabel: configStore.config.gitHubIgnoredIssueLabel)
         }
     }
 
@@ -844,13 +848,13 @@ struct RepoRow: View {
             if let status = repo.status {
                 StatusBadges(
                     status: status,
-                    githubStatus: showGitHubStatusForThisRepo
-                        ? githubScheduler.status(for: repo.url)
-                        : nil,
+                    githubStatus: displayableGitHubStatus,
+                    ignoredIssueLabel: configStore.config.gitHubIgnoredIssueLabel,
                     inFlight: store.inFlight[repo.id],
                     onPush: { store.push(repo: repo) },
                     onPull: { store.pull(repo: repo) },
                     onOpenPRs: { openPRsPage() },
+                    onOpenIssues: { openIssuesPage() },
                     onOpenCI: { openCIPage() }
                 )
             }
@@ -961,6 +965,12 @@ struct RepoRow: View {
         return !configStore.config.gitHubMutedRepos.contains(repo.url.standardizedFileURL.path)
     }
 
+    /// GitHub status for this row's badges — nil when the row's GitHub
+    /// status is hidden (global toggle or per-repo mute).
+    private var displayableGitHubStatus: GitHubRepoStatus? {
+        showGitHubStatusForThisRepo ? githubScheduler.status(for: repo.url) : nil
+    }
+
     private func toggleGitHubMute() {
         let key = repo.url.standardizedFileURL.path
         if let idx = configStore.config.gitHubMutedRepos.firstIndex(of: key) {
@@ -1019,12 +1029,13 @@ struct RepoRow: View {
     /// GitHub remote, the click does nothing (the badge wouldn't have
     /// been rendered in that case anyway).
     private func openPRsPage() {
-        guard let urlString = GitService.remoteURL(at: repo.url),
-              let remote = GitHubRemoteParser.parse(urlString),
-              let url = URL(string: "https://github.com/\(remote.owner)/\(remote.repo)/pulls") else {
-            return
-        }
-        NSWorkspace.shared.open(url)
+        openGitHubPage(forRepoAt: repo.url, path: "pulls")
+    }
+
+    /// Opens the issues list page for this repo on github.com. Mirrors
+    /// `openPRsPage`.
+    private func openIssuesPage() {
+        openGitHubPage(forRepoAt: repo.url, path: "issues")
     }
 
     /// Opens the GitHub Actions page for this repo, pre-filtered to the
@@ -1087,6 +1098,10 @@ struct RepoDetailPopover: View {
     var fetchStateStore: FetchStateStore? = nil
     var fetchScheduler: FetchScheduler? = nil
     var githubStatus: GitHubRepoStatus? = nil
+    /// Issue label as typed in Settings — plumbed in from `AppDelegate`
+    /// the same way `githubStatus` reaches this view, via
+    /// `HoverDetailController`. Empty means the ignore feature is off.
+    var ignoredIssueLabel: String = ""
     var onAction: (Action) -> Void = { _ in }
     var onFetch: (() -> Void)? = nil
     /// Opens a changed file (repo-relative path resolved against `repoURL`)
@@ -1132,6 +1147,14 @@ struct RepoDetailPopover: View {
                 if let gh = githubStatus, !gh.prs.isEmpty {
                     PullRequestsSection(prs: gh.prs, onOpenAll: openPRsListPage)
                 }
+                if let gh = githubStatus, !gh.issues.isEmpty {
+                    IssuesSection(
+                        issues: gh.issues,
+                        openIssueCount: gh.openIssueCount,
+                        ignoredIssueLabel: ignoredIssueLabel,
+                        onOpenAll: openIssuesListPage
+                    )
+                }
                 if let store, let repoID {
                     OtherBranchesSection(store: store, repoID: repoID)
                 }
@@ -1160,6 +1183,7 @@ struct RepoDetailPopover: View {
         guard let gh = githubStatus else { return false }
         if gh.ciStatus == .failure || gh.ciStatus == .pending { return true }
         if !gh.prs.isEmpty { return true }
+        if !gh.issues.isEmpty { return true }
         return false
     }
 
@@ -1208,12 +1232,13 @@ struct RepoDetailPopover: View {
     /// and threading a closure through `HoverDetailWindow` for one link
     /// would be more surface area than it's worth.
     private func openPRsListPage() {
-        guard let urlString = GitService.remoteURL(at: repoURL),
-              let remote = GitHubRemoteParser.parse(urlString),
-              let url = URL(string: "https://github.com/\(remote.owner)/\(remote.repo)/pulls") else {
-            return
-        }
-        NSWorkspace.shared.open(url)
+        openGitHubPage(forRepoAt: repoURL, path: "pulls")
+    }
+
+    /// Opens the repo's issues list page on github.com — same destination
+    /// the row's issue badge opens. Mirrors `openPRsListPage`.
+    private func openIssuesListPage() {
+        openGitHubPage(forRepoAt: repoURL, path: "issues")
     }
 
     /// Bottom-row "Last fetched X ago" line, observing FetchStateStore +
@@ -1737,6 +1762,155 @@ private struct PullRequestRow: View {
     }
 }
 
+/// "Issues" block in the detail panel: every open issue we fetched (up to
+/// 50), sorted so anything assigned to the viewer floats to the top.
+/// Capped at `rowLimit` with a "+N more" row — computed from
+/// `openIssueCount` (the GraphQL total) rather than the fetched array, so
+/// the count stays accurate for a repo with more than 50 open issues.
+/// Modeled on `PullRequestsSection`.
+private struct IssuesSection: View {
+    let issues: [IssueSummary]
+    let openIssueCount: Int
+    /// Label as typed in Settings — drives both the sort (ignored issues
+    /// sink to the bottom) and each row's ignored styling/caption.
+    let ignoredIssueLabel: String
+    let onOpenAll: () -> Void
+
+    private static let rowLimit = 8
+
+    /// Assigned-to-me first, then everything else, ignored last —
+    /// ignored issues stay listed (right-click "why is this here" should
+    /// always have an answer) but sink below issues that actually need a
+    /// look. `updatedAt` desc breaks ties within each group.
+    private var sorted: [IssueSummary] {
+        issues.sorted { lhs, rhs in
+            let l = sortRank(lhs)
+            let r = sortRank(rhs)
+            if l != r { return l < r }
+            return lhs.updatedAt > rhs.updatedAt
+        }
+    }
+
+    private func sortRank(_ issue: IssueSummary) -> Int {
+        if issue.isIgnored(label: ignoredIssueLabel) { return 2 }
+        return issue.isAssignedToMe ? 0 : 1
+    }
+
+    private var remainingCount: Int {
+        // Against the rows actually shown, so rows + "more" always adds
+        // up to the total even when fewer than `rowLimit` came back.
+        max(0, openIssueCount - min(issues.count, Self.rowLimit))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Issues")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(sorted.prefix(Self.rowLimit)) { issue in
+                    IssueRow(issue: issue, ignoredIssueLabel: ignoredIssueLabel)
+                }
+                if remainingCount > 0 {
+                    Button(action: onOpenAll) {
+                        Text("+\(remainingCount) more")
+                            .font(.caption)
+                            .foregroundStyle(.primary.opacity(0.50))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor()
+                }
+            }
+            .padding(.leading, 2)
+        }
+    }
+}
+
+/// One issue row: an attention dot, the number and title on the first
+/// line, and an "@author" caption underneath (with "assigned to you"
+/// appended when it is, or the ignored label's name when it's ignored).
+/// The whole row opens the issue on github.com — modeled on
+/// `PullRequestRow`.
+private struct IssueRow: View {
+    let issue: IssueSummary
+    let ignoredIssueLabel: String
+    @State private var isHovered = false
+
+    private var isIgnored: Bool { issue.isIgnored(label: ignoredIssueLabel) }
+
+    var body: some View {
+        Button(action: openIssue) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                dot
+                Text("#\(issue.number)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(issue.title)
+                        .font(.callout)
+                        .foregroundStyle(issue.isAssignedToMe && !isIgnored ? .primary : .secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if !trailingText.isEmpty {
+                        Text(trailingText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                    .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .onHover { isHovered = $0 }
+    }
+
+    /// Hollow dot for an ignored issue — same look as a draft PR's dot in
+    /// `PullRequestRow`: neither "needs you" nor "waiting", just parked.
+    @ViewBuilder
+    private var dot: some View {
+        if isIgnored {
+            Image(systemName: "circle")
+                .font(.system(size: 8))
+                .foregroundStyle(.secondary)
+        } else {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(issue.isAssignedToMe ? .green : .secondary)
+        }
+    }
+
+    /// "@author · assigned to you" / "@author · <label>" for an ignored
+    /// issue (the label exactly as typed in Settings, not as GitHub
+    /// happens to capitalize it) / just the author otherwise — collapsing
+    /// to one half when the author is empty (deleted account).
+    private var trailingText: String {
+        let author = issue.authorLogin.isEmpty ? "" : "@\(issue.authorLogin)"
+        if isIgnored {
+            let label = ignoredIssueLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+            return author.isEmpty ? label : "\(author) · \(label)"
+        }
+        guard issue.isAssignedToMe else { return author }
+        return author.isEmpty ? "assigned to you" : "\(author) · assigned to you"
+    }
+
+    private func openIssue() {
+        guard let url = URL(string: issue.url) else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
 /// One upstream-gone branch: muted name, a "gone" tag explaining why it's
 /// listed, and a trash button. No counts — ahead/behind are meaningless
 /// against an upstream that no longer exists.
@@ -1839,37 +2013,66 @@ private struct ClickablePath: View {
     }
 }
 
+/// Opens `https://github.com/<owner>/<repo>/<path>` for the repo at
+/// `repoURL`, resolving owner/repo from the local origin URL. Does
+/// nothing when the remote isn't on github.com — the badges that lead
+/// here wouldn't have rendered in that case anyway.
+private func openGitHubPage(forRepoAt repoURL: URL, path: String) {
+    guard let urlString = GitService.remoteURL(at: repoURL),
+          let remote = GitHubRemoteParser.parse(urlString),
+          let url = URL(string: "https://github.com/\(remote.owner)/\(remote.repo)/\(path)") else {
+        return
+    }
+    NSWorkspace.shared.open(url)
+}
+
 struct StatusBadges: View {
     let status: RepoStatus
     let githubStatus: GitHubRepoStatus?
+    /// Issue label treated as "not something to act on" — plain string
+    /// rather than reading `ConfigStore` directly, since this view has
+    /// no environment object of its own. See `Config.gitHubIgnoredIssueLabel`.
+    let ignoredIssueLabel: String
     let inFlight: InFlightAction?
     let onPush: () -> Void
     let onPull: () -> Void
     let onOpenPRs: () -> Void
+    let onOpenIssues: () -> Void
     let onOpenCI: () -> Void
 
     var body: some View {
         // The green "all clear" checkmark only appears when *nothing*
         // needs attention — local-clean alone isn't enough, since a
-        // failing CI or open PR also counts. Otherwise it'd sit next to
-        // the very badges it contradicts.
+        // failing CI, an open PR, or an open (non-ignored) issue also
+        // counts. Otherwise it'd sit next to the very badges it
+        // contradicts.
         let hasCIBadge = githubStatus?.ciStatus == .failure
                       || githubStatus?.ciStatus == .pending
         let hasPRBadge = githubStatus?.hasOpenPRs == true
+        // Built once per render — it walks every fetched issue's labels.
+        let issueCount = githubStatus?.issueCount(ignoringLabel: ignoredIssueLabel)
+        let hasIssueBadge = issueCount?.isEmpty == false
         // A pullable/pushable *other* branch also counts as "not clear" — the
         // muted teaser below would otherwise sit next to a green checkmark.
-        let allClear = status.isClean && !hasCIBadge && !hasPRBadge
+        let allClear = status.isClean && !hasCIBadge && !hasPRBadge && !hasIssueBadge
                     && !status.hasActionableOtherBranch
 
         HStack(spacing: 4) {
             // GitHub-side signals come first — they're "outside world"
             // status, separate from the local git state pills on the right.
             // CI red/running is rendered as a single icon (no count); PR
-            // pill shows the human/bot split with the bot tail muted.
+            // and issue pills show the mine/other split with the muted tail.
             if let gh = githubStatus {
                 CIBadge(status: gh.ciStatus, action: onOpenCI)
                 if gh.hasOpenPRs {
                     PRBadge(count: gh.prCount, action: onOpenPRs)
+                }
+                if let issueCount, hasIssueBadge {
+                    IssueBadge(
+                        count: issueCount,
+                        ignoredIssueLabel: ignoredIssueLabel,
+                        action: onOpenIssues
+                    )
                 }
             }
 
@@ -2004,6 +2207,74 @@ private struct PRBadge: View {
             return "\(m) need\(m == 1 ? "s" : "") you"
         }
         return "\(w) open, none need you"
+    }
+}
+
+/// Compact issue pill, modeled 1:1 on `PRBadge`: `⊙ 2 / 3` where `2` is
+/// issues assigned to the viewer (green) and `/ 3` is everything else
+/// still open, in a muted green tail. When nothing is assigned to the
+/// viewer the whole pill turns `.secondary` — same single-`primary` flip
+/// as `PRBadge`, so it reads as background noise rather than a call to
+/// action, while still showing the open count so the repo doesn't look
+/// issue-free.
+private struct IssueBadge: View {
+    let count: IssueCount
+    /// Label as typed in Settings — only needed for the tooltip's
+    /// "labelled <label>" tail, since `count.ignored` already reflects
+    /// the filtered math.
+    let ignoredIssueLabel: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        let needsMe = count.mine > 0
+        let primary: Color = needsMe ? .green : .secondary
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: "smallcircle.filled.circle")
+                    .foregroundStyle(primary)
+                Text("\(needsMe ? count.mine : count.other)")
+                    .foregroundStyle(primary)
+                if needsMe && count.other > 0 {
+                    Text("/ \(count.other)")
+                        .foregroundStyle(primary.opacity(0.4))
+                }
+            }
+            .fixedSize()
+            .font(.body.weight(.medium).monospacedDigit())
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                    .fill(isHovered ? primary.opacity(0.18) : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                    .strokeBorder(primary.opacity(isHovered ? 0.0 : 0.35), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: interactiveCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .onHover { isHovered = $0 }
+        .help(issueTooltip)
+    }
+
+    private var issueTooltip: String {
+        let m = count.mine
+        let o = count.other
+        let base: String
+        if m > 0 && o > 0 {
+            base = "\(m) assigned to you · \(o) other open"
+        } else if m > 0 {
+            base = "\(m) assigned to you"
+        } else {
+            base = "\(o) open, none assigned to you"
+        }
+        guard count.ignored > 0 else { return base }
+        let label = ignoredIssueLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(base) · \(count.ignored) labelled \(label)"
     }
 }
 

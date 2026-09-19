@@ -230,6 +230,14 @@ struct RemoteSettingsView: View {
     @EnvironmentObject var configStore: ConfigStore
     @State private var ghAvailable: Bool = false
     @State private var ghInstalled: Bool = false
+    @State private var ignoredLabelDraft: String = ""
+    @FocusState private var ignoredLabelFocused: Bool
+
+    private func commitIgnoredLabel() {
+        let trimmed = ignoredLabelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != configStore.config.gitHubIgnoredIssueLabel else { return }
+        configStore.config.gitHubIgnoredIssueLabel = trimmed
+    }
 
     var body: some View {
         Form {
@@ -260,6 +268,26 @@ struct RemoteSettingsView: View {
             Section {
                 Toggle("Show GitHub status", isOn: $configStore.config.showGitHubStatus)
                     .disabled(!ghAvailable)
+                Toggle("Include open issues", isOn: $configStore.config.showGitHubIssues)
+                    .disabled(!ghAvailable || !configStore.config.showGitHubStatus)
+                // Edits a local draft and commits on Return or focus loss.
+                // Bound straight to the config, every keystroke would
+                // re-filter the popup against a half-typed label and
+                // clearing the field to retype would briefly un-ignore
+                // everything.
+                TextField(
+                    "Ignore issues labelled",
+                    text: $ignoredLabelDraft,
+                    prompt: Text("backlog")
+                )
+                .focused($ignoredLabelFocused)
+                .onSubmit(commitIgnoredLabel)
+                .onChange(of: ignoredLabelFocused) { _, focused in
+                    if !focused { commitIgnoredLabel() }
+                }
+                .onAppear { ignoredLabelDraft = configStore.config.gitHubIgnoredIssueLabel }
+                .onDisappear(perform: commitIgnoredLabel)
+                .disabled(!ghAvailable || !configStore.config.showGitHubStatus || !configStore.config.showGitHubIssues)
             } header: {
                 Text("GitHub")
             } footer: {
@@ -291,7 +319,7 @@ struct RemoteSettingsView: View {
         } else if !ghAvailable {
             Text("`gh` is installed but not authenticated. Run `gh auth login`, then reopen Settings.")
         } else {
-            Text("Open PR counts and a red icon for failing CI on your current branch. Right-click a repo row to mute it.")
+            Text("Open PR and issue counts, and a red icon for failing CI on your current branch. Issues labelled as above don't count against you and stay off the badge — clear the field to see every open issue again. Right-click a repo row to mute it.")
         }
     }
 }

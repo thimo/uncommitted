@@ -31,6 +31,11 @@ final class HoverDetailController {
     /// Set by AppDelegate so the detail panel can explain the PR pill and
     /// CI badge in plain text. Nil while the feature is disabled.
     var githubStatusLookup: ((URL) -> GitHubRepoStatus?)?
+    /// Returns the current ignore-label config value. Set once by
+    /// AppDelegate and read fresh on every show/update, same as
+    /// `githubStatusLookup` — a Settings change takes effect on the next
+    /// hover with no extra sync plumbing needed.
+    var ignoredIssueLabelLookup: (() -> String)?
     /// Fade-in / fade-out duration. Tweak this to change the feel.
     private static let fadeDuration: TimeInterval = 0.1
     /// How long the cursor must sit on a row before the panel appears.
@@ -255,6 +260,7 @@ final class HoverDetailController {
         let onFetch = currentOnFetch
         let onOpenFile = currentOnOpenFile
         let githubStatus = githubStatusLookup?(repo.url)
+        let ignoredIssueLabel = ignoredIssueLabelLookup?() ?? ""
         guard let store = currentStore else { return }
         let content = HoverDetailContent(
             repoName: repo.name,
@@ -268,6 +274,7 @@ final class HoverDetailController {
             fetchStateStore: fetchStateStore,
             fetchScheduler: fetchScheduler,
             githubStatus: githubStatus,
+            ignoredIssueLabel: ignoredIssueLabel,
             onAction: { action in onAction?(action) },
             onFetch: onFetch.map { fn in { fn() } },
             onOpenFile: onOpenFile.map { fn in { url in fn(url) } },
@@ -443,6 +450,7 @@ struct HoverDetailContent: View {
     let fetchStateStore: FetchStateStore?
     let fetchScheduler: FetchScheduler?
     let githubStatus: GitHubRepoStatus?
+    let ignoredIssueLabel: String
     let onAction: (Action) -> Void
     let onFetch: (() -> Void)?
     let onOpenFile: ((URL) -> Void)?
@@ -468,6 +476,7 @@ struct HoverDetailContent: View {
             fetchStateStore: fetchStateStore,
             fetchScheduler: fetchScheduler,
             githubStatus: githubStatus,
+            ignoredIssueLabel: ignoredIssueLabel,
             onAction: onAction,
             onFetch: onFetch,
             onOpenFile: onOpenFile

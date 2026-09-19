@@ -84,6 +84,24 @@ public final class GitHubStatusScheduler: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Issues are left out of the query while the toggle is off, so
+        // turning it on has nothing current to show until a refresh —
+        // fetch right away instead of waiting out the cadence slot.
+        // `eagerRefresh`, not `tick()`: it resolves specs off the main
+        // thread. `$config` publishes on willSet, so hop to the next
+        // runloop turn before `eagerRefresh` reads the new value back.
+        configStore.$config
+            .map(\.showGitHubIssues)
+            .removeDuplicates()
+            .dropFirst()
+            .filter { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.eagerRefresh(self.repoStore.repos)
+            }
+            .store(in: &cancellables)
+
         // Persist on every change, debounced 300ms. Mirrors ConfigStore.
         $statuses
             .dropFirst()
@@ -143,10 +161,12 @@ public final class GitHubStatusScheduler: ObservableObject {
         // The actual fetch in `runFetch` was already off-main; the spec
         // resolution wasn't. Push the whole thing to the background
         // queue so opening the popup never waits on git.
+        // Config is main-thread state — read it here, not on the queue.
+        let includeIssues = configStore.config.showGitHubIssues
         queue.async { [weak self] in
             guard let self, !self.stopped else { return }
             let specs = repos.compactMap(self.resolvedSpec(for:))
-            self.runFetch(specs: specs)
+            self.runFetch(specs: specs, includeIssues: includeIssues)
         }
     }
 
@@ -184,7 +204,7 @@ public final class GitHubStatusScheduler: ObservableObject {
             }
             return spec
         }
-        runFetch(specs: due)
+        runFetch(specs: due, includeIssues: configStore.config.showGitHubIssues)
     }
 
     // MARK: - Specs + fetch
@@ -219,7 +239,7 @@ public final class GitHubStatusScheduler: ObservableObject {
         return Date().timeIntervalSince(mtime) <= Self.activeThreshold
     }
 
-    private func runFetch(specs: [RepoSpec]) {
+    private func runFetch(specs: [RepoSpec], includeIssues: Bool) {
         guard !specs.isEmpty else { return }
 
         // Dedup PR-count fetches by slug.
@@ -236,13 +256,20 @@ public final class GitHubStatusScheduler: ObservableObject {
 
             for (_, slugRepos) in bySlug {
                 guard let firstRemote = slugRepos.first?.remote else { continue }
-                guard let prs = GitHubAPI.fetchPullRequests(for: firstRemote) else { continue }
+                guard let signals = GitHubAPI.fetchRepoSignals(for: firstRemote, includeIssues: includeIssues) else { continue }
                 let urlsForSlug = slugRepos.map(\.url)
                 let slug = firstRemote.slug
                 DispatchQueue.main.async {
                     let now = Date()
                     for url in urlsForSlug {
-                        self.applyPR(prs, slug: slug, to: url, at: now)
+                        self.applyPR(
+                            signals.prs,
+                            issues: includeIssues ? signals.issues : nil,
+                            openIssueCount: signals.openIssueCount,
+                            slug: slug,
+                            to: url,
+                            at: now
+                        )
                     }
                 }
             }
@@ -273,9 +300,26 @@ public final class GitHubStatusScheduler: ObservableObject {
 
     // MARK: - State writes (main thread)
 
-    private func applyPR(_ prs: [PRSummary], slug: String, to url: URL, at when: Date) {
+    /// `issues` is nil when the fetch left issues out of the query. The
+    /// stored ones are then kept rather than blanked: the queue is
+    /// concurrent, so a slow issue-less fetch started just before the
+    /// user turned issues on can land after the refresh that toggle
+    /// kicked off, and would otherwise wipe what it just fetched.
+    /// `status(for:)` hides the leftovers while the toggle is off.
+    private func applyPR(
+        _ prs: [PRSummary],
+        issues: [IssueSummary]?,
+        openIssueCount: Int,
+        slug: String,
+        to url: URL,
+        at when: Date
+    ) {
         var current = statuses[url] ?? GitHubRepoStatus()
         current.prs = prs
+        if let issues {
+            current.issues = issues
+            current.openIssueCount = openIssueCount
+        }
         current.slug = slug
         current.fetchedAt = when
         statuses[url] = current
@@ -284,18 +328,22 @@ public final class GitHubStatusScheduler: ObservableObject {
     // MARK: - Display lookup
 
     /// What the UI should render for a repo. Same as `statuses[url]`
-    /// except that PR data is stripped for every clone of a remote but
-    /// the first in the user's repo order — PRs belong to the remote, so
-    /// four clones of one repo shouldn't shout the same badge four times.
-    /// CI is left alone: it's per branch, and clones may differ there.
-    /// Main thread only (reads `repoStore.repos`).
+    /// except that PR and issue data are stripped for every clone of a
+    /// remote but the first in the user's repo order — both belong to the
+    /// remote, so four clones of one repo shouldn't shout the same badges
+    /// four times. CI is left alone: it's per branch, and clones may
+    /// differ there. Issues are also dropped while `showGitHubIssues` is
+    /// off — here rather than per view, so no consumer can forget: the
+    /// last fetched set lingers in `statuses` after the toggle goes off.
+    /// Main thread only (reads `repoStore.repos` and the config).
     public func status(for url: URL) -> GitHubRepoStatus? {
-        guard let status = statuses[url] else { return nil }
-        guard status.slug != nil, !status.prs.isEmpty else { return status }
-        return primaryPRURLs.contains(url) ? status : status.withoutPRs
+        guard var status = statuses[url] else { return nil }
+        if !configStore.config.showGitHubIssues { status = status.withoutIssues }
+        guard status.slug != nil, !status.prs.isEmpty || !status.issues.isEmpty else { return status }
+        return primaryRemoteURLs.contains(url) ? status : status.withoutRemoteWideSignals
     }
 
-    private var primaryPRURLs: Set<URL> {
+    private var primaryRemoteURLs: Set<URL> {
         let ordered = repoStore.repos.map(\.url)
         let slugs = statuses.compactMapValues(\.slug)
         return PrimaryClonePicker.primaryURLs(orderedURLs: ordered, slugs: slugs)

@@ -5,6 +5,18 @@ mapping of commits.
 
 ## Unreleased
 
+### New
+- Open GitHub issues get a badge too, right next to the PR pill: how many
+  are assigned to you vs. everything else still open, on the row and in
+  the hover panel's list. Same click-to-open-on-github.com behaviour as
+  the PR pill, and its own Settings → Remote toggle ("Include open
+  issues") for anyone who wants PRs and CI but not the issue tracker in
+  their menu bar. A configurable label (default "backlog") marks issues
+  as not something to act on — they drop out of the badge count, don't
+  keep a repo visible under "hide clean repos", and sink to the bottom
+  of the hover panel's issue list instead of disappearing outright.
+  Clear the field in Settings to see every open issue again.
+
 ### Changed
 - The PR badge no longer counts humans vs. bots — it now shows how many
   open PRs actually need you vs. how many are just open. Each PR is

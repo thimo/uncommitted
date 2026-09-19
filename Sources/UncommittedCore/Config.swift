@@ -92,6 +92,18 @@ public struct Config: Codable, Equatable {
     /// counts and CI status per repo. Requires `gh` CLI installed and
     /// authenticated; the scheduler stays inert otherwise.
     public var showGitHubStatus: Bool
+    /// When true, the GitHub status badge/hover panel also surfaces open
+    /// issues, alongside PR and CI signals. When false the scheduler
+    /// leaves issues out of its GraphQL query altogether; flipping it
+    /// back on triggers an immediate refresh.
+    public var showGitHubIssues: Bool
+    /// Issue label (case-insensitive, whitespace-trimmed) treated as
+    /// "not something to act on" — a matching issue is excluded from the
+    /// issue badge's count, the hover panel's sort priority, and the
+    /// "keep visible under hide-clean" check, though it still shows up
+    /// (sorted last) in the hover panel's issue list. Empty or
+    /// whitespace-only turns the feature off entirely.
+    public var gitHubIgnoredIssueLabel: String
     /// Absolute paths of repos for which the GitHub status badges are
     /// suppressed. Local git state still renders normally; only the
     /// PR/CI signals (and their menubar contribution) are hidden. Use
@@ -119,6 +131,8 @@ public struct Config: Codable, Equatable {
         menuBarLabelStyle: MenuBarLabelStyle = .total,
         fetchFromRemotes: Bool = false,
         showGitHubStatus: Bool = true,
+        showGitHubIssues: Bool = true,
+        gitHubIgnoredIssueLabel: String = "backlog",
         gitHubMutedRepos: [String] = [],
         globalShortcut: GlobalShortcut? = .defaultShortcut,
         dailyReminderEnabled: Bool = false,
@@ -131,6 +145,8 @@ public struct Config: Codable, Equatable {
         self.menuBarLabelStyle = menuBarLabelStyle
         self.fetchFromRemotes = fetchFromRemotes
         self.showGitHubStatus = showGitHubStatus
+        self.showGitHubIssues = showGitHubIssues
+        self.gitHubIgnoredIssueLabel = gitHubIgnoredIssueLabel
         self.gitHubMutedRepos = gitHubMutedRepos
         self.globalShortcut = globalShortcut
         self.dailyReminderEnabled = dailyReminderEnabled
@@ -153,6 +169,8 @@ public struct Config: Codable, Equatable {
         case menuBarLabelStyle
         case fetchFromRemotes
         case showGitHubStatus
+        case showGitHubIssues
+        case gitHubIgnoredIssueLabel
         case gitHubMutedRepos
         case globalShortcut
         case dailyReminderEnabled
@@ -168,6 +186,8 @@ public struct Config: Codable, Equatable {
         self.menuBarLabelStyle = try container.decodeIfPresent(MenuBarLabelStyle.self, forKey: .menuBarLabelStyle) ?? .total
         self.fetchFromRemotes = try container.decodeIfPresent(Bool.self, forKey: .fetchFromRemotes) ?? false
         self.showGitHubStatus = try container.decodeIfPresent(Bool.self, forKey: .showGitHubStatus) ?? true
+        self.showGitHubIssues = try container.decodeIfPresent(Bool.self, forKey: .showGitHubIssues) ?? true
+        self.gitHubIgnoredIssueLabel = try container.decodeIfPresent(String.self, forKey: .gitHubIgnoredIssueLabel) ?? "backlog"
         self.gitHubMutedRepos = try container.decodeIfPresent([String].self, forKey: .gitHubMutedRepos) ?? []
         // Absent key → default shortcut (new installs). Explicit null → no shortcut (user cleared it).
         if container.contains(.globalShortcut) {

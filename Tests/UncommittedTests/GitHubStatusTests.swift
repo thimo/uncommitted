@@ -9,6 +9,9 @@ enum GitHubStatusTests {
         registerPRClassifierTests()
         registerPRAttentionTests()
         registerSummariesFixtureTests()
+        registerIssueSummariesFixtureTests()
+        registerIssueSummaryIsIgnoredTests()
+        registerIssueCountTests()
         registerLegacyCacheTests()
         registerPRReasonLabelTests()
         registerPrimaryCloneTests()
@@ -399,12 +402,201 @@ enum GitHubStatusTests {
         }
     }
 
+    // MARK: - GitHubAPI.issueSummaries(from:viewer:) fixture
+
+    private static func registerIssueSummariesFixtureTests() {
+        test("GitHubAPI/issueSummaries_fromFixture") {
+            let json = """
+            {"data":{"viewer":{"login":"thimo"},"repository":{"pullRequests":{"nodes":[]},"issues":{"totalCount":3,"nodes":[
+             {"number":10,"title":"Crash on launch","url":"https://github.com/o/r/issues/10",
+              "updatedAt":"2026-08-25T05:39:31Z","author":{"login":"octocat","__typename":"User"},
+              "assignees":{"nodes":[{"login":"Thimo"}]}},
+             {"number":11,"title":"Feature request","url":"https://github.com/o/r/issues/11",
+              "updatedAt":"2026-08-24T00:00:00Z","author":{"login":"someoneelse","__typename":"User"},
+              "assignees":{"nodes":[]}},
+             {"number":12,"title":"Issue from a deleted account","url":"https://github.com/o/r/issues/12",
+              "updatedAt":"2026-08-23T00:00:00Z","author":null,
+              "assignees":{"nodes":[]}}
+            ]}}}}
+            """
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let response = try decoder.decode(GitHubAPI.PullRequestsResponse.self, from: Data(json.utf8))
+            let issues = GitHubAPI.issueSummaries(from: response, viewer: "thimo")
+            try expectEqual(issues.count, 3)
+
+            let byNumber = Dictionary(uniqueKeysWithValues: issues.map { ($0.number, $0) })
+
+            // Assignee login differs only in case from the viewer login —
+            // still counts as assigned to me.
+            try expectEqual(byNumber[10]?.isAssignedToMe, true)
+            try expectEqual(byNumber[11]?.isAssignedToMe, false)
+
+            // Deleted author decodes to an empty login, not assigned.
+            try expectEqual(byNumber[12]?.authorLogin, "")
+            try expectEqual(byNumber[12]?.isAssignedToMe, false)
+
+            try expectEqual(response.data.repository?.issues?.totalCount, 3)
+        }
+
+        test("GitHubAPI/issueSummaries_responseWithoutIssuesKey_returnsEmpty") {
+            // A response captured before issues were added to the query (or
+            // a fixture that only covers PRs) has no `issues` key at all —
+            // must decode and return an empty list rather than throwing.
+            let json = """
+            {"data":{"viewer":{"login":"thimo"},"repository":{"pullRequests":{"nodes":[]}}}}
+            """
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let response = try decoder.decode(GitHubAPI.PullRequestsResponse.self, from: Data(json.utf8))
+            try expect(response.data.repository?.issues == nil)
+            try expectEqual(GitHubAPI.issueSummaries(from: response, viewer: "thimo"), [])
+        }
+
+        test("GitHubAPI/issueSummaries_fromFixture_withLabels") {
+            let json = """
+            {"data":{"viewer":{"login":"thimo"},"repository":{"pullRequests":{"nodes":[]},"issues":{"totalCount":2,"nodes":[
+             {"number":20,"title":"Nice to have","url":"https://github.com/o/r/issues/20",
+              "updatedAt":"2026-08-25T00:00:00Z","author":{"login":"octocat","__typename":"User"},
+              "assignees":{"nodes":[]},"labels":{"nodes":[{"name":"Backlog"},{"name":"good first issue"}]}},
+             {"number":21,"title":"No labels here","url":"https://github.com/o/r/issues/21",
+              "updatedAt":"2026-08-24T00:00:00Z","author":{"login":"octocat","__typename":"User"},
+              "assignees":{"nodes":[]}}
+            ]}}}}
+            """
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let response = try decoder.decode(GitHubAPI.PullRequestsResponse.self, from: Data(json.utf8))
+            let issues = GitHubAPI.issueSummaries(from: response, viewer: "thimo")
+            let byNumber = Dictionary(uniqueKeysWithValues: issues.map { ($0.number, $0) })
+
+            try expectEqual(byNumber[20]?.labels, ["Backlog", "good first issue"])
+            // No `labels` key on this node at all — decodes to empty, not
+            // a thrown error (the connection itself is optional).
+            try expectEqual(byNumber[21]?.labels, [])
+        }
+    }
+
+    // MARK: - IssueSummary.isIgnored(label:)
+
+    private static func registerIssueSummaryIsIgnoredTests() {
+        test("IssueSummary/isIgnored_caseInsensitiveMatch") {
+            let issue = issue(number: 1, isAssignedToMe: false, labels: ["Backlog"])
+            try expect(issue.isIgnored(label: "backlog"))
+            try expect(issue.isIgnored(label: "BACKLOG"))
+            try expect(issue.isIgnored(label: "Backlog"))
+        }
+
+        test("IssueSummary/isIgnored_trimsWhitespace") {
+            let issue = issue(number: 1, isAssignedToMe: false, labels: ["backlog"])
+            try expect(issue.isIgnored(label: "  backlog  "))
+        }
+
+        test("IssueSummary/isIgnored_noMatchingLabel_isFalse") {
+            let issue = issue(number: 1, isAssignedToMe: false, labels: ["bug"])
+            try expect(!issue.isIgnored(label: "backlog"))
+        }
+
+        test("IssueSummary/isIgnored_emptyLabel_isAlwaysFalse") {
+            // Empty/whitespace-only label means the feature is off —
+            // nothing should ever match, even an issue that (oddly)
+            // carries an empty-string label itself.
+            let issue = issue(number: 1, isAssignedToMe: false, labels: [""])
+            try expect(!issue.isIgnored(label: ""))
+            try expect(!issue.isIgnored(label: "   "))
+        }
+    }
+
+    // MARK: - IssueCount
+
+    private static func registerIssueCountTests() {
+        test("IssueCount/derivedFromIssueList") {
+            let issues = [
+                issue(number: 1, isAssignedToMe: true),
+                issue(number: 2, isAssignedToMe: true),
+                issue(number: 3, isAssignedToMe: false),
+            ]
+            let count = IssueCount(issues: issues, totalOpen: 3, ignoringLabel: "")
+            try expectEqual(count.mine, 2)
+            try expectEqual(count.other, 1)
+            try expectEqual(count.ignored, 0)
+            try expectEqual(count.total, 3)
+        }
+
+        test("IssueCount/totalOpenExceedsListed_otherUsesTotal") {
+            // Only the 50 most recently updated issues are fetched — a
+            // repo with more open issues than that still needs an
+            // accurate "other" count, derived from the GraphQL total.
+            let issues = [issue(number: 1, isAssignedToMe: true)]
+            let count = IssueCount(issues: issues, totalOpen: 60, ignoringLabel: "")
+            try expectEqual(count.mine, 1)
+            try expectEqual(count.other, 59)
+        }
+
+        test("IssueCount/emptyIsEmpty") {
+            try expect(IssueCount(issues: [], totalOpen: 0, ignoringLabel: "").isEmpty)
+            try expect(!IssueCount(issues: [], totalOpen: 1, ignoringLabel: "").isEmpty)
+        }
+
+        test("IssueCount/ignoredLabel_excludesFromMineAndOther") {
+            let issues = [
+                issue(number: 1, isAssignedToMe: true, labels: ["backlog"]),
+                issue(number: 2, isAssignedToMe: true),
+                issue(number: 3, isAssignedToMe: false),
+            ]
+            let count = IssueCount(issues: issues, totalOpen: 3, ignoringLabel: "backlog")
+            // #1 is both assigned to me and labelled — ignored wins.
+            try expectEqual(count.mine, 1)
+            try expectEqual(count.other, 1)
+            try expectEqual(count.ignored, 1)
+            try expectEqual(count.total, 2)
+        }
+
+        test("IssueCount/onlyIgnoredIssues_isEmpty") {
+            // A repo whose only open issues are all ignored reads as
+            // "nothing to do" — no badge, all-clear allowed.
+            let issues = [
+                issue(number: 1, isAssignedToMe: true, labels: ["backlog"]),
+                issue(number: 2, isAssignedToMe: false, labels: ["Backlog"]),
+            ]
+            let count = IssueCount(issues: issues, totalOpen: 2, ignoringLabel: "backlog")
+            try expectEqual(count.mine, 0)
+            try expectEqual(count.other, 0)
+            try expectEqual(count.ignored, 2)
+            try expect(count.isEmpty)
+        }
+
+        test("IssueCount/ignoredLabel_totalOpenExceedsListed") {
+            // Ignored issues outside the 50 fetched still land in `other`
+            // — we can't know their labels, so they can't be excluded.
+            let issues = [issue(number: 1, isAssignedToMe: false, labels: ["backlog"])]
+            let count = IssueCount(issues: issues, totalOpen: 60, ignoringLabel: "backlog")
+            try expectEqual(count.mine, 0)
+            try expectEqual(count.ignored, 1)
+            try expectEqual(count.other, 59)
+        }
+    }
+
+    private static func issue(number: Int, isAssignedToMe: Bool, labels: [String] = []) -> IssueSummary {
+        IssueSummary(
+            number: number,
+            title: "Issue #\(number)",
+            url: "https://github.com/o/r/issues/\(number)",
+            authorLogin: "someone",
+            isAssignedToMe: isAssignedToMe,
+            updatedAt: Date(timeIntervalSince1970: Double(number)),
+            labels: labels
+        )
+    }
+
     // MARK: - GitHubRepoStatus legacy cache decoding
 
     private static func registerLegacyCacheTests() {
         test("GitHubRepoStatus/decodesLegacyCacheWithoutPrs") {
             // Old cache files carried `prCount: {humans, bots}` and no `prs`
-            // key. Decoding should ignore the stale key rather than fail.
+            // key. Decoding should ignore the stale key rather than fail —
+            // and the fields added for issues should default too, since
+            // this cache predates them entirely.
             let json = """
             {"prCount":{"humans":1,"bots":2},"ciStatus":"success","fetchedAt":"2026-08-25T00:00:00Z"}
             """
@@ -414,6 +606,24 @@ enum GitHubStatusTests {
             try expectEqual(status.prs, [])
             try expect(status.prCount.isEmpty)
             try expect(status.slug == nil)
+            try expectEqual(status.issues, [])
+            try expectEqual(status.openIssueCount, 0)
+            try expect(status.issueCount(ignoringLabel: "").isEmpty)
+        }
+
+        test("IssueSummary/decodesLegacyCacheWithoutLabels") {
+            // The on-disk github-status.json cache holds issues written
+            // before `labels` existed. A synthesized decoder would throw
+            // on the missing key; the custom decoder must default to [].
+            let json = """
+            {"number":1,"title":"t","url":"u","authorLogin":"x","isAssignedToMe":false,
+             "updatedAt":"2026-08-25T00:00:00Z"}
+            """
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let issue = try decoder.decode(IssueSummary.self, from: Data(json.utf8))
+            try expectEqual(issue.labels, [])
+            try expect(!issue.isIgnored(label: "backlog"))
         }
     }
 
@@ -438,14 +648,22 @@ enum GitHubStatusTests {
             try expectEqual(primary, [a, unknown])
         }
 
-        test("GitHubRepoStatus/withoutPRs_keepsCI") {
+        test("GitHubRepoStatus/withoutRemoteWideSignals_dropsPRsAndIssues_keepsCI") {
             let pr = PRSummary(
                 number: 1, title: "t", url: "u", authorLogin: "x", isBotAuthor: false,
                 isDraft: false, attention: .waiting(.notInvolved), updatedAt: Date()
             )
-            let status = GitHubRepoStatus(prs: [pr], ciStatus: .failure, failingCheckNames: ["lint"], slug: "org/el")
-            let stripped = status.withoutPRs
+            let issue = IssueSummary(
+                number: 2, title: "i", url: "u2", authorLogin: "y", isAssignedToMe: true, updatedAt: Date()
+            )
+            let status = GitHubRepoStatus(
+                prs: [pr], issues: [issue], ciStatus: .failure, failingCheckNames: ["lint"],
+                slug: "org/el", openIssueCount: 1
+            )
+            let stripped = status.withoutRemoteWideSignals
             try expectEqual(stripped.prs, [])
+            try expectEqual(stripped.issues, [])
+            try expectEqual(stripped.openIssueCount, 0)
             try expectEqual(stripped.ciStatus, .failure)
             try expectEqual(stripped.failingCheckNames, ["lint"])
             try expectEqual(stripped.slug, "org/el")

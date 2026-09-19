@@ -161,6 +161,50 @@ enum ConfigCodableTests {
             try expectEqual(PullStrategy.merge.rawValue, "merge")
         }
 
+        test("Config/showGitHubIssues_defaultsToTrue") {
+            try expect(Config().showGitHubIssues)
+        }
+
+        test("Config/showGitHubIssues_roundTrips") {
+            let original = Config(showGitHubIssues: false)
+            let data = try JSONEncoder().encode(original)
+            let decoded = try JSONDecoder().decode(Config.self, from: data)
+            try expect(!decoded.showGitHubIssues)
+        }
+
+        test("Config/legacyConfig_withoutShowGitHubIssues_defaultsToTrue") {
+            // A config saved before the field existed must still decode
+            // cleanly with the field defaulting to true, same as
+            // `showGitHubStatus` — new installs and pre-issues configs
+            // both get the feature on by default.
+            let json = """
+            { "sources": [], "actions": [] }
+            """.data(using: .utf8)!
+            let decoded = try JSONDecoder().decode(Config.self, from: json)
+            try expect(decoded.showGitHubIssues)
+        }
+
+        test("Config/gitHubIgnoredIssueLabel_defaultsToBacklog") {
+            try expectEqual(Config().gitHubIgnoredIssueLabel, "backlog")
+        }
+
+        test("Config/gitHubIgnoredIssueLabel_roundTrips") {
+            let original = Config(gitHubIgnoredIssueLabel: "someday")
+            let data = try JSONEncoder().encode(original)
+            let decoded = try JSONDecoder().decode(Config.self, from: data)
+            try expectEqual(decoded.gitHubIgnoredIssueLabel, "someday")
+        }
+
+        test("Config/legacyConfig_withoutGitHubIgnoredIssueLabel_defaultsToBacklog") {
+            // A config saved before the field existed must still decode
+            // cleanly, defaulting to "backlog" like a fresh install.
+            let json = """
+            { "sources": [], "actions": [] }
+            """.data(using: .utf8)!
+            let decoded = try JSONDecoder().decode(Config.self, from: json)
+            try expectEqual(decoded.gitHubIgnoredIssueLabel, "backlog")
+        }
+
         test("Config/menuBarLabelStyle_rawValuesAreStable") {
             // The raw values are what lands in config.json on disk — changing
             // them silently would orphan every existing user's setting.

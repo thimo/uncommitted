@@ -168,9 +168,134 @@ public struct PRCount: Equatable, Codable {
     }
 }
 
+/// One open issue, already classified against the viewer. `authorLogin` is
+/// "" for a deleted GitHub account (the API returns a null author).
+public struct IssueSummary: Equatable, Codable, Identifiable {
+    public var id: Int { number }
+    public let number: Int
+    public let title: String
+    public let url: String
+    public let authorLogin: String
+    /// Whether the viewer is among the issue's assignees, compared
+    /// case-insensitively — GitHub logins are case-insensitive but
+    /// GraphQL returns them as typed.
+    public let isAssignedToMe: Bool
+    public let updatedAt: Date
+    /// Label names attached to the issue, exactly as typed on GitHub.
+    /// Matched against `Config.gitHubIgnoredIssueLabel` at the point of
+    /// use (`isIgnored(label:)`) rather than baked into a stored flag —
+    /// ignoring is a display-time decision driven by config, not fetched
+    /// state.
+    public let labels: [String]
+
+    public init(
+        number: Int,
+        title: String,
+        url: String,
+        authorLogin: String,
+        isAssignedToMe: Bool,
+        updatedAt: Date,
+        labels: [String] = []
+    ) {
+        self.number = number
+        self.title = title
+        self.url = url
+        self.authorLogin = authorLogin
+        self.isAssignedToMe = isAssignedToMe
+        self.updatedAt = updatedAt
+        self.labels = labels
+    }
+
+    // Custom decoder, same philosophy as `GitHubRepoStatus`'s: the on-disk
+    // cache (`github-status.json`) already holds issues written before
+    // `labels` existed. A synthesized decoder throws on a missing key
+    // with no default, and the scheduler wraps its whole cache load in
+    // `try?` — one issue missing `labels` would silently discard every
+    // repo's cached GitHub status, not just this field.
+    enum CodingKeys: String, CodingKey {
+        case number, title, url, authorLogin, isAssignedToMe, updatedAt, labels
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.number = try c.decode(Int.self, forKey: .number)
+        self.title = try c.decode(String.self, forKey: .title)
+        self.url = try c.decode(String.self, forKey: .url)
+        self.authorLogin = try c.decode(String.self, forKey: .authorLogin)
+        self.isAssignedToMe = try c.decode(Bool.self, forKey: .isAssignedToMe)
+        self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        self.labels = try c.decodeIfPresent([String].self, forKey: .labels) ?? []
+    }
+
+    /// Whether this issue carries `label`, compared case-insensitively
+    /// after trimming whitespace off both sides. An empty (or
+    /// whitespace-only) label means the ignore feature is off, so
+    /// nothing ever matches — callers don't need a separate "is the
+    /// feature enabled" check.
+    public func isIgnored(label: String) -> Bool {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return labels.contains { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+    }
+}
+
+/// Open issue breakdown for one repo's badge: how many are assigned to
+/// the viewer, how many are just open, and how many are ignored via the
+/// configured label. Analogous to `PRCount`.
+public struct IssueCount: Equatable {
+    public let mine: Int
+    public let other: Int
+    /// Listed issues carrying the ignored label. Counted separately so a
+    /// repo whose only open issues are ignored still reads as "nothing
+    /// to do" — see `total`/`isEmpty`.
+    public let ignored: Int
+
+    /// Deliberately excludes `ignored`: a repo whose only open issues
+    /// carry the ignored label has no badge, is allowed the green
+    /// all-clear checkmark, and doesn't stay visible under "hide clean
+    /// repos" — same treatment as if those issues didn't exist.
+    public var total: Int { mine + other }
+    public var isEmpty: Bool { total == 0 }
+
+    public init(mine: Int, other: Int, ignored: Int = 0) {
+        self.mine = mine
+        self.other = other
+        self.ignored = ignored
+    }
+
+    /// Derives the badge counts from a repo's fetched issue list plus the
+    /// GraphQL total open count, filtering out anything matching
+    /// `ignoringLabel` (case-insensitive, trimmed; empty label turns the
+    /// filter off — see `IssueSummary.isIgnored(label:)`). Ignored wins
+    /// over assigned: an issue that's both assigned to the viewer and
+    /// carries the ignored label counts as ignored, not mine.
+    ///
+    /// `totalOpen` can exceed `issues.count` — we only ever fetch the 50
+    /// most recently updated issues — so `other` is computed against the
+    /// total rather than the listed count. Known limits: `mine` and
+    /// `ignored` only see those 50 fetched issues, so an assigned or
+    /// ignore-labelled issue that hasn't been touched in a while on a
+    /// repo with more open issues than that lands in `other` instead.
+    public init(issues: [IssueSummary], totalOpen: Int, ignoringLabel label: String) {
+        var mine = 0
+        var ignored = 0
+        for issue in issues {
+            if issue.isIgnored(label: label) {
+                ignored += 1
+            } else if issue.isAssignedToMe {
+                mine += 1
+            }
+        }
+        self.mine = mine
+        self.ignored = ignored
+        self.other = max(0, totalOpen - mine - ignored)
+    }
+}
+
 /// Aggregate GitHub state for a repo at a moment in time.
 public struct GitHubRepoStatus: Equatable, Codable {
     public var prs: [PRSummary]
+    public var issues: [IssueSummary]
     public var ciStatus: CIStatus
     /// Names of the check-runs whose conclusion put the aggregate into
     /// `.failure`. Useful for the detail popover so the user knows
@@ -185,25 +310,47 @@ public struct GitHubRepoStatus: Equatable, Codable {
     /// `git remote get-url` on the main thread — PR signals are shown on
     /// one clone per slug, not on every clone.
     public var slug: String?
+    /// Total open issues on the remote, from GraphQL's `totalCount` —
+    /// can exceed `issues.count` since only the 50 most recently updated
+    /// are fetched. Drives `issueCount.other` and the hover panel's
+    /// "+N more" line.
+    public var openIssueCount: Int
 
     /// Badge counts derived from `prs`. Drafts excluded.
     public var prCount: PRCount { PRCount(prs: prs) }
     public var hasOpenPRs: Bool { !prCount.isEmpty }
 
+    /// Badge counts derived from `issues` + `openIssueCount`, filtered
+    /// against the configured ignore label. Deliberately a function, not
+    /// a computed property like `prCount` — ignoring is config, not
+    /// fetched state, so every caller must supply the current label
+    /// rather than risk one call site forgetting to filter.
+    public func issueCount(ignoringLabel label: String) -> IssueCount {
+        IssueCount(issues: issues, totalOpen: openIssueCount, ignoringLabel: label)
+    }
+
+    public func hasOpenIssues(ignoringLabel label: String) -> Bool {
+        !issueCount(ignoringLabel: label).isEmpty
+    }
+
     public init(
         prs: [PRSummary] = [],
+        issues: [IssueSummary] = [],
         ciStatus: CIStatus = .none,
         failingCheckNames: [String] = [],
         ciTargetSHA: String? = nil,
         fetchedAt: Date = Date(),
-        slug: String? = nil
+        slug: String? = nil,
+        openIssueCount: Int = 0
     ) {
         self.prs = prs
+        self.issues = issues
         self.ciStatus = ciStatus
         self.failingCheckNames = failingCheckNames
         self.ciTargetSHA = ciTargetSHA
         self.fetchedAt = fetchedAt
         self.slug = slug
+        self.openIssueCount = openIssueCount
     }
 
     // Custom decoder so adding/renaming a field doesn't invalidate cache
@@ -212,25 +359,41 @@ public struct GitHubRepoStatus: Equatable, Codable {
     // `prCount: {humans, bots}` key; old cache files simply lose their
     // stale PR data for one refresh cycle instead of failing to decode.
     enum CodingKeys: String, CodingKey {
-        case prs, ciStatus, failingCheckNames, ciTargetSHA, fetchedAt, slug
+        case prs, issues, ciStatus, failingCheckNames, ciTargetSHA, fetchedAt, slug, openIssueCount
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.prs = try c.decodeIfPresent([PRSummary].self, forKey: .prs) ?? []
+        self.issues = try c.decodeIfPresent([IssueSummary].self, forKey: .issues) ?? []
         self.ciStatus = try c.decodeIfPresent(CIStatus.self, forKey: .ciStatus) ?? .none
         self.failingCheckNames = try c.decodeIfPresent([String].self, forKey: .failingCheckNames) ?? []
         self.ciTargetSHA = try c.decodeIfPresent(String.self, forKey: .ciTargetSHA)
         self.fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt) ?? Date()
         self.slug = try c.decodeIfPresent(String.self, forKey: .slug)
+        self.openIssueCount = try c.decodeIfPresent(Int.self, forKey: .openIssueCount) ?? 0
     }
 
-    /// Copy with PR data removed — what a non-primary clone of a remote
-    /// gets to display. CI stays, since that's per branch and each clone
-    /// may sit on a different one.
-    public var withoutPRs: GitHubRepoStatus {
-        var copy = self
+    /// Copy with remote-wide GitHub signals removed — what a non-primary
+    /// clone of a remote gets to display. PRs and issues both belong to
+    /// the remote, not the clone, so showing either on four clones of one
+    /// repo would just be the same signal four times over. CI stays,
+    /// since that's per branch and each clone may sit on a different one.
+    public var withoutRemoteWideSignals: GitHubRepoStatus {
+        var copy = withoutIssues
         copy.prs = []
+        return copy
+    }
+
+    /// Copy with issue data removed — hides issues from the UI while the
+    /// user has `showGitHubIssues` turned off. The scheduler stops
+    /// requesting them too, but the last fetched set lingers in
+    /// `statuses` (and the disk cache) until the next refresh overwrites
+    /// it, so the UI can't rely on the data simply being absent.
+    public var withoutIssues: GitHubRepoStatus {
+        var copy = self
+        copy.issues = []
+        copy.openIssueCount = 0
         return copy
     }
 }
@@ -571,14 +734,28 @@ public enum GHService {
         }
     }
 
-    /// Runs `gh api graphql -f query=<query> -F key=value ...` and decodes
+    /// Runs `gh api graphql -f query=<query> -f key=value ...` and decodes
     /// stdout into `T`. Unlike `api()`, does NOT convert snake_case — GraphQL
     /// field names are camelCase already — and uses ISO-8601 dates, since
     /// that's what GraphQL's `DateTime` scalar serializes to. Logs failures
     /// the same way `api()` does.
-    public static func graphql<T: Decodable>(query: String, variables: [String: String], as: T.Type) -> T? {
+    ///
+    /// String variables go through `-f` (raw), booleans through `-F`
+    /// (typed). `-F` on a string would coerce a repo named `2048` or
+    /// `true` into an Int/Bool and read `@…` as a file path — GraphQL
+    /// then rejects it for a `String!` variable.
+    public static func graphql<T: Decodable>(
+        query: String,
+        variables: [String: String],
+        boolVariables: [String: Bool] = [:],
+        as: T.Type
+    ) -> T? {
         var args = ["api", "graphql", "-f", "query=\(query)"]
         for (key, value) in variables {
+            args.append("-f")
+            args.append("\(key)=\(value)")
+        }
+        for (key, value) in boolVariables {
             args.append("-F")
             args.append("\(key)=\(value)")
         }
@@ -617,9 +794,10 @@ public enum GHService {
 public enum GitHubAPI {
     // MARK: - Pull requests (GraphQL)
 
-    /// Slim decode target for the `fetchPullRequests` GraphQL query —
-    /// only the fields `PRClassifier.Facts` needs. Nested to mirror the
-    /// query's own nesting so the two stay easy to compare by eye.
+    /// Slim decode target for the `fetchRepoSignals` GraphQL query —
+    /// only the fields `PRClassifier.Facts` (and the issue summaries)
+    /// need. Nested to mirror the query's own nesting so the two stay
+    /// easy to compare by eye.
     public struct PullRequestsResponse: Decodable {
         public let data: ResponseData
 
@@ -632,6 +810,11 @@ public enum GitHubAPI {
         }
         public struct Repository: Decodable {
             public let pullRequests: PullRequestConnection
+            /// Optional so a fixture or cached response captured before
+            /// issues were fetched still decodes — synthesized
+            /// `Decodable` treats a missing or null key on an `Optional`
+            /// property as `nil` rather than throwing.
+            public let issues: IssueConnection?
         }
         public struct PullRequestConnection: Decodable {
             public let nodes: [PullRequestNode]
@@ -687,10 +870,40 @@ public enum GitHubAPI {
         public struct StatusCheckRollup: Decodable {
             public let state: String
         }
+        public struct IssueConnection: Decodable {
+            /// GraphQL total, not just what `nodes` carries — the query
+            /// only fetches the 50 most recently updated issues.
+            public let totalCount: Int
+            public let nodes: [IssueNode]
+        }
+        public struct IssueNode: Decodable {
+            public let number: Int
+            public let title: String
+            public let url: String
+            public let updatedAt: Date
+            public let author: Author?
+            public let assignees: AssigneeConnection
+            /// Optional for the same reason `Repository.issues` is — an
+            /// older fixture or cached response predating labels still
+            /// decodes, with an empty label list.
+            public let labels: LabelConnection?
+        }
+        public struct AssigneeConnection: Decodable {
+            public let nodes: [Assignee]
+        }
+        public struct Assignee: Decodable {
+            public let login: String
+        }
+        public struct LabelConnection: Decodable {
+            public let nodes: [LabelNode]
+        }
+        public struct LabelNode: Decodable {
+            public let name: String
+        }
     }
 
     private static let pullRequestsQuery = """
-    query($owner:String!,$name:String!){
+    query($owner:String!,$name:String!,$includeIssues:Boolean!){
       viewer { login }
       repository(owner:$owner,name:$name){
         pullRequests(states:OPEN, first:100, orderBy:{field:UPDATED_AT,direction:DESC}){
@@ -703,12 +916,21 @@ public enum GitHubAPI {
             commits(last:1){ nodes { commit { committedDate statusCheckRollup { state } } } }
           }
         }
+        issues(states:OPEN, first:50, orderBy:{field:UPDATED_AT,direction:DESC}) @include(if:$includeIssues){
+          totalCount
+          nodes {
+            number title url updatedAt
+            author { login __typename }
+            assignees(first:10){ nodes { login } }
+            labels(first:20){ nodes { name } }
+          }
+        }
       }
     }
     """
 
     /// Pure transform from the raw GraphQL response to classified,
-    /// display-ready summaries. Split out from `fetchPullRequests` so
+    /// display-ready summaries. Split out from `fetchRepoSignals` so
     /// tests can feed fixture JSON without shelling out to `gh`.
     public static func summaries(from response: PullRequestsResponse, viewer: String) -> [PRSummary] {
         guard let nodes = response.data.repository?.pullRequests.nodes else { return [] }
@@ -760,18 +982,65 @@ public enum GitHubAPI {
         }
     }
 
-    /// Fetches every open PR for a repo, classified against the
-    /// authenticated `gh` user. `first:100` covers any realistic repo in
-    /// one call; returns nil on any failure (auth, decode, network) or
-    /// when `repository` comes back null (no access to the repo).
-    public static func fetchPullRequests(for remote: GitHubRemote) -> [PRSummary]? {
+    /// Pure transform from the raw GraphQL response to classified issue
+    /// summaries. Split out like `summaries(from:viewer:)` so tests can
+    /// feed fixture JSON without shelling out to `gh`.
+    public static func issueSummaries(from response: PullRequestsResponse, viewer: String) -> [IssueSummary] {
+        guard let nodes = response.data.repository?.issues?.nodes else { return [] }
+        let viewerLC = viewer.lowercased()
+
+        return nodes.map { node in
+            let authorLogin = node.author?.login ?? ""
+            let isAssignedToMe = node.assignees.nodes.contains { $0.login.lowercased() == viewerLC }
+            let labels = node.labels?.nodes.map(\.name) ?? []
+            return IssueSummary(
+                number: node.number,
+                title: node.title,
+                url: node.url,
+                authorLogin: authorLogin,
+                isAssignedToMe: isAssignedToMe,
+                updatedAt: node.updatedAt,
+                labels: labels
+            )
+        }
+    }
+
+    /// PRs and issues fetched together from one GraphQL call, so the
+    /// scheduler can apply both without a second network round trip.
+    public struct RepoSignals {
+        public let prs: [PRSummary]
+        public let issues: [IssueSummary]
+        public let openIssueCount: Int
+    }
+
+    /// Fetches every open PR and issue for a repo, classified against the
+    /// authenticated `gh` user. `first:100`/`first:50` cover any realistic
+    /// repo in one call; returns nil on any failure (auth, decode,
+    /// network) or when `repository` comes back null (no access to the
+    /// repo).
+    ///
+    /// `includeIssues: false` drops the issues connection from the query
+    /// via `@include` — no wasted payload for a user who turned issues
+    /// off, and an escape hatch when a token can read PRs but not issues
+    /// (an error on `issues` would otherwise take the PR data down with
+    /// it, since both ride one call).
+    public static func fetchRepoSignals(for remote: GitHubRemote, includeIssues: Bool = true) -> RepoSignals? {
         let variables = ["owner": remote.owner, "name": remote.repo]
-        guard let response = GHService.graphql(query: pullRequestsQuery, variables: variables, as: PullRequestsResponse.self),
+        guard let response = GHService.graphql(
+                  query: pullRequestsQuery,
+                  variables: variables,
+                  boolVariables: ["includeIssues": includeIssues],
+                  as: PullRequestsResponse.self
+              ),
               response.data.repository != nil else {
             return nil
         }
         let viewer = response.data.viewer?.login ?? ""
-        return summaries(from: response, viewer: viewer)
+        return RepoSignals(
+            prs: summaries(from: response, viewer: viewer),
+            issues: issueSummaries(from: response, viewer: viewer),
+            openIssueCount: response.data.repository?.issues?.totalCount ?? 0
+        )
     }
 
     /// Bot heuristic. Public so tests can exercise the patterns directly.

@@ -108,22 +108,31 @@ cleanup?" without leaving the menu bar.
 |---|---|
 | ⚠️ | CI failed on the latest push to your current branch |
 | 🕐 | CI is running on the latest push |
-| `⤴ 4 / 2` | 4 human-authored open PRs · 2 by bots (the bot tail is muted) |
+| `⤴ 2 / 3` | 2 open PRs need you · 3 more are just open (the tail is muted) |
+| `⊙ 2 / 5` | 2 open issues assigned to you · 5 other open issues (the tail is muted) |
 
 Green CI is invisible by design — the menu bar is for things that need
 attention, not confirmation. The branch icon in the menu bar itself
 turns **red** whenever any tracked repo has failing CI, so a single
 glance tells you "is anything broken?" without opening the popover.
 
-Click the PR pill to open the GitHub PR list; click the red/yellow CI
-badge to open the Actions page filtered to that branch.
+Click the PR pill to open the GitHub PR list; click the issue pill to
+open the GitHub issues list; click the red/yellow CI badge to open the
+Actions page filtered to that branch. The issues badge can be turned off
+separately from the rest of GitHub status in Settings → Remote → GitHub,
+for anyone who tracks PRs and CI but doesn't want the issue tracker
+in their menu bar. A configurable label (default `backlog`, editable in
+that same section) marks issues as not worth counting — they drop off
+the badge and stop keeping a repo visible, though they still show up
+(sorted last) in the hover panel; clear the field to go back to counting
+every open issue.
 
 GitHub access uses the [`gh` CLI][gh] — install with `brew install gh`,
 then run `gh auth login`. The scheduler refreshes active repos every 15
 minutes, idle repos once a day, and eagerly on every popover open.
 Multi-clone repos share API calls automatically.
 
-Toggle the feature in Settings → General → GitHub. Full details:
+Toggle the feature in Settings → Remote → GitHub. Full details:
 [docs/github-integration.md](docs/github-integration.md).
 
 **Muting a single repo.** For a repo you track but don't own — a fork,
@@ -133,7 +142,7 @@ status**. That hides the PR pill and CI badges for that repo and keeps
 its red CI out of the menu bar icon. Everything git-side stays exactly
 as it was: uncommitted files, unpushed commits, the behind count, the
 pull and push buttons, and auto-fetch. Muted repos are listed in
-Settings → General under "Muted repositories", where you can unmute
+Settings → Remote under "Muted repositories", where you can unmute
 them again.
 
 [gh]: https://cli.github.com
@@ -142,7 +151,7 @@ them again.
 
 By default Uncommitted only reads what's already on disk — the unpulled
 count reflects whatever was last fetched manually. Turn on **Auto-fetch
-from remotes** in Settings → General to have Uncommitted run `git fetch`
+from remotes** in Settings → Remote to have Uncommitted run `git fetch`
 in the background on a tiered cadence:
 
 - Repos with activity in the last week: every **24 hours**

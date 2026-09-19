@@ -92,6 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if configStore.config.gitHubMutedRepos.contains(key) { return nil }
             return githubScheduler?.status(for: url)
         }
+        self.hoverDetail.ignoredIssueLabelLookup = { [weak configStore] in
+            configStore?.config.gitHubIgnoredIssueLabel ?? ""
+        }
         self.reminderScheduler = ReminderScheduler(
             configStore: configStore,
             repoStore: repoStore
