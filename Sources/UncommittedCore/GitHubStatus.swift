@@ -180,6 +180,10 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
     /// case-insensitively — GitHub logins are case-insensitive but
     /// GraphQL returns them as typed.
     public let isAssignedToMe: Bool
+    /// Whether the viewer opened the issue (same case-insensitive
+    /// compare). Lets the hover panel drop the "@author" caption when
+    /// it would only tell the viewer their own name.
+    public let isAuthoredByMe: Bool
     public let updatedAt: Date
     /// Label names attached to the issue, exactly as typed on GitHub.
     /// Matched against `Config.gitHubIgnoredIssueLabel` at the point of
@@ -194,6 +198,7 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
         url: String,
         authorLogin: String,
         isAssignedToMe: Bool,
+        isAuthoredByMe: Bool = false,
         updatedAt: Date,
         labels: [String] = []
     ) {
@@ -202,6 +207,7 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
         self.url = url
         self.authorLogin = authorLogin
         self.isAssignedToMe = isAssignedToMe
+        self.isAuthoredByMe = isAuthoredByMe
         self.updatedAt = updatedAt
         self.labels = labels
     }
@@ -213,7 +219,7 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
     // `try?` — one issue missing `labels` would silently discard every
     // repo's cached GitHub status, not just this field.
     enum CodingKeys: String, CodingKey {
-        case number, title, url, authorLogin, isAssignedToMe, updatedAt, labels
+        case number, title, url, authorLogin, isAssignedToMe, isAuthoredByMe, updatedAt, labels
     }
 
     public init(from decoder: Decoder) throws {
@@ -223,6 +229,7 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
         self.url = try c.decode(String.self, forKey: .url)
         self.authorLogin = try c.decode(String.self, forKey: .authorLogin)
         self.isAssignedToMe = try c.decode(Bool.self, forKey: .isAssignedToMe)
+        self.isAuthoredByMe = try c.decodeIfPresent(Bool.self, forKey: .isAuthoredByMe) ?? false
         self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
         self.labels = try c.decodeIfPresent([String].self, forKey: .labels) ?? []
     }
@@ -999,6 +1006,7 @@ public enum GitHubAPI {
                 url: node.url,
                 authorLogin: authorLogin,
                 isAssignedToMe: isAssignedToMe,
+                isAuthoredByMe: !viewerLC.isEmpty && authorLogin.lowercased() == viewerLC,
                 updatedAt: node.updatedAt,
                 labels: labels
             )

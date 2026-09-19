@@ -436,6 +436,14 @@ enum GitHubStatusTests {
             try expectEqual(byNumber[12]?.authorLogin, "")
             try expectEqual(byNumber[12]?.isAssignedToMe, false)
 
+            // Authored-by-me: case-insensitive like the assignee match,
+            // and a deleted author never matches — not even an empty viewer.
+            let mine = GitHubAPI.issueSummaries(from: response, viewer: "OctoCat")
+            try expectEqual(mine.first { $0.number == 10 }?.isAuthoredByMe, true)
+            try expectEqual(byNumber[10]?.isAuthoredByMe, false)
+            let noViewer = GitHubAPI.issueSummaries(from: response, viewer: "")
+            try expectEqual(noViewer.first { $0.number == 12 }?.isAuthoredByMe, false)
+
             try expectEqual(response.data.repository?.issues?.totalCount, 3)
         }
 

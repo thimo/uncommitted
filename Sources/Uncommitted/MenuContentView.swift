@@ -1894,9 +1894,10 @@ private struct IssueRow: View {
     /// "@author · assigned to you" / "@author · <label>" for an ignored
     /// issue (the label exactly as typed in Settings, not as GitHub
     /// happens to capitalize it) / just the author otherwise — collapsing
-    /// to one half when the author is empty (deleted account).
+    /// to one half when the author is empty (deleted account) or is the
+    /// viewer, whose own login on every row of a solo repo is just noise.
     private var trailingText: String {
-        let author = issue.authorLogin.isEmpty ? "" : "@\(issue.authorLogin)"
+        let author = issue.authorLogin.isEmpty || issue.isAuthoredByMe ? "" : "@\(issue.authorLogin)"
         if isIgnored {
             let label = ignoredIssueLabel.trimmingCharacters(in: .whitespacesAndNewlines)
             return author.isEmpty ? label : "\(author) · \(label)"
