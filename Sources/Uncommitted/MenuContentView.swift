@@ -171,7 +171,7 @@ struct MenuContentView: View {
             if gh.hasOpenPRs { return true }
             // Open issues count the same way — but never issues carrying
             // the ignored label (a repo whose only open issues are
-            // "backlog" reads as clean, same as the badge). With issues
+            // "someday" reads as clean, same as the badge). With issues
             // turned off, `status(for:)` has already dropped them.
             return gh.hasOpenIssues(ignoringLabel: configStore.config.gitHubIgnoredIssueLabel)
         }
@@ -1763,7 +1763,7 @@ private struct PullRequestRow: View {
 }
 
 /// "Issues" block in the detail panel: every open issue we fetched (up to
-/// 50), sorted so anything assigned to the viewer floats to the top.
+/// 50), sorted so anything that needs the viewer floats to the top.
 /// Capped at `rowLimit` with a "+N more" row — computed from
 /// `openIssueCount` (the GraphQL total) rather than the fetched array, so
 /// the count stays accurate for a repo with more than 50 open issues.
@@ -1778,7 +1778,8 @@ private struct IssuesSection: View {
 
     private static let rowLimit = 8
 
-    /// Assigned-to-me first, then everything else, ignored last —
+    /// Assigned-to-me first, then unclaimed, then somebody else's,
+    /// ignored last —
     /// ignored issues stay listed (right-click "why is this here" should
     /// always have an answer) but sink below issues that actually need a
     /// look. `updatedAt` desc breaks ties within each group.
@@ -1792,8 +1793,9 @@ private struct IssuesSection: View {
     }
 
     private func sortRank(_ issue: IssueSummary) -> Int {
-        if issue.isIgnored(label: ignoredIssueLabel) { return 2 }
-        return issue.isAssignedToMe ? 0 : 1
+        if issue.isIgnored(label: ignoredIssueLabel) { return 3 }
+        if issue.isAssignedToMe { return 0 }
+        return issue.isUnclaimed ? 1 : 2
     }
 
     private var remainingCount: Int {
@@ -1851,7 +1853,7 @@ private struct IssueRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(issue.title)
                         .font(.callout)
-                        .foregroundStyle(issue.isAssignedToMe && !isIgnored ? .primary : .secondary)
+                        .foregroundStyle(issue.needsMe && !isIgnored ? .primary : .secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if !trailingText.isEmpty {
@@ -1878,6 +1880,9 @@ private struct IssueRow: View {
 
     /// Hollow dot for an ignored issue — same look as a draft PR's dot in
     /// `PullRequestRow`: neither "needs you" nor "waiting", just parked.
+    ///
+    /// Otherwise filled: pink when it needs the viewer (assigned to
+    /// them, or unclaimed), grey when it's somebody else's.
     @ViewBuilder
     private var dot: some View {
         if isIgnored {
@@ -1887,7 +1892,7 @@ private struct IssueRow: View {
         } else {
             Image(systemName: "circle.fill")
                 .font(.system(size: 8))
-                .foregroundStyle(issue.isAssignedToMe ? .green : .secondary)
+                .foregroundStyle(issue.needsMe ? .pink : .secondary)
         }
     }
 
@@ -1896,6 +1901,8 @@ private struct IssueRow: View {
     /// happens to capitalize it) / just the author otherwise — collapsing
     /// to one half when the author is empty (deleted account) or is the
     /// viewer, whose own login on every row of a solo repo is just noise.
+    /// Unclaimed gets no caption for the same reason: it'd be
+    /// "unassigned" on every single row, and the dot already says it.
     private var trailingText: String {
         let author = issue.authorLogin.isEmpty || issue.isAuthoredByMe ? "" : "@\(issue.authorLogin)"
         if isIgnored {
@@ -2212,9 +2219,10 @@ private struct PRBadge: View {
 }
 
 /// Compact issue pill, modeled 1:1 on `PRBadge`: `⊙ 2 / 3` where `2` is
-/// issues assigned to the viewer (green) and `/ 3` is everything else
-/// still open, in a muted green tail. When nothing is assigned to the
-/// viewer the whole pill turns `.secondary` — same single-`primary` flip
+/// issues that need the viewer (pink) — assigned to them, or assigned
+/// to nobody on a repo they maintain — and `/ 3` is somebody else's, in
+/// a muted pink tail. When nothing needs the viewer the whole pill
+/// turns `.secondary` — same single-`primary` flip
 /// as `PRBadge`, so it reads as background noise rather than a call to
 /// action, while still showing the open count so the repo doesn't look
 /// issue-free.
@@ -2230,7 +2238,11 @@ private struct IssueBadge: View {
 
     var body: some View {
         let needsMe = count.mine > 0
-        let primary: Color = needsMe ? .green : .secondary
+        // Pink: the one system colour with no near neighbour in the row.
+        // Green collided with the untracked ★ and the all-clear
+        // checkmark, and indigo was barely distinguishable from the blue
+        // push pill sitting right next to it.
+        let primary: Color = needsMe ? .pink : .secondary
         Button(action: action) {
             HStack(spacing: 3) {
                 Image(systemName: "smallcircle.filled.circle")
@@ -2267,11 +2279,11 @@ private struct IssueBadge: View {
         let o = count.other
         let base: String
         if m > 0 && o > 0 {
-            base = "\(m) assigned to you · \(o) other open"
+            base = "\(m) need\(m == 1 ? "s" : "") you · \(o) someone else's"
         } else if m > 0 {
-            base = "\(m) assigned to you"
+            base = "\(m) need\(m == 1 ? "s" : "") you"
         } else {
-            base = "\(o) open, none assigned to you"
+            base = "\(o) open, none need you"
         }
         guard count.ignored > 0 else { return base }
         let label = ignoredIssueLabel.trimmingCharacters(in: .whitespacesAndNewlines)

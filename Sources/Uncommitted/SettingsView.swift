@@ -278,7 +278,7 @@ struct RemoteSettingsView: View {
                 TextField(
                     "Ignore issues labelled",
                     text: $ignoredLabelDraft,
-                    prompt: Text("backlog")
+                    prompt: Text("none")
                 )
                 .focused($ignoredLabelFocused)
                 .onSubmit(commitIgnoredLabel)

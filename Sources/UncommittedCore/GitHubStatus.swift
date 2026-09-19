@@ -180,6 +180,15 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
     /// case-insensitively — GitHub logins are case-insensitive but
     /// GraphQL returns them as typed.
     public let isAssignedToMe: Bool
+    /// Nobody is assigned, on a live repo the viewer runs (admin or
+    /// maintainer — see `GitHubAPI.viewerCanAct`). Nobody else is going
+    /// to pick it up, so it counts as the viewer's. Always false
+    /// elsewhere — 900 unassigned issues on someone else's project
+    /// aren't the viewer's job.
+    public let isUnclaimed: Bool
+    /// Pink in the UI; everything else (assigned to somebody else, or
+    /// open on a repo the viewer doesn't maintain) is grey.
+    public var needsMe: Bool { isAssignedToMe || isUnclaimed }
     /// Whether the viewer opened the issue (same case-insensitive
     /// compare). Lets the hover panel drop the "@author" caption when
     /// it would only tell the viewer their own name.
@@ -198,6 +207,7 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
         url: String,
         authorLogin: String,
         isAssignedToMe: Bool,
+        isUnclaimed: Bool = false,
         isAuthoredByMe: Bool = false,
         updatedAt: Date,
         labels: [String] = []
@@ -207,6 +217,7 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
         self.url = url
         self.authorLogin = authorLogin
         self.isAssignedToMe = isAssignedToMe
+        self.isUnclaimed = isUnclaimed
         self.isAuthoredByMe = isAuthoredByMe
         self.updatedAt = updatedAt
         self.labels = labels
@@ -219,7 +230,7 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
     // `try?` — one issue missing `labels` would silently discard every
     // repo's cached GitHub status, not just this field.
     enum CodingKeys: String, CodingKey {
-        case number, title, url, authorLogin, isAssignedToMe, isAuthoredByMe, updatedAt, labels
+        case number, title, url, authorLogin, isAssignedToMe, isUnclaimed, isAuthoredByMe, updatedAt, labels
     }
 
     public init(from decoder: Decoder) throws {
@@ -229,6 +240,7 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
         self.url = try c.decode(String.self, forKey: .url)
         self.authorLogin = try c.decode(String.self, forKey: .authorLogin)
         self.isAssignedToMe = try c.decode(Bool.self, forKey: .isAssignedToMe)
+        self.isUnclaimed = try c.decodeIfPresent(Bool.self, forKey: .isUnclaimed) ?? false
         self.isAuthoredByMe = try c.decodeIfPresent(Bool.self, forKey: .isAuthoredByMe) ?? false
         self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
         self.labels = try c.decodeIfPresent([String].self, forKey: .labels) ?? []
@@ -246,9 +258,10 @@ public struct IssueSummary: Equatable, Codable, Identifiable {
     }
 }
 
-/// Open issue breakdown for one repo's badge: how many are assigned to
-/// the viewer, how many are just open, and how many are ignored via the
-/// configured label. Analogous to `PRCount`.
+/// Open issue breakdown for one repo's badge: how many need the viewer
+/// (assigned to them, or unclaimed on a repo they maintain), how many
+/// are somebody else's, and how many are ignored via the configured
+/// label. Analogous to `PRCount`.
 public struct IssueCount: Equatable {
     public let mine: Int
     public let other: Int
@@ -274,28 +287,63 @@ public struct IssueCount: Equatable {
     /// GraphQL total open count, filtering out anything matching
     /// `ignoringLabel` (case-insensitive, trimmed; empty label turns the
     /// filter off — see `IssueSummary.isIgnored(label:)`). Ignored wins
-    /// over assigned: an issue that's both assigned to the viewer and
-    /// carries the ignored label counts as ignored, not mine.
+    /// over everything: an issue that's assigned to the viewer (or
+    /// unclaimed) and carries the ignored label counts as ignored.
     ///
-    /// `totalOpen` can exceed `issues.count` — we only ever fetch the 50
-    /// most recently updated issues — so `other` is computed against the
-    /// total rather than the listed count. Known limits: `mine` and
-    /// `ignored` only see those 50 fetched issues, so an assigned or
-    /// ignore-labelled issue that hasn't been touched in a while on a
-    /// repo with more open issues than that lands in `other` instead.
-    public init(issues: [IssueSummary], totalOpen: Int, ignoringLabel label: String) {
-        var mine = 0
-        var ignored = 0
+    /// `totalOpen`, `unclaimedOpen` and `exactIgnored` are GraphQL totals
+    /// and can exceed what `issues` shows — we only ever list the 50 most
+    /// recently updated issues, and parked issues are exactly the ones
+    /// nobody touches, so on a big repo most of them fall outside that
+    /// window. The listed rows act as a floor under each total, so a
+    /// caller without totals (or a cache from before they existed) still
+    /// gets counts that agree with the rows on screen. Known limit:
+    /// "assigned to me" only sees the listed 50.
+    public init(
+        issues: [IssueSummary],
+        totalOpen: Int,
+        unclaimedOpen: Int = 0,
+        exactIgnored: ExactIgnoredIssueCounts? = nil,
+        ignoringLabel label: String
+    ) {
+        var assignedToMe = 0
+        var unclaimedListed = 0
+        var ignoredListed = 0
+        var ignoredUnclaimedListed = 0
         for issue in issues {
             if issue.isIgnored(label: label) {
-                ignored += 1
+                ignoredListed += 1
+                if issue.isUnclaimed { ignoredUnclaimedListed += 1 }
             } else if issue.isAssignedToMe {
-                mine += 1
+                assignedToMe += 1
+            } else if issue.isUnclaimed {
+                unclaimedListed += 1
             }
         }
+        let ignored = max(ignoredListed, exactIgnored?.total ?? 0)
+        let ignoredUnclaimed = max(ignoredUnclaimedListed, exactIgnored?.unclaimed ?? 0)
+        let mine = assignedToMe + max(unclaimedListed, unclaimedOpen - ignoredUnclaimed)
         self.mine = mine
         self.ignored = ignored
         self.other = max(0, totalOpen - mine - ignored)
+    }
+}
+
+/// Exact GraphQL counts of open issues carrying the ignored label, plus
+/// the label they were counted for. Ignoring is otherwise a display-time
+/// decision, but these come from the server, so they're only valid while
+/// the configured label still matches — `GitHubRepoStatus` checks that
+/// and falls back to the listed rows until the next refresh.
+public struct ExactIgnoredIssueCounts: Equatable, Codable {
+    public let label: String
+    public let total: Int
+    /// Of those, the ones nobody is assigned to on a repo the viewer can
+    /// act on — what has to come off `unclaimedIssueCount`.
+    public let unclaimed: Int
+
+    public init(label: String, total: Int, unclaimed: Int) {
+        self.label = label
+        self.total = total
+        self.unclaimed = unclaimed
     }
 }
 
@@ -322,6 +370,13 @@ public struct GitHubRepoStatus: Equatable, Codable {
     /// are fetched. Drives `issueCount.other` and the hover panel's
     /// "+N more" line.
     public var openIssueCount: Int
+    /// How many of those nobody is assigned to — exact, from its own
+    /// GraphQL count — on a repo the viewer can act on. 0 on a repo the
+    /// viewer only reads; see `IssueSummary.isUnclaimed`.
+    public var unclaimedIssueCount: Int
+    /// Server-side counts for the ignored label; nil when no label was
+    /// configured at fetch time (or the cache predates this).
+    public var exactIgnoredIssues: ExactIgnoredIssueCounts?
 
     /// Badge counts derived from `prs`. Drafts excluded.
     public var prCount: PRCount { PRCount(prs: prs) }
@@ -333,7 +388,19 @@ public struct GitHubRepoStatus: Equatable, Codable {
     /// fetched state, so every caller must supply the current label
     /// rather than risk one call site forgetting to filter.
     public func issueCount(ignoringLabel label: String) -> IssueCount {
-        IssueCount(issues: issues, totalOpen: openIssueCount, ignoringLabel: label)
+        // The exact counts belong to the label they were fetched for —
+        // right after the user edits it, only the listed rows are valid.
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let exact = exactIgnoredIssues.flatMap {
+            $0.label.caseInsensitiveCompare(trimmed) == .orderedSame ? $0 : nil
+        }
+        return IssueCount(
+            issues: issues,
+            totalOpen: openIssueCount,
+            unclaimedOpen: unclaimedIssueCount,
+            exactIgnored: exact,
+            ignoringLabel: label
+        )
     }
 
     public func hasOpenIssues(ignoringLabel label: String) -> Bool {
@@ -348,7 +415,9 @@ public struct GitHubRepoStatus: Equatable, Codable {
         ciTargetSHA: String? = nil,
         fetchedAt: Date = Date(),
         slug: String? = nil,
-        openIssueCount: Int = 0
+        openIssueCount: Int = 0,
+        unclaimedIssueCount: Int = 0,
+        exactIgnoredIssues: ExactIgnoredIssueCounts? = nil
     ) {
         self.prs = prs
         self.issues = issues
@@ -358,6 +427,8 @@ public struct GitHubRepoStatus: Equatable, Codable {
         self.fetchedAt = fetchedAt
         self.slug = slug
         self.openIssueCount = openIssueCount
+        self.unclaimedIssueCount = unclaimedIssueCount
+        self.exactIgnoredIssues = exactIgnoredIssues
     }
 
     // Custom decoder so adding/renaming a field doesn't invalidate cache
@@ -366,7 +437,8 @@ public struct GitHubRepoStatus: Equatable, Codable {
     // `prCount: {humans, bots}` key; old cache files simply lose their
     // stale PR data for one refresh cycle instead of failing to decode.
     enum CodingKeys: String, CodingKey {
-        case prs, issues, ciStatus, failingCheckNames, ciTargetSHA, fetchedAt, slug, openIssueCount
+        case prs, issues, ciStatus, failingCheckNames, ciTargetSHA, fetchedAt, slug
+        case openIssueCount, unclaimedIssueCount, exactIgnoredIssues
     }
 
     public init(from decoder: Decoder) throws {
@@ -379,6 +451,8 @@ public struct GitHubRepoStatus: Equatable, Codable {
         self.fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt) ?? Date()
         self.slug = try c.decodeIfPresent(String.self, forKey: .slug)
         self.openIssueCount = try c.decodeIfPresent(Int.self, forKey: .openIssueCount) ?? 0
+        self.unclaimedIssueCount = try c.decodeIfPresent(Int.self, forKey: .unclaimedIssueCount) ?? 0
+        self.exactIgnoredIssues = try c.decodeIfPresent(ExactIgnoredIssueCounts.self, forKey: .exactIgnoredIssues)
     }
 
     /// Copy with remote-wide GitHub signals removed — what a non-primary
@@ -401,6 +475,8 @@ public struct GitHubRepoStatus: Equatable, Codable {
         var copy = self
         copy.issues = []
         copy.openIssueCount = 0
+        copy.unclaimedIssueCount = 0
+        copy.exactIgnoredIssues = nil
         return copy
     }
 }
@@ -822,6 +898,20 @@ public enum GitHubAPI {
             /// `Decodable` treats a missing or null key on an `Optional`
             /// property as `nil` rather than throwing.
             public let issues: IssueConnection?
+            /// ADMIN | MAINTAIN | WRITE | TRIAGE | READ | nil
+            public let viewerPermission: String?
+            /// Exact count of open issues with no assignee — its own
+            /// connection because the listed 50 can't say how many more
+            /// there are.
+            public let unassignedIssues: CountOnly?
+            public let isArchived: Bool?
+            /// Open issues carrying the configured ignored label, and the
+            /// unassigned ones among them. Absent when no label is set.
+            public let ignoredIssues: CountOnly?
+            public let ignoredUnassignedIssues: CountOnly?
+        }
+        public struct CountOnly: Decodable {
+            public let totalCount: Int
         }
         public struct PullRequestConnection: Decodable {
             public let nodes: [PullRequestNode]
@@ -910,7 +1000,7 @@ public enum GitHubAPI {
     }
 
     private static let pullRequestsQuery = """
-    query($owner:String!,$name:String!,$includeIssues:Boolean!){
+    query($owner:String!,$name:String!,$includeIssues:Boolean!,$ignoredLabel:String!,$countIgnored:Boolean!){
       viewer { login }
       repository(owner:$owner,name:$name){
         pullRequests(states:OPEN, first:100, orderBy:{field:UPDATED_AT,direction:DESC}){
@@ -932,6 +1022,11 @@ public enum GitHubAPI {
             labels(first:20){ nodes { name } }
           }
         }
+        viewerPermission
+        isArchived
+        unassignedIssues: issues(states:OPEN, filterBy:{assignee:null}) @include(if:$includeIssues){ totalCount }
+        ignoredIssues: issues(states:OPEN, filterBy:{labels:[$ignoredLabel]}) @include(if:$countIgnored){ totalCount }
+        ignoredUnassignedIssues: issues(states:OPEN, filterBy:{labels:[$ignoredLabel], assignee:null}) @include(if:$countIgnored){ totalCount }
       }
     }
     """
@@ -995,10 +1090,12 @@ public enum GitHubAPI {
     public static func issueSummaries(from response: PullRequestsResponse, viewer: String) -> [IssueSummary] {
         guard let nodes = response.data.repository?.issues?.nodes else { return [] }
         let viewerLC = viewer.lowercased()
+        let canAct = viewerCanAct(in: response.data.repository)
 
         return nodes.map { node in
             let authorLogin = node.author?.login ?? ""
             let isAssignedToMe = node.assignees.nodes.contains { $0.login.lowercased() == viewerLC }
+            let isUnclaimed = canAct && node.assignees.nodes.isEmpty
             let labels = node.labels?.nodes.map(\.name) ?? []
             return IssueSummary(
                 number: node.number,
@@ -1006,11 +1103,33 @@ public enum GitHubAPI {
                 url: node.url,
                 authorLogin: authorLogin,
                 isAssignedToMe: isAssignedToMe,
+                isUnclaimed: isUnclaimed,
                 isAuthoredByMe: !viewerLC.isEmpty && authorLogin.lowercased() == viewerLC,
                 updatedAt: node.updatedAt,
                 labels: labels
             )
         }
+    }
+
+    /// Whether an unassigned issue on this repo is the viewer's to deal
+    /// with: they run the repo (admin or maintainer) and it's live. The
+    /// bar is deliberately above write access — on a team repo forty
+    /// people have that, and "nobody's assigned" then means "somebody
+    /// else might", not "yours". An archived repo's leftovers need no
+    /// one. The one gate for both the per-row flag and the counts.
+    public static func viewerCanAct(onRepoWithPermission permission: String?, isArchived: Bool = false) -> Bool {
+        guard !isArchived else { return false }
+        switch permission {
+        case "ADMIN", "MAINTAIN": return true
+        default: return false
+        }
+    }
+
+    private static func viewerCanAct(in repository: PullRequestsResponse.Repository?) -> Bool {
+        viewerCanAct(
+            onRepoWithPermission: repository?.viewerPermission,
+            isArchived: repository?.isArchived ?? false
+        )
     }
 
     /// PRs and issues fetched together from one GraphQL call, so the
@@ -1019,6 +1138,31 @@ public enum GitHubAPI {
         public let prs: [PRSummary]
         public let issues: [IssueSummary]
         public let openIssueCount: Int
+        public let unclaimedIssueCount: Int
+        public let exactIgnoredIssues: ExactIgnoredIssueCounts?
+    }
+
+    /// Pure transform from the raw response to everything the scheduler
+    /// stores — split from `fetchRepoSignals` so the count gating can be
+    /// pinned with fixture JSON.
+    public static func signals(from response: PullRequestsResponse, ignoredLabel: String) -> RepoSignals {
+        let viewer = response.data.viewer?.login ?? ""
+        let repository = response.data.repository
+        let canAct = viewerCanAct(in: repository)
+        let exactIgnored = repository?.ignoredIssues.map { ignored in
+            ExactIgnoredIssueCounts(
+                label: ignoredLabel,
+                total: ignored.totalCount,
+                unclaimed: canAct ? (repository?.ignoredUnassignedIssues?.totalCount ?? 0) : 0
+            )
+        }
+        return RepoSignals(
+            prs: summaries(from: response, viewer: viewer),
+            issues: issueSummaries(from: response, viewer: viewer),
+            openIssueCount: repository?.issues?.totalCount ?? 0,
+            unclaimedIssueCount: canAct ? (repository?.unassignedIssues?.totalCount ?? 0) : 0,
+            exactIgnoredIssues: exactIgnored
+        )
     }
 
     /// Fetches every open PR and issue for a repo, classified against the
@@ -1032,23 +1176,31 @@ public enum GitHubAPI {
     /// off, and an escape hatch when a token can read PRs but not issues
     /// (an error on `issues` would otherwise take the PR data down with
     /// it, since both ride one call).
-    public static func fetchRepoSignals(for remote: GitHubRemote, includeIssues: Bool = true) -> RepoSignals? {
-        let variables = ["owner": remote.owner, "name": remote.repo]
+    ///
+    /// `ignoredLabel` (the configured one, may be empty) lets GitHub
+    /// count the parked issues exactly. They're the ones nobody touches,
+    /// so on a repo with more than 50 open issues most of them sit
+    /// outside the listed window and can't be counted client-side.
+    public static func fetchRepoSignals(
+        for remote: GitHubRemote,
+        includeIssues: Bool = true,
+        ignoredLabel: String = ""
+    ) -> RepoSignals? {
+        let label = ignoredLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let variables = ["owner": remote.owner, "name": remote.repo, "ignoredLabel": label]
         guard let response = GHService.graphql(
                   query: pullRequestsQuery,
                   variables: variables,
-                  boolVariables: ["includeIssues": includeIssues],
+                  boolVariables: [
+                      "includeIssues": includeIssues,
+                      "countIgnored": includeIssues && !label.isEmpty,
+                  ],
                   as: PullRequestsResponse.self
               ),
               response.data.repository != nil else {
             return nil
         }
-        let viewer = response.data.viewer?.login ?? ""
-        return RepoSignals(
-            prs: summaries(from: response, viewer: viewer),
-            issues: issueSummaries(from: response, viewer: viewer),
-            openIssueCount: response.data.repository?.issues?.totalCount ?? 0
-        )
+        return signals(from: response, ignoredLabel: label)
     }
 
     /// Bot heuristic. Public so tests can exercise the patterns directly.

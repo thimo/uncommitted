@@ -466,7 +466,7 @@ enum GitHubStatusTests {
             {"data":{"viewer":{"login":"thimo"},"repository":{"pullRequests":{"nodes":[]},"issues":{"totalCount":2,"nodes":[
              {"number":20,"title":"Nice to have","url":"https://github.com/o/r/issues/20",
               "updatedAt":"2026-08-25T00:00:00Z","author":{"login":"octocat","__typename":"User"},
-              "assignees":{"nodes":[]},"labels":{"nodes":[{"name":"Backlog"},{"name":"good first issue"}]}},
+              "assignees":{"nodes":[]},"labels":{"nodes":[{"name":"Someday"},{"name":"good first issue"}]}},
              {"number":21,"title":"No labels here","url":"https://github.com/o/r/issues/21",
               "updatedAt":"2026-08-24T00:00:00Z","author":{"login":"octocat","__typename":"User"},
               "assignees":{"nodes":[]}}
@@ -478,7 +478,7 @@ enum GitHubStatusTests {
             let issues = GitHubAPI.issueSummaries(from: response, viewer: "thimo")
             let byNumber = Dictionary(uniqueKeysWithValues: issues.map { ($0.number, $0) })
 
-            try expectEqual(byNumber[20]?.labels, ["Backlog", "good first issue"])
+            try expectEqual(byNumber[20]?.labels, ["Someday", "good first issue"])
             // No `labels` key on this node at all — decodes to empty, not
             // a thrown error (the connection itself is optional).
             try expectEqual(byNumber[21]?.labels, [])
@@ -489,20 +489,20 @@ enum GitHubStatusTests {
 
     private static func registerIssueSummaryIsIgnoredTests() {
         test("IssueSummary/isIgnored_caseInsensitiveMatch") {
-            let issue = issue(number: 1, isAssignedToMe: false, labels: ["Backlog"])
-            try expect(issue.isIgnored(label: "backlog"))
-            try expect(issue.isIgnored(label: "BACKLOG"))
-            try expect(issue.isIgnored(label: "Backlog"))
+            let issue = issue(number: 1, isAssignedToMe: false, labels: ["Someday"])
+            try expect(issue.isIgnored(label: "someday"))
+            try expect(issue.isIgnored(label: "SOMEDAY"))
+            try expect(issue.isIgnored(label: "Someday"))
         }
 
         test("IssueSummary/isIgnored_trimsWhitespace") {
-            let issue = issue(number: 1, isAssignedToMe: false, labels: ["backlog"])
-            try expect(issue.isIgnored(label: "  backlog  "))
+            let issue = issue(number: 1, isAssignedToMe: false, labels: ["someday"])
+            try expect(issue.isIgnored(label: "  someday  "))
         }
 
         test("IssueSummary/isIgnored_noMatchingLabel_isFalse") {
             let issue = issue(number: 1, isAssignedToMe: false, labels: ["bug"])
-            try expect(!issue.isIgnored(label: "backlog"))
+            try expect(!issue.isIgnored(label: "someday"))
         }
 
         test("IssueSummary/isIgnored_emptyLabel_isAlwaysFalse") {
@@ -548,11 +548,11 @@ enum GitHubStatusTests {
 
         test("IssueCount/ignoredLabel_excludesFromMineAndOther") {
             let issues = [
-                issue(number: 1, isAssignedToMe: true, labels: ["backlog"]),
+                issue(number: 1, isAssignedToMe: true, labels: ["someday"]),
                 issue(number: 2, isAssignedToMe: true),
                 issue(number: 3, isAssignedToMe: false),
             ]
-            let count = IssueCount(issues: issues, totalOpen: 3, ignoringLabel: "backlog")
+            let count = IssueCount(issues: issues, totalOpen: 3, ignoringLabel: "someday")
             // #1 is both assigned to me and labelled — ignored wins.
             try expectEqual(count.mine, 1)
             try expectEqual(count.other, 1)
@@ -564,10 +564,10 @@ enum GitHubStatusTests {
             // A repo whose only open issues are all ignored reads as
             // "nothing to do" — no badge, all-clear allowed.
             let issues = [
-                issue(number: 1, isAssignedToMe: true, labels: ["backlog"]),
-                issue(number: 2, isAssignedToMe: false, labels: ["Backlog"]),
+                issue(number: 1, isAssignedToMe: true, labels: ["someday"]),
+                issue(number: 2, isAssignedToMe: false, labels: ["Someday"]),
             ]
-            let count = IssueCount(issues: issues, totalOpen: 2, ignoringLabel: "backlog")
+            let count = IssueCount(issues: issues, totalOpen: 2, ignoringLabel: "someday")
             try expectEqual(count.mine, 0)
             try expectEqual(count.other, 0)
             try expectEqual(count.ignored, 2)
@@ -575,23 +575,153 @@ enum GitHubStatusTests {
         }
 
         test("IssueCount/ignoredLabel_totalOpenExceedsListed") {
-            // Ignored issues outside the 50 fetched still land in `other`
-            // — we can't know their labels, so they can't be excluded.
-            let issues = [issue(number: 1, isAssignedToMe: false, labels: ["backlog"])]
-            let count = IssueCount(issues: issues, totalOpen: 60, ignoringLabel: "backlog")
+            // Without the server-side counts, ignored issues outside the
+            // 50 fetched land in `other` — their labels are unknown.
+            let issues = [issue(number: 1, isAssignedToMe: false, labels: ["someday"])]
+            let count = IssueCount(issues: issues, totalOpen: 60, ignoringLabel: "someday")
             try expectEqual(count.mine, 0)
             try expectEqual(count.ignored, 1)
             try expectEqual(count.other, 59)
         }
+
+        test("IssueCount/unclaimed_countsAsMine") {
+            // Solo repo: nothing assigned, two unclaimed — those need the
+            // viewer; the third (somebody else's) is the muted tail.
+            let issues = [
+                issue(number: 1, isAssignedToMe: false, isUnclaimed: true),
+                issue(number: 2, isAssignedToMe: false, isUnclaimed: true),
+                issue(number: 3, isAssignedToMe: false),
+            ]
+            let count = IssueCount(issues: issues, totalOpen: 3, unclaimedOpen: 2, ignoringLabel: "")
+            try expectEqual(count.mine, 2)
+            try expectEqual(count.other, 1)
+        }
+
+        test("IssueCount/unclaimed_usesExactTotalBeyondListed") {
+            // 120 open, 100 unassigned, only one listed: the unclaimed
+            // share comes from the GraphQL total, not the listed rows.
+            let issues = [issue(number: 1, isAssignedToMe: false, isUnclaimed: true)]
+            let count = IssueCount(issues: issues, totalOpen: 120, unclaimedOpen: 100, ignoringLabel: "")
+            try expectEqual(count.mine, 100)
+            try expectEqual(count.other, 20)
+        }
+
+        test("IssueCount/unclaimed_ignoredLabelStillWins") {
+            let issues = [
+                issue(number: 1, isAssignedToMe: false, isUnclaimed: true, labels: ["someday"]),
+                issue(number: 2, isAssignedToMe: false, isUnclaimed: true),
+            ]
+            let count = IssueCount(issues: issues, totalOpen: 2, unclaimedOpen: 2, ignoringLabel: "someday")
+            try expectEqual(count.mine, 1)
+            try expectEqual(count.other, 0)
+            try expectEqual(count.ignored, 1)
+        }
+
+        test("GitHubAPI/viewerCanAct_needsAdminOrMaintainOnLiveRepo") {
+            try expect(GitHubAPI.viewerCanAct(onRepoWithPermission: "ADMIN"))
+            try expect(GitHubAPI.viewerCanAct(onRepoWithPermission: "MAINTAIN"))
+            // Write access is what a whole team has — not "yours".
+            for permission in ["WRITE", "TRIAGE", "READ"] {
+                try expect(!GitHubAPI.viewerCanAct(onRepoWithPermission: permission))
+            }
+            try expect(!GitHubAPI.viewerCanAct(onRepoWithPermission: nil))
+            try expect(!GitHubAPI.viewerCanAct(onRepoWithPermission: "ADMIN", isArchived: true))
+        }
+
+        test("IssueCount/exactIgnored_coversParkedIssuesBeyondListed") {
+            // 70 open, all unassigned, all labelled — but only one is in
+            // the listed window. Without the server counts the other 69
+            // would read as "need you" and pin the repo.
+            let issues = [issue(number: 1, isAssignedToMe: false, isUnclaimed: true, labels: ["someday"])]
+            let exact = ExactIgnoredIssueCounts(label: "someday", total: 70, unclaimed: 70)
+            let count = IssueCount(
+                issues: issues, totalOpen: 70, unclaimedOpen: 70,
+                exactIgnored: exact, ignoringLabel: "someday"
+            )
+            try expectEqual(count.mine, 0)
+            try expectEqual(count.other, 0)
+            try expectEqual(count.ignored, 70)
+            try expect(count.isEmpty)
+        }
+
+        test("IssueCount/listedRowsAreAFloorWithoutTotals") {
+            // No totals (older cache, or a caller that has none): the
+            // count still agrees with the rows on screen.
+            let issues = [issue(number: 1, isAssignedToMe: false, isUnclaimed: true)]
+            let count = IssueCount(issues: issues, totalOpen: 1, ignoringLabel: "")
+            try expectEqual(count.mine, 1)
+            try expectEqual(count.other, 0)
+        }
+
+        test("GitHubRepoStatus/exactIgnored_onlyForTheLabelItWasFetchedFor") {
+            let status = GitHubRepoStatus(
+                openIssueCount: 70,
+                exactIgnoredIssues: ExactIgnoredIssueCounts(label: "someday", total: 70, unclaimed: 0)
+            )
+            try expect(status.issueCount(ignoringLabel: " Someday ").isEmpty)
+            // Label just changed in Settings — the old counts don't apply.
+            try expectEqual(status.issueCount(ignoringLabel: "icebox").other, 70)
+        }
+
+        test("GitHubAPI/signals_gatesUnclaimedCountsOnViewerCanAct") {
+            func signals(permission: String) throws -> GitHubAPI.RepoSignals {
+                let json = """
+                {"data":{"viewer":{"login":"thimo"},"repository":{"viewerPermission":"\(permission)",
+                 "isArchived":false,"pullRequests":{"nodes":[]},
+                 "issues":{"totalCount":9,"nodes":[]},"unassignedIssues":{"totalCount":7},
+                 "ignoredIssues":{"totalCount":4},"ignoredUnassignedIssues":{"totalCount":3}}}}
+                """
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let response = try decoder.decode(GitHubAPI.PullRequestsResponse.self, from: Data(json.utf8))
+                return GitHubAPI.signals(from: response, ignoredLabel: "someday")
+            }
+            let admin = try signals(permission: "ADMIN")
+            try expectEqual(admin.unclaimedIssueCount, 7)
+            try expectEqual(admin.exactIgnoredIssues, ExactIgnoredIssueCounts(label: "someday", total: 4, unclaimed: 3))
+            let writer = try signals(permission: "WRITE")
+            try expectEqual(writer.unclaimedIssueCount, 0)
+            try expectEqual(writer.exactIgnoredIssues, ExactIgnoredIssueCounts(label: "someday", total: 4, unclaimed: 0))
+        }
+
+        test("GitHubAPI/issueSummaries_unclaimedOnlyWhenViewerCanAct") {
+            func summaries(permission: String) throws -> [IssueSummary] {
+                let json = """
+                {"data":{"viewer":{"login":"thimo"},"repository":{"viewerPermission":"\(permission)",
+                 "pullRequests":{"nodes":[]},"issues":{"totalCount":2,"nodes":[
+                 {"number":1,"title":"Nobody's","url":"https://github.com/o/r/issues/1",
+                  "updatedAt":"2026-08-25T00:00:00Z","author":null,"assignees":{"nodes":[]}},
+                 {"number":2,"title":"Somebody's","url":"https://github.com/o/r/issues/2",
+                  "updatedAt":"2026-08-24T00:00:00Z","author":null,"assignees":{"nodes":[{"login":"octocat"}]}}
+                ]}}}}
+                """
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let response = try decoder.decode(GitHubAPI.PullRequestsResponse.self, from: Data(json.utf8))
+                return GitHubAPI.issueSummaries(from: response, viewer: "thimo")
+            }
+            let admin = try summaries(permission: "ADMIN")
+            try expectEqual(admin.map(\.isUnclaimed), [true, false])
+            try expectEqual(admin.map(\.needsMe), [true, false])
+            // Someone else's project: unassigned there isn't the viewer's job.
+            let reader = try summaries(permission: "READ")
+            try expectEqual(reader.map(\.needsMe), [false, false])
+        }
     }
 
-    private static func issue(number: Int, isAssignedToMe: Bool, labels: [String] = []) -> IssueSummary {
+    private static func issue(
+        number: Int,
+        isAssignedToMe: Bool,
+        isUnclaimed: Bool = false,
+        labels: [String] = []
+    ) -> IssueSummary {
         IssueSummary(
             number: number,
             title: "Issue #\(number)",
             url: "https://github.com/o/r/issues/\(number)",
             authorLogin: "someone",
             isAssignedToMe: isAssignedToMe,
+            isUnclaimed: isUnclaimed,
             updatedAt: Date(timeIntervalSince1970: Double(number)),
             labels: labels
         )
@@ -631,7 +761,7 @@ enum GitHubStatusTests {
             decoder.dateDecodingStrategy = .iso8601
             let issue = try decoder.decode(IssueSummary.self, from: Data(json.utf8))
             try expectEqual(issue.labels, [])
-            try expect(!issue.isIgnored(label: "backlog"))
+            try expect(!issue.isIgnored(label: "someday"))
         }
     }
 

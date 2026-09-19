@@ -19,20 +19,28 @@ the **left** of the existing local-status pills:
 | `🕐` (yellow clock) | CI is running on the latest push |
 | `⤴ 2 / 3` | 2 open PRs need you, 3 more are just open (the `/ 3` is muted) |
 | `⤴ 3` (muted) | 3 open PRs, none need you |
-| `⊙ 2 / 5` | 2 open issues assigned to you, 5 other open issues (the `/ 5` is muted) |
-| `⊙ 5` (muted) | 5 open issues, none assigned to you |
+| `⊙ 2 / 5` | 2 open issues need you, 5 are someone else's (the `/ 5` is muted) |
+| `⊙ 5` (muted) | 5 open issues, none need you |
+
+An issue **needs you** when it's assigned to you, or when it's assigned
+to nobody on a repo you run (admin or maintainer) — there, nobody else
+is going to pick it up. Anywhere else unassigned issues stay grey: a
+clone of someone else's project, a team repo where you merely have
+write access along with everyone else, an archived repo. Mute the repo
+if even grey is too much.
 
 The hover panel lists the PRs and issues behind those counts — whatever
 needs you first — and each row opens on github.com.
 
 Issues have their own switch: **Include open issues** in Settings →
 Remote, under **Show GitHub status**. With it off, issues are left out
-of the GitHub query entirely. "Assigned to you" is judged from the 50
-most recently updated open issues, so on a repo with more than that an
-assigned issue nobody touched in a while counts as "other".
+of the GitHub query entirely. The unassigned and ignored-label counts
+are exact, straight from GitHub; "assigned to you" is judged from the
+50 most recently updated open issues, so on a repo with more than that
+an assigned issue nobody touched in a while counts as someone else's.
 
-A configurable label — **Ignore issues labelled**, default `backlog` —
-marks issues that aren't worth surfacing: a "someday" pile, an
+A configurable label — **Ignore issues labelled**, default `someday` —
+marks issues that aren't worth surfacing: an icebox, an
 intake/triage bucket, whatever your team parks low-priority work under.
 A matching issue doesn't count in the badge, doesn't keep an otherwise
 clean repo visible under "Hide repositories with no changes", and if

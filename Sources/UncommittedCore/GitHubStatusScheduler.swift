@@ -102,6 +102,20 @@ public final class GitHubStatusScheduler: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // The exact ignored-issue counts are fetched for one label; a new
+        // label needs new counts. Until they land the UI falls back to
+        // the listed rows, so this is accuracy, not correctness.
+        configStore.$config
+            .map(\.gitHubIgnoredIssueLabel)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.eagerRefresh(self.repoStore.repos)
+            }
+            .store(in: &cancellables)
+
         // Persist on every change, debounced 300ms. Mirrors ConfigStore.
         $statuses
             .dropFirst()
@@ -162,11 +176,11 @@ public final class GitHubStatusScheduler: ObservableObject {
         // resolution wasn't. Push the whole thing to the background
         // queue so opening the popup never waits on git.
         // Config is main-thread state — read it here, not on the queue.
-        let includeIssues = configStore.config.showGitHubIssues
+        let issueOptions = issueFetchOptions
         queue.async { [weak self] in
             guard let self, !self.stopped else { return }
             let specs = repos.compactMap(self.resolvedSpec(for:))
-            self.runFetch(specs: specs, includeIssues: includeIssues)
+            self.runFetch(specs: specs, issueOptions: issueOptions)
         }
     }
 
@@ -204,7 +218,7 @@ public final class GitHubStatusScheduler: ObservableObject {
             }
             return spec
         }
-        runFetch(specs: due, includeIssues: configStore.config.showGitHubIssues)
+        runFetch(specs: due, issueOptions: issueFetchOptions)
     }
 
     // MARK: - Specs + fetch
@@ -239,7 +253,22 @@ public final class GitHubStatusScheduler: ObservableObject {
         return Date().timeIntervalSince(mtime) <= Self.activeThreshold
     }
 
-    private func runFetch(specs: [RepoSpec], includeIssues: Bool) {
+    /// The issue-related config a fetch needs. Config is main-thread
+    /// state and fetches run on the queue, so it's snapshotted on main
+    /// and carried along rather than read where it's used.
+    private struct IssueFetchOptions {
+        let include: Bool
+        let ignoredLabel: String
+    }
+
+    private var issueFetchOptions: IssueFetchOptions {
+        IssueFetchOptions(
+            include: configStore.config.showGitHubIssues,
+            ignoredLabel: configStore.config.gitHubIgnoredIssueLabel
+        )
+    }
+
+    private func runFetch(specs: [RepoSpec], issueOptions: IssueFetchOptions) {
         guard !specs.isEmpty else { return }
 
         // Dedup PR-count fetches by slug.
@@ -256,16 +285,19 @@ public final class GitHubStatusScheduler: ObservableObject {
 
             for (_, slugRepos) in bySlug {
                 guard let firstRemote = slugRepos.first?.remote else { continue }
-                guard let signals = GitHubAPI.fetchRepoSignals(for: firstRemote, includeIssues: includeIssues) else { continue }
+                guard let signals = GitHubAPI.fetchRepoSignals(
+                    for: firstRemote,
+                    includeIssues: issueOptions.include,
+                    ignoredLabel: issueOptions.ignoredLabel
+                ) else { continue }
                 let urlsForSlug = slugRepos.map(\.url)
                 let slug = firstRemote.slug
                 DispatchQueue.main.async {
                     let now = Date()
                     for url in urlsForSlug {
-                        self.applyPR(
-                            signals.prs,
-                            issues: includeIssues ? signals.issues : nil,
-                            openIssueCount: signals.openIssueCount,
+                        self.applySignals(
+                            signals,
+                            includingIssues: issueOptions.include,
                             slug: slug,
                             to: url,
                             at: now
@@ -300,25 +332,26 @@ public final class GitHubStatusScheduler: ObservableObject {
 
     // MARK: - State writes (main thread)
 
-    /// `issues` is nil when the fetch left issues out of the query. The
-    /// stored ones are then kept rather than blanked: the queue is
+    /// `includingIssues` is false when the fetch left issues out of the
+    /// query. The stored ones are then kept rather than blanked: the queue is
     /// concurrent, so a slow issue-less fetch started just before the
     /// user turned issues on can land after the refresh that toggle
     /// kicked off, and would otherwise wipe what it just fetched.
     /// `status(for:)` hides the leftovers while the toggle is off.
-    private func applyPR(
-        _ prs: [PRSummary],
-        issues: [IssueSummary]?,
-        openIssueCount: Int,
+    private func applySignals(
+        _ signals: GitHubAPI.RepoSignals,
+        includingIssues: Bool,
         slug: String,
         to url: URL,
         at when: Date
     ) {
         var current = statuses[url] ?? GitHubRepoStatus()
-        current.prs = prs
-        if let issues {
-            current.issues = issues
-            current.openIssueCount = openIssueCount
+        current.prs = signals.prs
+        if includingIssues {
+            current.issues = signals.issues
+            current.openIssueCount = signals.openIssueCount
+            current.unclaimedIssueCount = signals.unclaimedIssueCount
+            current.exactIgnoredIssues = signals.exactIgnoredIssues
         }
         current.slug = slug
         current.fetchedAt = when

@@ -184,25 +184,25 @@ enum ConfigCodableTests {
             try expect(decoded.showGitHubIssues)
         }
 
-        test("Config/gitHubIgnoredIssueLabel_defaultsToBacklog") {
-            try expectEqual(Config().gitHubIgnoredIssueLabel, "backlog")
+        test("Config/gitHubIgnoredIssueLabel_defaultsToSomeday") {
+            try expectEqual(Config().gitHubIgnoredIssueLabel, "someday")
         }
 
         test("Config/gitHubIgnoredIssueLabel_roundTrips") {
-            let original = Config(gitHubIgnoredIssueLabel: "someday")
+            let original = Config(gitHubIgnoredIssueLabel: "icebox")
             let data = try JSONEncoder().encode(original)
             let decoded = try JSONDecoder().decode(Config.self, from: data)
-            try expectEqual(decoded.gitHubIgnoredIssueLabel, "someday")
+            try expectEqual(decoded.gitHubIgnoredIssueLabel, "icebox")
         }
 
-        test("Config/legacyConfig_withoutGitHubIgnoredIssueLabel_defaultsToBacklog") {
+        test("Config/legacyConfig_withoutGitHubIgnoredIssueLabel_defaultsToSomeday") {
             // A config saved before the field existed must still decode
-            // cleanly, defaulting to "backlog" like a fresh install.
+            // cleanly, defaulting to "someday" like a fresh install.
             let json = """
             { "sources": [], "actions": [] }
             """.data(using: .utf8)!
             let decoded = try JSONDecoder().decode(Config.self, from: json)
-            try expectEqual(decoded.gitHubIgnoredIssueLabel, "backlog")
+            try expectEqual(decoded.gitHubIgnoredIssueLabel, "someday")
         }
 
         test("Config/menuBarLabelStyle_rawValuesAreStable") {

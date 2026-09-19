@@ -132,7 +132,7 @@ public struct Config: Codable, Equatable {
         fetchFromRemotes: Bool = false,
         showGitHubStatus: Bool = true,
         showGitHubIssues: Bool = true,
-        gitHubIgnoredIssueLabel: String = "backlog",
+        gitHubIgnoredIssueLabel: String = "someday",
         gitHubMutedRepos: [String] = [],
         globalShortcut: GlobalShortcut? = .defaultShortcut,
         dailyReminderEnabled: Bool = false,
@@ -187,7 +187,7 @@ public struct Config: Codable, Equatable {
         self.fetchFromRemotes = try container.decodeIfPresent(Bool.self, forKey: .fetchFromRemotes) ?? false
         self.showGitHubStatus = try container.decodeIfPresent(Bool.self, forKey: .showGitHubStatus) ?? true
         self.showGitHubIssues = try container.decodeIfPresent(Bool.self, forKey: .showGitHubIssues) ?? true
-        self.gitHubIgnoredIssueLabel = try container.decodeIfPresent(String.self, forKey: .gitHubIgnoredIssueLabel) ?? "backlog"
+        self.gitHubIgnoredIssueLabel = try container.decodeIfPresent(String.self, forKey: .gitHubIgnoredIssueLabel) ?? "someday"
         self.gitHubMutedRepos = try container.decodeIfPresent([String].self, forKey: .gitHubMutedRepos) ?? []
         // Absent key → default shortcut (new installs). Explicit null → no shortcut (user cleared it).
         if container.contains(.globalShortcut) {

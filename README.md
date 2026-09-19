@@ -109,7 +109,7 @@ cleanup?" without leaving the menu bar.
 | ⚠️ | CI failed on the latest push to your current branch |
 | 🕐 | CI is running on the latest push |
 | `⤴ 2 / 3` | 2 open PRs need you · 3 more are just open (the tail is muted) |
-| `⊙ 2 / 5` | 2 open issues assigned to you · 5 other open issues (the tail is muted) |
+| `⊙ 2 / 5` | 2 open issues need you (yours, or unassigned on a repo you run) · 5 are someone else's (the tail is muted) |
 
 Green CI is invisible by design — the menu bar is for things that need
 attention, not confirmation. The branch icon in the menu bar itself
@@ -121,7 +121,7 @@ open the GitHub issues list; click the red/yellow CI badge to open the
 Actions page filtered to that branch. The issues badge can be turned off
 separately from the rest of GitHub status in Settings → Remote → GitHub,
 for anyone who tracks PRs and CI but doesn't want the issue tracker
-in their menu bar. A configurable label (default `backlog`, editable in
+in their menu bar. A configurable label (default `someday`, editable in
 that same section) marks issues as not worth counting — they drop off
 the badge and stop keeping a repo visible, though they still show up
 (sorted last) in the hover panel; clear the field to go back to counting
