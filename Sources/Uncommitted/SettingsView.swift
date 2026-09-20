@@ -228,8 +228,11 @@ private struct DiagnosticsSettingsSection: View {
 /// Bitbucket, etc.) without renaming the whole panel.
 struct RemoteSettingsView: View {
     @EnvironmentObject var configStore: ConfigStore
-    @State private var ghAvailable: Bool = false
-    @State private var ghInstalled: Bool = false
+    // Optimistic until the async auth check in `.task` says otherwise —
+    // `ghPath()` is a cached file check, so this costs nothing and keeps
+    // the tab from flashing "Install gh" with greyed-out toggles.
+    @State private var ghAvailable: Bool = GHService.ghPath() != nil
+    @State private var ghInstalled: Bool = GHService.ghPath() != nil
     @State private var ignoredLabelDraft: String = ""
     @FocusState private var ignoredLabelFocused: Bool
 
@@ -307,8 +310,14 @@ struct RemoteSettingsView: View {
         .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
         .task {
-            ghInstalled = GHService.ghPath() != nil
-            ghAvailable = GHService.isAvailable()
+            // `gh auth status` hits the network (~0.5s). A view's `.task`
+            // inherits the main actor, so run it detached or the tab
+            // switch freezes until gh returns.
+            let (installed, available) = await Task.detached {
+                (GHService.ghPath() != nil, GHService.isAvailable())
+            }.value
+            ghInstalled = installed
+            ghAvailable = available
         }
     }
 

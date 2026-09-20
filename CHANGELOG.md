@@ -8,6 +8,8 @@ mapping of commits.
 ### Fixed
 - v0.12.0 was packaged from a stale build and shipped without any of the
   changes listed below. This release actually contains them.
+- Opening Settings → Remote no longer freezes the window for half a
+  second while `gh auth status` runs.
 
 ### Changed
 - Automatic update checks are now on by default instead of waiting for
