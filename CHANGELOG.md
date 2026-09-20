@@ -3,7 +3,7 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
-## Unreleased
+## v0.12.0 — 2026-09-20
 
 ### New
 - Open GitHub issues get a badge too, right next to the PR pill: how many
