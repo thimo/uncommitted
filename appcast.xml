@@ -3,6 +3,15 @@
     <channel>
         <title>Uncommitted</title>
         <item>
+            <title>0.12.0</title>
+            <pubDate>Sun, 20 Sep 2026 12:42:58 +0200</pubDate>
+            <link>https://github.com/thimo/uncommitted/releases/tag/v0.12.0</link>
+            <sparkle:version>169</sparkle:version>
+            <sparkle:shortVersionString>0.12.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.12.0/Uncommitted-0.12.0.zip" length="4108489" type="application/octet-stream" sparkle:edSignature="crZwArblJ0UCCCmi6lByr+cwD3rli2ZUQd8hRDw2cfbamRWa0LqicHzOYgZ+uwJI4jsF/cmB5YD1KdeF5fN2Ag=="/>
+        </item>
+        <item>
             <title>0.11.0</title>
             <pubDate>Mon, 03 Aug 2026 15:14:11 +0200</pubDate>
             <link>https://github.com/thimo/uncommitted/releases/tag/v0.11.0</link>
@@ -19,15 +28,6 @@
             <sparkle:shortVersionString>0.10.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.10.0/Uncommitted-0.10.0.zip" length="3890108" type="application/octet-stream" sparkle:edSignature="Y7aZrZdHbDZeME+fvZcx06jXyrutxAi6N8RqO+BsNOUmM4XJW6phWTKDcW8ImaX8kAVJR5vUgNMG70YuxrqYDw=="/>
-        </item>
-        <item>
-            <title>0.9.0</title>
-            <pubDate>Mon, 22 Jun 2026 12:58:16 +0200</pubDate>
-            <link>https://github.com/thimo/uncommitted/releases/tag/v0.9.0</link>
-            <sparkle:version>134</sparkle:version>
-            <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.9.0/Uncommitted-0.9.0.zip" length="3898668" type="application/octet-stream" sparkle:edSignature="4O/YuElneAbzbfBEttCIIOeQU223yZjkLmP8EpouTUhoUmYTjXJY6Y2egWTJqoSKDAtwmZzbtiP1FIIgv0IXAw=="/>
         </item>
     </channel>
 </rss>
