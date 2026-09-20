@@ -1881,7 +1881,7 @@ private struct IssueRow: View {
     /// Hollow dot for an ignored issue — same look as a draft PR's dot in
     /// `PullRequestRow`: neither "needs you" nor "waiting", just parked.
     ///
-    /// Otherwise filled: pink when it needs the viewer (assigned to
+    /// Otherwise filled: magenta when it needs the viewer (assigned to
     /// them, or unclaimed), grey when it's somebody else's.
     @ViewBuilder
     private var dot: some View {
@@ -1892,7 +1892,7 @@ private struct IssueRow: View {
         } else {
             Image(systemName: "circle.fill")
                 .font(.system(size: 8))
-                .foregroundStyle(issue.needsMe ? .pink : .secondary)
+                .foregroundStyle(issue.needsMe ? issueColor : .secondary)
         }
     }
 
@@ -2218,10 +2218,21 @@ private struct PRBadge: View {
     }
 }
 
+/// Issue accent: a custom magenta, because every system hue is either
+/// taken or sits next to one that is. Green collided with the untracked
+/// ★ and the all-clear checkmark, indigo with the blue push pill, and
+/// system pink is ~12° from red so it read as an error. Magenta sits in
+/// the one real gap on the wheel, between purple (pull) and red.
+private let issueColor = Color(nsColor: NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        ? NSColor(srgbRed: 0.94, green: 0.38, blue: 0.75, alpha: 1)  // #F062C0
+        : NSColor(srgbRed: 0.81, green: 0.18, blue: 0.63, alpha: 1)  // #CF2FA0
+})
+
 /// Compact issue pill, modeled 1:1 on `PRBadge`: `⊙ 2 / 3` where `2` is
-/// issues that need the viewer (pink) — assigned to them, or assigned
+/// issues that need the viewer (magenta) — assigned to them, or assigned
 /// to nobody on a repo they maintain — and `/ 3` is somebody else's, in
-/// a muted pink tail. When nothing needs the viewer the whole pill
+/// a muted magenta tail. When nothing needs the viewer the whole pill
 /// turns `.secondary` — same single-`primary` flip
 /// as `PRBadge`, so it reads as background noise rather than a call to
 /// action, while still showing the open count so the repo doesn't look
@@ -2238,11 +2249,7 @@ private struct IssueBadge: View {
 
     var body: some View {
         let needsMe = count.mine > 0
-        // Pink: the one system colour with no near neighbour in the row.
-        // Green collided with the untracked ★ and the all-clear
-        // checkmark, and indigo was barely distinguishable from the blue
-        // push pill sitting right next to it.
-        let primary: Color = needsMe ? .pink : .secondary
+        let primary: Color = needsMe ? issueColor : .secondary
         Button(action: action) {
             HStack(spacing: 3) {
                 Image(systemName: "smallcircle.filled.circle")
