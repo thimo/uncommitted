@@ -9,8 +9,9 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
 
 ## Current state
 
-- **v0.12.0** released. MIT-licensed on GitHub at `thimo/uncommitted`.
-  Shipped in v0.12.0: open GitHub issues per repo (magenta pill, ignorable
+- **v0.12.1** released. MIT-licensed on GitHub at `thimo/uncommitted`.
+  (v0.12.0 was packaged from stale per-triple binaries and contains none
+  of its own changes — 0.12.1 is the real one.) Shipped in v0.12.x: open GitHub issues per repo (magenta pill, ignorable
   label), per-viewer PR attention classification, PR badge on one clone
   per remote, per-repo git lock for remote commands, and no fetch back-off
   for network outages. Shipped in v0.11.0: conflict/operation state, upstream-gone cleanup,
