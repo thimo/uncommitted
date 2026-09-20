@@ -9,8 +9,11 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
 
 ## Current state
 
-- **v0.11.0** released. MIT-licensed on GitHub at `thimo/uncommitted`.
-  Shipped in v0.11.0: conflict/operation state, upstream-gone cleanup,
+- **v0.12.0** released. MIT-licensed on GitHub at `thimo/uncommitted`.
+  Shipped in v0.12.0: open GitHub issues per repo (magenta pill, ignorable
+  label), per-viewer PR attention classification, PR badge on one clone
+  per remote, per-repo git lock for remote commands, and no fetch back-off
+  for network outages. Shipped in v0.11.0: conflict/operation state, upstream-gone cleanup,
   daily reminder, pull strategy for diverged branches, diagnostics log +
   crash reporting, and the popup-open fetch sweep. Earlier milestones:
   per-branch pull/push in the hover panel, per-repo GitHub PR + CI signals
