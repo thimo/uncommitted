@@ -3,6 +3,17 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
+## v0.12.1 — 2026-09-20
+
+### Fixed
+- v0.12.0 was packaged from a stale build and shipped without any of the
+  changes listed below. This release actually contains them.
+
+### Changed
+- Automatic update checks are now on by default instead of waiting for
+  Sparkle's permission prompt. If you already made a choice in Settings,
+  it's kept.
+
 ## v0.12.0 — 2026-09-20
 
 ### New

@@ -69,17 +69,37 @@ echo "==> Version $VERSION (build $BUILD_NUMBER)"
 # ---------------------------------------------------------------------------
 # Build universal binary (separate arches + lipo)
 # ---------------------------------------------------------------------------
-echo "==> Building arm64"
-swift build -c release --arch arm64
+# Ask SwiftPM where the product landed instead of assuming
+# .build/<triple>/release. The Swift 6.4 build system writes every arch to
+# the same .build/out/Products/Release, and the old per-triple dirs stay
+# behind with whatever they last held — v0.12.0 shipped binaries from
+# August that way. So: copy each slice out right after its build, and
+# refuse to continue if it isn't the arch we just asked for.
+mkdir -p build
+build_slice() {
+  local arch="$1"
+  echo "==> Building $arch"
+  swift build -c release --arch "$arch"
+  BIN_DIR=$(swift build -c release --arch "$arch" --show-bin-path)
+  rm -f "build/uncommitted-$arch"
+  cp "$BIN_DIR/uncommitted" "build/uncommitted-$arch"
+  local got
+  got=$(lipo -archs "build/uncommitted-$arch")
+  if [ "$got" != "$arch" ]; then
+    echo "ERROR: expected an $arch binary in $BIN_DIR, got: $got" >&2
+    exit 1
+  fi
+}
 
-echo "==> Building x86_64"
-swift build -c release --arch x86_64
+# arm64 last, so BIN_DIR (used for the resource bundle below) and
+# .build/release are left holding the host-arch build.
+build_slice x86_64
+build_slice arm64
 
 echo "==> Creating universal binary"
-mkdir -p build
 lipo -create -output build/uncommitted-universal \
-  .build/arm64-apple-macosx/release/uncommitted \
-  .build/x86_64-apple-macosx/release/uncommitted
+  build/uncommitted-arm64 \
+  build/uncommitted-x86_64
 lipo -info build/uncommitted-universal
 
 # ---------------------------------------------------------------------------
@@ -104,7 +124,7 @@ cp build/Uncommitted.icns "$APP/Contents/Resources/Uncommitted.icns"
 printf "APPL????" > "$APP/Contents/PkgInfo"
 
 # SPM resource bundles (use arm64 build — identical across arches).
-SPM_BUNDLE=".build/arm64-apple-macosx/release/Uncommitted_Uncommitted.bundle"
+SPM_BUNDLE="$BIN_DIR/Uncommitted_Uncommitted.bundle"
 if [ -d "$SPM_BUNDLE" ]; then
   cp -R "$SPM_BUNDLE" "$APP/Contents/Resources/"
 fi
