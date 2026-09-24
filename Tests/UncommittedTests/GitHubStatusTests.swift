@@ -189,6 +189,40 @@ enum GitHubStatusTests {
             try expectEqual(latest[0].conclusion, "success")
             try expectEqual(latest[1].name, "Lint")
         }
+
+        test("latestPerWorkflow/highestRunNumberBeatsListOrder") {
+            // Seen live: a stale API answer listing a June failure above
+            // the current green run of the same workflow.
+            let runs = [
+                GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "failure", workflowId: 1, runNumber: 10622),
+                GitHubAPI.WorkflowRun(name: "Lint", status: "completed", conclusion: "success", workflowId: 2, runNumber: 5),
+                GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "success", workflowId: 1, runNumber: 11118),
+            ]
+            let latest = GitHubAPI.latestPerWorkflow(runs)
+            try expectEqual(latest.map(\.runNumber), [11118, 5])
+        }
+
+        test("newestRuns/previousWinsWhenNewer") {
+            let previous = [GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "success", workflowId: 1, runNumber: 11118)]
+            let fresh = [GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "failure", workflowId: 1, runNumber: 10622)]
+            let runs = GitHubAPI.newestRuns(fresh: fresh, previous: previous)
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: runs), .success)
+        }
+
+        test("newestRuns/freshWinsOnSameRun") {
+            // Same run number = same run (or a re-run attempt): its status moved on.
+            let previous = [GitHubAPI.WorkflowRun(name: "Tests", status: "in_progress", conclusion: nil, workflowId: 1, runNumber: 7)]
+            let fresh = [GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "failure", workflowId: 1, runNumber: 7)]
+            let runs = GitHubAPI.newestRuns(fresh: fresh, previous: previous)
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: runs), .failure)
+        }
+
+        test("newestRuns/dropsWorkflowsMissingFromFresh") {
+            let previous = [GitHubAPI.WorkflowRun(name: "Old", status: "completed", conclusion: "failure", workflowId: 9, runNumber: 3)]
+            let fresh = [GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "success", workflowId: 1, runNumber: 7)]
+            let runs = GitHubAPI.newestRuns(fresh: fresh, previous: previous)
+            try expectEqual(runs.map(\.workflowId), [1])
+        }
     }
 
     // MARK: - PRClassifier

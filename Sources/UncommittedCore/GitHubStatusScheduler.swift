@@ -40,6 +40,10 @@ public final class GitHubStatusScheduler: ObservableObject {
     /// Last successful (or attempted) refresh per repo, drives cadence.
     private var lastRefreshAt: [URL: Date] = [:]
 
+    /// Latest run per workflow from the previous CI fetch, keyed
+    /// `slug#branch` — see `GitHubAPI.newestRuns`. Main thread only.
+    private var lastCIRuns: [String: [GitHubAPI.WorkflowRun]] = [:]
+
     private let queue = DispatchQueue(
         label: "nl.defrog.uncommitted.github-status",
         qos: .utility,
@@ -309,11 +313,17 @@ public final class GitHubStatusScheduler: ObservableObject {
             for (_, ciRepos) in byCI {
                 guard let firstSpec = ciRepos.first,
                       let branch = firstSpec.branch else { continue }
-                let (ci, failingNames, notGreen) = GitHubAPI.fetchCIStatus(for: firstSpec.remote, ref: branch)
+                let fetched = GitHubAPI.fetchLatestWorkflowRuns(for: firstSpec.remote, ref: branch)
                 let urlsForCI = ciRepos.map(\.url)
                 let slug = firstSpec.remote.slug
                 DispatchQueue.main.async {
                     let now = Date()
+                    let key = "\(slug)#\(branch)"
+                    let runs = fetched.map { GitHubAPI.newestRuns(fresh: $0, previous: self.lastCIRuns[key] ?? []) } ?? []
+                    if fetched != nil { self.lastCIRuns[key] = runs }
+                    let ci = GitHubAPI.aggregate(workflowRuns: runs)
+                    let failingNames = GitHubAPI.failingNames(in: runs)
+                    let notGreen = runs.filter { GitHubAPI.aggregate(workflowRuns: [$0]) != .success }
                     for url in urlsForCI {
                         self.logCIChange(to: ci, runs: notGreen, url: url, slug: slug, branch: branch)
                         self.applyCI(ci, failingNames: failingNames, to: url, at: now)

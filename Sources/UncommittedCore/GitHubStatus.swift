@@ -1235,18 +1235,23 @@ public enum GitHubAPI {
         public let status: String
         public let conclusion: String?
         public let workflowId: Int
-        /// Only used to name the run in the diagnostics log.
+        /// Per-workflow sequence number: orders runs of one workflow and
+        /// names the run in the diagnostics log.
         public let runNumber: Int?
         public let htmlUrl: String?
+        /// `dynamic` marks GitHub-managed runs (Dependabot updates, CodeQL
+        /// default setup) — jobs on the repo, not CI for the branch.
+        public let event: String?
 
         public init(name: String = "", status: String, conclusion: String?, workflowId: Int = 0,
-                    runNumber: Int? = nil, htmlUrl: String? = nil) {
+                    runNumber: Int? = nil, htmlUrl: String? = nil, event: String? = nil) {
             self.name = name
             self.status = status
             self.conclusion = conclusion
             self.workflowId = workflowId
             self.runNumber = runNumber
             self.htmlUrl = htmlUrl
+            self.event = event
         }
 
         /// "Tests #11118 failure https://…" — one run, for the log.
@@ -1261,35 +1266,47 @@ public enum GitHubAPI {
         let workflowRuns: [WorkflowRun]
     }
 
-    /// Returns the most recent run per `workflowId`. The API returns
-    /// runs sorted by created_at descending, so a simple first-seen
-    /// dedupe gives us "latest per workflow" without an extra sort.
+    /// Returns the most recent run per `workflowId`, in first-seen order.
+    /// Picks by `runNumber` rather than trusting the API's newest-first
+    /// order: the list endpoint now and then serves a stale answer that
+    /// puts a months-old failed run on top.
     public static func latestPerWorkflow(_ runs: [WorkflowRun]) -> [WorkflowRun] {
-        var seen = Set<Int>()
+        var index: [Int: Int] = [:]
         var out: [WorkflowRun] = []
         for run in runs {
-            guard seen.insert(run.workflowId).inserted else { continue }
-            out.append(run)
+            guard let i = index[run.workflowId] else {
+                index[run.workflowId] = out.count
+                out.append(run)
+                continue
+            }
+            if (run.runNumber ?? .min) > (out[i].runNumber ?? .min) { out[i] = run }
         }
         return out
     }
 
-    /// Fetches CI status for a branch by inspecting the **workflow-level**
-    /// conclusion of each workflow's most recent run on that branch.
-    /// Caller must ensure the branch exists on the remote — `gh api`
-    /// just returns an empty list otherwise, which we surface as `.none`.
-    /// Returns the aggregate status plus the names of workflows whose
-    /// latest run is in a failure state, and the non-green latest runs
-    /// themselves (for the diagnostics log).
-    public static func fetchCIStatus(for remote: GitHubRemote, ref: String) -> (CIStatus, [String], [WorkflowRun]) {
+    /// Guards against a stale API answer that leaves the newer runs out
+    /// entirely: a workflow's run from the previous fetch wins when it is
+    /// newer. Workflows missing from `fresh` are dropped, not carried
+    /// over, so a deleted workflow's last failure can't stick around.
+    public static func newestRuns(fresh: [WorkflowRun], previous: [WorkflowRun]) -> [WorkflowRun] {
+        let before = Dictionary(previous.map { ($0.workflowId, $0) }, uniquingKeysWith: { a, _ in a })
+        return fresh.map { run in
+            guard let old = before[run.workflowId],
+                  (old.runNumber ?? .min) > (run.runNumber ?? .min) else { return run }
+            return old
+        }
+    }
+
+    /// Fetches the latest run of each workflow on a branch; nil when the
+    /// API call fails. Caller must ensure the branch exists on the remote —
+    /// `gh api` just returns an empty list otherwise. GitHub-managed
+    /// (`dynamic`) runs are left out: a failed Dependabot update isn't a
+    /// red branch, and they all share one workflow id anyway.
+    public static func fetchLatestWorkflowRuns(for remote: GitHubRemote, ref: String) -> [WorkflowRun]? {
         let encoded = ref.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ref
         let endpoint = "repos/\(remote.owner)/\(remote.repo)/actions/runs?branch=\(encoded)&per_page=20"
-        guard let response = GHService.api(endpoint, as: WorkflowRunsResponse.self) else {
-            return (.none, [], [])
-        }
-        let latest = latestPerWorkflow(response.workflowRuns)
-        let notGreen = latest.filter { aggregate(workflowRuns: [$0]) != .success }
-        return (aggregate(workflowRuns: latest), failingNames(in: latest), notGreen)
+        guard let response = GHService.api(endpoint, as: WorkflowRunsResponse.self) else { return nil }
+        return latestPerWorkflow(response.workflowRuns.filter { $0.event != "dynamic" })
     }
 
     /// Names of the workflows whose latest run is in the "failure"
