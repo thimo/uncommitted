@@ -1235,12 +1235,25 @@ public enum GitHubAPI {
         public let status: String
         public let conclusion: String?
         public let workflowId: Int
+        /// Only used to name the run in the diagnostics log.
+        public let runNumber: Int?
+        public let htmlUrl: String?
 
-        public init(name: String = "", status: String, conclusion: String?, workflowId: Int = 0) {
+        public init(name: String = "", status: String, conclusion: String?, workflowId: Int = 0,
+                    runNumber: Int? = nil, htmlUrl: String? = nil) {
             self.name = name
             self.status = status
             self.conclusion = conclusion
             self.workflowId = workflowId
+            self.runNumber = runNumber
+            self.htmlUrl = htmlUrl
+        }
+
+        /// "Tests #11118 failure https://…" — one run, for the log.
+        public var logDescription: String {
+            let number = runNumber.map { " #\($0)" } ?? ""
+            let state = status == "completed" ? (conclusion ?? "no conclusion") : status
+            return "\(name)\(number) \(state) \(htmlUrl ?? "")".trimmingCharacters(in: .whitespaces)
         }
     }
 
@@ -1266,15 +1279,17 @@ public enum GitHubAPI {
     /// Caller must ensure the branch exists on the remote — `gh api`
     /// just returns an empty list otherwise, which we surface as `.none`.
     /// Returns the aggregate status plus the names of workflows whose
-    /// latest run is in a failure state.
-    public static func fetchCIStatus(for remote: GitHubRemote, ref: String) -> (CIStatus, [String]) {
+    /// latest run is in a failure state, and the non-green latest runs
+    /// themselves (for the diagnostics log).
+    public static func fetchCIStatus(for remote: GitHubRemote, ref: String) -> (CIStatus, [String], [WorkflowRun]) {
         let encoded = ref.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ref
         let endpoint = "repos/\(remote.owner)/\(remote.repo)/actions/runs?branch=\(encoded)&per_page=20"
         guard let response = GHService.api(endpoint, as: WorkflowRunsResponse.self) else {
-            return (.none, [])
+            return (.none, [], [])
         }
         let latest = latestPerWorkflow(response.workflowRuns)
-        return (aggregate(workflowRuns: latest), failingNames(in: latest))
+        let notGreen = latest.filter { aggregate(workflowRuns: [$0]) != .success }
+        return (aggregate(workflowRuns: latest), failingNames(in: latest), notGreen)
     }
 
     /// Names of the workflows whose latest run is in the "failure"

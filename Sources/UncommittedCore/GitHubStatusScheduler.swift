@@ -309,11 +309,13 @@ public final class GitHubStatusScheduler: ObservableObject {
             for (_, ciRepos) in byCI {
                 guard let firstSpec = ciRepos.first,
                       let branch = firstSpec.branch else { continue }
-                let (ci, failingNames) = GitHubAPI.fetchCIStatus(for: firstSpec.remote, ref: branch)
+                let (ci, failingNames, notGreen) = GitHubAPI.fetchCIStatus(for: firstSpec.remote, ref: branch)
                 let urlsForCI = ciRepos.map(\.url)
+                let slug = firstSpec.remote.slug
                 DispatchQueue.main.async {
                     let now = Date()
                     for url in urlsForCI {
+                        self.logCIChange(to: ci, runs: notGreen, url: url, slug: slug, branch: branch)
                         self.applyCI(ci, failingNames: failingNames, to: url, at: now)
                     }
                 }
@@ -380,6 +382,22 @@ public final class GitHubStatusScheduler: ObservableObject {
         let ordered = repoStore.repos.map(\.url)
         let slugs = statuses.compactMapValues(\.slug)
         return PrimaryClonePicker.primaryURLs(orderedURLs: ordered, slugs: slugs)
+    }
+
+    /// One line per CI transition, naming the runs behind a non-green
+    /// result — a red badge is otherwise untraceable once GitHub has moved on.
+    private func logCIChange(to new: CIStatus, runs: [GitHubAPI.WorkflowRun], url: URL, slug: String, branch: String) {
+        let old = statuses[url]?.ciStatus ?? .none
+        guard old != new else { return }
+        var message = "\(url.lastPathComponent) (\(slug)#\(branch)): \(old) → \(new)"
+        if !runs.isEmpty {
+            message += " — " + runs.map(\.logDescription).joined(separator: "; ")
+        }
+        if new == .failure {
+            DiagnosticsLog.shared.warning("ci", message)
+        } else {
+            DiagnosticsLog.shared.info("ci", message)
+        }
     }
 
     private func applyCI(_ status: CIStatus, failingNames: [String], to url: URL, at when: Date) {
