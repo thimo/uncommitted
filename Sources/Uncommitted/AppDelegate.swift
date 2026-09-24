@@ -120,20 +120,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPanel()
         updateStatusLabel()
 
-        Publishers.Merge4(
+        Publishers.Merge3(
             repoStore.$repos.map { _ in () }.eraseToAnyPublisher(),
             configStore.$config
                 .map(\.menuBarLabelStyle)
                 .removeDuplicates()
                 .map { _ in () }
                 .eraseToAnyPublisher(),
-            configStore.$config
-                .map(\.gitHubMutedRepos)
-                .removeDuplicates()
-                .map { _ in () }
-                .eraseToAnyPublisher(),
+            // Dedupe on the same muted-aware answer the label renders:
+            // an "any failure" key stays true while a muted repo is red,
+            // so an unmuted repo going green never re-rendered the label.
             githubScheduler.$statuses
-                .map { statuses in statuses.values.contains { $0.ciStatus == .failure } }
+                .combineLatest(configStore.$config.map(\.gitHubMutedRepos))
+                .map { Self.hasUnmutedCIFailure($0, muted: $1) }
                 .removeDuplicates()
                 .map { _ in () }
                 .eraseToAnyPublisher()
@@ -289,6 +288,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return tinted
     }
 
+    private static func hasUnmutedCIFailure(_ statuses: [URL: GitHubRepoStatus], muted: [String]) -> Bool {
+        let muted = Set(muted)
+        return statuses.contains { url, status in
+            status.ciStatus == .failure && !muted.contains(url.standardizedFileURL.path)
+        }
+    }
+
     private func updateStatusLabel() {
         guard let button = statusItem?.button else { return }
 
@@ -302,10 +308,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Muted repos are excluded from the menubar shield: if the user
         // marked a repo as "not my problem", a red CI on it shouldn't
         // keep nagging from the menu bar either.
-        let muted = Set(configStore.config.gitHubMutedRepos)
-        let useAlert = githubScheduler.statuses.contains { url, status in
-            status.ciStatus == .failure && !muted.contains(url.standardizedFileURL.path)
-        }
+        let useAlert = Self.hasUnmutedCIFailure(githubScheduler.statuses,
+                                                muted: configStore.config.gitHubMutedRepos)
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byClipping
