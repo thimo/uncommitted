@@ -135,7 +135,11 @@ and usually fix a specific pitfall:
    returning false covers the first; the second ignores the delegate, so
    `AppDelegate.installReopenHandler()` re-registers the `rapp` Apple event
    handler and AppKit never sees it. Direct exec of the binary never showed
-   the window, which is how this was pinned down (2026-09-26).
+   the window, which is how this was pinned down (2026-09-26). A third
+   path, SwiftUI restoring a Settings window that was open at quit, is
+   closed by `.restorationBehavior(.disabled)` +
+   `.defaultLaunchBehavior(.suppressed)` on the scene in
+   `UncommittedApp.swift` — the reason the deployment target is macOS 15.
 
 ## Key files
 

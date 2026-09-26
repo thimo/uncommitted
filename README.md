@@ -7,7 +7,7 @@ GitHub PR/CI signals refresh on a quiet cadence and use the `gh` CLI.
 
 [![Latest release](https://img.shields.io/github/v/release/thimo/uncommitted?label=download&color=2f6df0)](https://github.com/thimo/uncommitted/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-![macOS 14+](https://img.shields.io/badge/macOS-14%2B-lightgrey)
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-lightgrey)
 ![Universal binary](https://img.shields.io/badge/arch-arm64%20%2B%20x86__64-lightgrey)
 
 🔗 **[uncommitted.defrog.nl](https://uncommitted.defrog.nl)** · [Latest release →](https://github.com/thimo/uncommitted/releases/latest)
@@ -19,7 +19,7 @@ GitHub PR/CI signals refresh on a quiet cadence and use the `gh` CLI.
 **[Latest release on GitHub →](https://github.com/thimo/uncommitted/releases/latest)**
 
 Grab `Uncommitted-X.Y.Z.zip` from the latest release — universal binary
-(`arm64` + `x86_64`, macOS 14+), signed with my Apple Developer ID and
+(`arm64` + `x86_64`, macOS 15+), signed with my Apple Developer ID and
 notarized by Apple. Unzip, drag `Uncommitted.app` into `/Applications/`, and
 launch. First run passes Gatekeeper without prompts. On macOS 27 the app must
 run from `/Applications`: the menu bar only manages items of apps running from
@@ -174,7 +174,7 @@ Full details: [docs/auto-fetch.md](docs/auto-fetch.md).
 
 ## Requirements
 
-- macOS 14 (Sonoma) or later
+- macOS 15 (Sequoia) or later
 - `git` in `/usr/bin/git` (Apple's `/usr/bin/git` shim, or Xcode Command Line
   Tools)
 

@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "Uncommitted",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v15),
     ],
     products: [
         .executable(name: "uncommitted", targets: ["Uncommitted"]),

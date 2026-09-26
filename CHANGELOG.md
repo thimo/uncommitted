@@ -10,11 +10,16 @@ mapping of commits.
   again whenever the running app was launched a second time (Spotlight,
   `open -a`). SwiftUI answered both the launch-time "open untitled" request
   and the reopen event by showing its only scene; the app now declines the
-  first and swallows the second.
+  first and swallows the second. It also came back on the next launch when
+  it had been open at quit; scene restoration is now off for it.
 - A shell-command action (such as `code {path}`) no longer stays broken
   for the rest of the session when the login shell is slow to answer the
   first PATH lookup: the timeout is retried on the next action, and the
   fallback PATH now includes `~/.local/bin`, Homebrew and `/usr/local/bin`.
+
+### Changed
+- Requires macOS 15 or later (was 14). The scene modifiers that keep the
+  Settings window from restoring itself on macOS 27 need it.
 
 ## v0.12.1 — 2026-09-20
 
