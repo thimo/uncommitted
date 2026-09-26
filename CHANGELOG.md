@@ -3,7 +3,7 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
-## Unreleased
+## v0.13.0 — 2026-09-27
 
 ### Fixed
 - On macOS 27 the Settings window opened by itself at every login, and
