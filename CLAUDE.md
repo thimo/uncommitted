@@ -28,7 +28,9 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
 ## Build & install
 
 - `./build.sh` — compiles release, renders the iconset, bundles the `.app`,
-  ad-hoc signs, installs to `~/Applications/Uncommitted.app`.
+  ad-hoc signs, installs to `/Applications/Uncommitted.app` (not
+  `~/Applications`: on macOS 27 the menu bar only manages items of apps
+  running from `/Applications`, so the icon was missing under Bartender).
   - **Kills any running instance** with `killall -q uncommitted` before
     replacing the bundle. If the app *was* running, the build relaunches it
     automatically at the end (`open`); a build while it's deliberately
@@ -124,6 +126,16 @@ and usually fix a specific pitfall:
    the subprocess is already running and `Operation.cancel()` can't reach
    it. `FetchScheduler` additionally skips a repo that already has a fetch
    or a user action in flight. Local-only commands stay unlocked.
+
+9. **Launch-time "open untitled" and reopen are both suppressed.** The
+   only SwiftUI scene is `Settings`, and on macOS 27 SwiftUI shows it in
+   answer to the LaunchServices open-application event at login *and* to
+   the reopen event a second launch sends (Spotlight, `open -a`, a
+   relaunch racing the dying instance). `applicationShouldOpenUntitledFile`
+   returning false covers the first; the second ignores the delegate, so
+   `AppDelegate.installReopenHandler()` re-registers the `rapp` Apple event
+   handler and AppKit never sees it. Direct exec of the binary never showed
+   the window, which is how this was pinned down (2026-09-26).
 
 ## Key files
 

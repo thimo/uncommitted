@@ -1,6 +1,8 @@
 #!/bin/bash
 # Build Uncommitted, wrap in a .app bundle, ad-hoc sign, install to
-# ~/Applications/Uncommitted.app. Same pattern as Clawbridge.
+# /Applications/Uncommitted.app. macOS 27 only manages the menu bar items of
+# apps running from /Applications — from ~/Applications the icon is missing
+# under Bartender (2026-09-26).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -50,18 +52,25 @@ echo "==> Ad-hoc signing"
 codesign --force --deep --sign - "$APP_STAGING"
 codesign --verify --verbose "$APP_STAGING" 2>&1 | head -5
 
-APP_INSTALL="$HOME/Applications/Uncommitted.app"
+APP_INSTALL="/Applications/Uncommitted.app"
 echo "==> Installing to $APP_INSTALL"
-mkdir -p "$HOME/Applications"
 # Quit any running instance so the bundle can be replaced cleanly. Remember
 # whether it was up so we can relaunch it afterwards — a build while the app
 # is deliberately closed shouldn't pop it open.
 WAS_RUNNING=0
 pgrep -x uncommitted >/dev/null 2>&1 && WAS_RUNNING=1
 killall -q uncommitted 2>/dev/null || true
-sleep 0.2
+# Wait for the old process to be gone: an `open` that lands while it is
+# still terminating goes to the dying instance and starts nothing.
+for _ in $(seq 1 50); do pgrep -x uncommitted >/dev/null 2>&1 || break; sleep 0.1; done
 rm -rf "$APP_INSTALL"
 cp -R "$APP_STAGING" "$APP_INSTALL"
+# Builds before 2026-09-26 installed to ~/Applications. A leftover copy there
+# keeps a second registration of the bundle id around, and launch-at-login
+# may still point at it — warn, but leave removing it to the user.
+if [ -d "$HOME/Applications/Uncommitted.app" ]; then
+  echo "WARNING: stale $HOME/Applications/Uncommitted.app still present — trash it and re-enable Open at login in Settings" >&2
+fi
 
 echo
 if [ "$WAS_RUNNING" = "1" ]; then

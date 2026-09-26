@@ -115,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         DiagnosticsLog.shared.info("app", "launched — version \(version) (\(build))")
         CrashReporter.install()
+        installReopenHandler()
         installMinimalMenu()
         setupStatusItem()
         setupPanel()
@@ -209,6 +210,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         false
+    }
+
+    /// The delegate answer above is not enough for the reopen case: on
+    /// macOS 27 SwiftUI still shows the Settings scene when a second
+    /// launch (`open -a`, Spotlight, a relaunch racing the old instance)
+    /// sends the `rapp` Apple event to a running copy. So take the event
+    /// away from AppKit altogether: our handler replaces the one AppKit
+    /// registered in `finishLaunching`, and nothing downstream runs.
+    private func installReopenHandler() {
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleReopenEvent(_:withReply:)),
+            forEventClass: AEEventClass(kCoreEventClass),
+            andEventID: AEEventID(kAEReopenApplication)
+        )
+    }
+
+    @objc private func handleReopenEvent(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
+        DiagnosticsLog.shared.info("app", "reopen request ignored (menu bar app has nothing to open)")
     }
 
     private func resizePanelIfVisible() {

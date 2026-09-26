@@ -20,9 +20,12 @@ GitHub PR/CI signals refresh on a quiet cadence and use the `gh` CLI.
 
 Grab `Uncommitted-X.Y.Z.zip` from the latest release — universal binary
 (`arm64` + `x86_64`, macOS 14+), signed with my Apple Developer ID and
-notarized by Apple. Unzip, drag `Uncommitted.app` into `~/Applications/`
-(or `/Applications/`), and launch. First run passes Gatekeeper without
-prompts.
+notarized by Apple. Unzip, drag `Uncommitted.app` into `/Applications/`, and
+launch. First run passes Gatekeeper without prompts. On macOS 27 the app must
+run from `/Applications`: the menu bar only manages items of apps running from
+there, so from `~/Applications` the icon stays hidden under Bartender. If an
+earlier version lives in `~/Applications`, move it to `/Applications` and
+re-enable "Open at login" in Settings so the login item points at the new copy.
 
 After installation the app updates itself: a built-in updater
 checks for new releases on launch and once a day, and prompts when one is
@@ -183,13 +186,13 @@ No Xcode project — just SwiftPM and a shell script.
 git clone https://github.com/thimo/uncommitted.git
 cd uncommitted
 ./build.sh
-open ~/Applications/Uncommitted.app
+open /Applications/Uncommitted.app
 ```
 
 `build.sh` does the whole bundle: `swift build -c release`, renders the app
 icon programmatically via `Resources/make-icon.swift`, wraps the binary in a
 proper `.app` with `Info.plist`, ad-hoc codesigns, quits any running instance,
-and installs to `~/Applications/Uncommitted.app`.
+and installs to `/Applications/Uncommitted.app`.
 
 The app is `LSUIElement`, so there's no Dock icon — look for it in the menu
 bar.

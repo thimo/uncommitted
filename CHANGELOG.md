@@ -6,9 +6,11 @@ mapping of commits.
 ## Unreleased
 
 ### Fixed
-- On macOS 27 the Settings window opened by itself at every login. The
-  app now declines the launch-time "open untitled" request that SwiftUI
-  answered by showing its only scene.
+- On macOS 27 the Settings window opened by itself at every login, and
+  again whenever the running app was launched a second time (Spotlight,
+  `open -a`). SwiftUI answered both the launch-time "open untitled" request
+  and the reopen event by showing its only scene; the app now declines the
+  first and swallows the second.
 - A shell-command action (such as `code {path}`) no longer stays broken
   for the rest of the session when the login shell is slow to answer the
   first PATH lookup: the timeout is retried on the next action, and the
