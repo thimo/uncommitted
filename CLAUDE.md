@@ -9,9 +9,13 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
 
 ## Current state
 
-- **v0.12.1** released. MIT-licensed on GitHub at `thimo/uncommitted`.
-  (v0.12.0 was packaged from stale per-triple binaries and contains none
-  of its own changes — 0.12.1 is the real one.) Shipped in v0.12.x: open GitHub issues per repo (magenta pill, ignorable
+- **v0.13.0** released (2026-09-27). MIT-licensed on GitHub at
+  `thimo/uncommitted`. Requires macOS 15+. Shipped in v0.13.0: the macOS 27
+  fixes — no Settings window at login/reopen/restore, install from
+  `/Applications` so the menu bar shows the icon under Bartender, and a
+  retried shell PATH lookup for command actions. (v0.12.0 was packaged
+  from stale per-triple binaries and contains none of its own changes —
+  0.12.1 is the real one.) Shipped in v0.12.x: open GitHub issues per repo (magenta pill, ignorable
   label), per-viewer PR attention classification, PR badge on one clone
   per remote, per-repo git lock for remote commands, and no fetch back-off
   for network outages. Shipped in v0.11.0: conflict/operation state, upstream-gone cleanup,
