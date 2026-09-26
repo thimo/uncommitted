@@ -3,6 +3,15 @@
     <channel>
         <title>Uncommitted</title>
         <item>
+            <title>0.13.0</title>
+            <pubDate>Sun, 27 Sep 2026 00:57:44 +0200</pubDate>
+            <link>https://github.com/thimo/uncommitted/releases/tag/v0.13.0</link>
+            <sparkle:version>182</sparkle:version>
+            <sparkle:shortVersionString>0.13.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thimo/uncommitted/releases/download/v0.13.0/Uncommitted-0.13.0.zip" length="4391079" type="application/octet-stream" sparkle:edSignature="xSkOTuOlMA8Q4glTB55Y25BL64lQkTpghI7pFnjAsfzINv1TjRjBzHnBNccmvP9Xk9dM8KlKOLe8EG6y0WkjBg=="/>
+        </item>
+        <item>
             <title>0.12.1</title>
             <pubDate>Sun, 20 Sep 2026 12:53:18 +0200</pubDate>
             <link>https://github.com/thimo/uncommitted/releases/tag/v0.12.1</link>
