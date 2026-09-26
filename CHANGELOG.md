@@ -3,6 +3,17 @@
 User-facing notes for each release. Bullets are curated — not a 1:1
 mapping of commits.
 
+## Unreleased
+
+### Fixed
+- On macOS 27 the Settings window opened by itself at every login. The
+  app now declines the launch-time "open untitled" request that SwiftUI
+  answered by showing its only scene.
+- A shell-command action (such as `code {path}`) no longer stays broken
+  for the rest of the session when the login shell is slow to answer the
+  first PATH lookup: the timeout is retried on the next action, and the
+  fallback PATH now includes `~/.local/bin`, Homebrew and `/usr/local/bin`.
+
 ## v0.12.1 — 2026-09-20
 
 ### Fixed

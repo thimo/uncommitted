@@ -31,6 +31,24 @@ enum ActionTests {
             try expectEqual(ActionRunner.expand(command: "", repoPath: "/r"), "")
         }
 
+        // MARK: - Fallback PATH
+
+        test("Action/fallbackPath_appendsMissingDirectoriesWithHomeExpanded") {
+            let out = ActionRunner.pathWithFallbackDirectories("/usr/bin:/bin", home: "/Users/alice")
+            try expectEqual(out, "/usr/bin:/bin:/Users/alice/.local/bin:/Users/alice/bin:/opt/homebrew/bin:/usr/local/bin")
+        }
+
+        test("Action/fallbackPath_keepsExistingEntriesOnce") {
+            let out = ActionRunner.pathWithFallbackDirectories("/opt/homebrew/bin:/usr/bin:/Users/alice/bin", home: "/Users/alice")
+            try expectEqual(out, "/opt/homebrew/bin:/usr/bin:/Users/alice/bin:/Users/alice/.local/bin:/usr/local/bin")
+        }
+
+        test("Action/fallbackPath_nilOrEmptyPathYieldsJustTheFallbacks") {
+            let expected = "/Users/alice/.local/bin:/Users/alice/bin:/opt/homebrew/bin:/usr/local/bin"
+            try expectEqual(ActionRunner.pathWithFallbackDirectories(nil, home: "/Users/alice"), expected)
+            try expectEqual(ActionRunner.pathWithFallbackDirectories("", home: "/Users/alice"), expected)
+        }
+
         // MARK: - Codable round-trips
 
         test("Action/kind_finder_roundTrips") {

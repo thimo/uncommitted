@@ -196,6 +196,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DiagnosticsLog.shared.info("app", "applicationWillTerminate")
     }
 
+    /// A LaunchServices launch (login item, Finder, `open`) ends with an
+    /// "open untitled" request. Our only SwiftUI scene is `Settings`, and
+    /// on macOS 27 SwiftUI answers that request by showing it — so every
+    /// login opened the Settings window. Direct exec of the binary never
+    /// did, which is how this was pinned down (2026-09-26). A menu bar app
+    /// has nothing to open; decline both the launch-time request and the
+    /// reopen sent by a second launch while running.
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        false
+    }
+
     private func resizePanelIfVisible() {
         guard let panel, panel.isVisible, let hView = hostingController?.view else { return }
         // Force the hosting view to drop any cached intrinsic size and

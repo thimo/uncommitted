@@ -110,18 +110,65 @@ public enum ActionRunner {
         }
     }
 
-    /// Resolved once at first use by launching the user's login shell
-    /// (`$SHELL -l -c printenv PATH`). This sources the full profile
-    /// (fish config, .zprofile, .bash_profile — whatever the user has)
-    /// and gives us the real PATH including Homebrew, rbenv, etc.
-    /// Cached because PATH is stable within a process lifetime.
     /// Timeout for the login-shell PATH resolution. Fish with heavy
-    /// plugins or a broken network mount can stall — don't let a static
-    /// initializer hang the app forever.
+    /// plugins or a broken network mount can stall — don't let a shell
+    /// command action hang the app forever.
     private static let shellPathTimeout: TimeInterval = 3.0
 
-    private static let shellEnvironment: [String: String] = {
+    /// Directories a shell-command action must still be able to see when
+    /// the login shell couldn't be asked. The PATH the app inherits from
+    /// launchd is the bare system one, which finds neither Homebrew nor
+    /// the `code` launcher in `~/.local/bin`.
+    private static let fallbackPathDirectories = [
+        "~/.local/bin", "~/bin", "/opt/homebrew/bin", "/usr/local/bin",
+    ]
+
+    /// How long a failed lookup is left alone before the next action asks
+    /// the shell again. The lookup blocks the caller (a click on the main
+    /// thread) for up to `shellPathTimeout`, so a persistently stalling
+    /// shell must not turn every action into a 3s freeze.
+    private static let shellPathRetryInterval: TimeInterval = 60
+
+    private static let shellEnvironmentLock = NSLock()
+    private static var cachedShellEnvironment: [String: String]?
+    private static var lastFailedEnvironment: [String: String]?
+    private static var retryShellPathAfter: Date = .distantPast
+
+    /// The environment for shell-command actions: the process environment
+    /// with PATH taken from the user's login shell (`$SHELL -l -c printenv
+    /// PATH`), which sources the full profile (fish config, .zprofile,
+    /// .bash_profile — whatever the user has) and so includes Homebrew,
+    /// rbenv, etc. Cached once the shell answered. A timeout or launch
+    /// failure is only held for `shellPathRetryInterval`, so one slow
+    /// shell start doesn't leave the process on the fallback PATH for the
+    /// rest of its lifetime (2026-09-26: a single 3s fish start after the
+    /// macOS 27 upgrade made every later `code {path}` fail with
+    /// "command not found").
+    private static var shellEnvironment: [String: String] {
+        shellEnvironmentLock.lock()
+        defer { shellEnvironmentLock.unlock() }
+        if let cached = cachedShellEnvironment { return cached }
+        if let failed = lastFailedEnvironment, Date() < retryShellPathAfter { return failed }
+        let (env, resolved) = resolveShellEnvironment()
+        if resolved {
+            cachedShellEnvironment = env
+            lastFailedEnvironment = nil
+        } else {
+            lastFailedEnvironment = env
+            retryShellPathAfter = Date().addingTimeInterval(shellPathRetryInterval)
+        }
+        return env
+    }
+
+    /// Returns the environment plus whether the login shell answered. When
+    /// it didn't, PATH is the inherited one extended with the fallback
+    /// directories.
+    private static func resolveShellEnvironment() -> (environment: [String: String], resolved: Bool) {
         var env = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var fallback = env
+        fallback["PATH"] = pathWithFallbackDirectories(env["PATH"], home: home)
+
         let shell = env["SHELL"] ?? "/bin/zsh"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shell)
@@ -130,7 +177,12 @@ public enum ActionRunner {
         process.standardOutput = pipe
         process.standardInput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        guard let _ = try? process.run() else { return env }
+        do {
+            try process.run()
+        } catch {
+            log.warning("$SHELL (\(shell, privacy: .public)) failed to launch: \(error.localizedDescription, privacy: .public) — using inherited PATH plus fallback directories")
+            return (fallback, false)
+        }
 
         let semaphore = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .utility).async {
@@ -139,17 +191,30 @@ public enum ActionRunner {
         }
         if semaphore.wait(timeout: .now() + shellPathTimeout) == .timedOut {
             process.terminate()
-            log.warning("$SHELL PATH resolution timed out after \(shellPathTimeout)s — using inherited PATH")
-            return env
+            log.warning("$SHELL PATH resolution timed out after \(shellPathTimeout)s — using inherited PATH plus fallback directories; will retry on the next action")
+            return (fallback, false)
         }
 
         let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !output.isEmpty {
-            env["PATH"] = output
+        guard !output.isEmpty else {
+            log.warning("$SHELL printed an empty PATH — using inherited PATH plus fallback directories")
+            return (fallback, false)
         }
-        return env
-    }()
+        env["PATH"] = output
+        return (env, true)
+    }
+
+    /// Appends the fallback directories (with `~` expanded to `home`) that
+    /// `path` doesn't already contain. Pure, for the tests.
+    public static func pathWithFallbackDirectories(_ path: String?, home: String) -> String {
+        var entries = (path ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        for dir in fallbackPathDirectories {
+            let expanded = dir.hasPrefix("~/") ? home + dir.dropFirst(1) : dir
+            if !entries.contains(expanded) { entries.append(expanded) }
+        }
+        return entries.joined(separator: ":")
+    }
 
     private static func run(executable: String, args: [String], environment: [String: String]? = nil) {
         let process = Process()
