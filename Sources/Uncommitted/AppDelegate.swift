@@ -601,7 +601,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
-            self?.closePopup()
+            guard let self else { return }
+            // On macOS 27 the menu bar agent hosts status items, so a click
+            // on our own button reaches this monitor before the button
+            // action; closing here made togglePopup reopen it. The button
+            // action owns that click.
+            if self.isMouseOverStatusButton() { return }
+            self.closePopup()
         }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(
@@ -645,6 +651,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             return nil
         }
+    }
+
+    private func isMouseOverStatusButton() -> Bool {
+        guard let button = statusItem?.button, let window = button.window else { return false }
+        let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
+        return rect.contains(NSEvent.mouseLocation)
     }
 
     private func removeEventMonitors() {
