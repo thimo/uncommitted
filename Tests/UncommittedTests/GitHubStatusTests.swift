@@ -138,9 +138,21 @@ enum GitHubStatusTests {
             try expectEqual(GitHubAPI.aggregate(workflowRuns: runs), .failure)
         }
 
-        test("aggregate/cancelledIsFailure") {
+        test("aggregate/cancelledIsNotFailure") {
             let runs = [GitHubAPI.WorkflowRun(status: "completed", conclusion: "cancelled")]
-            try expectEqual(GitHubAPI.aggregate(workflowRuns: runs), .failure)
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: runs), .success)
+        }
+
+        test("latestPerWorkflow/skipsCancelled") {
+            // Seen live: re-running an older commit's Tests run cancelled
+            // the newest one via the concurrency group.
+            let runs = [
+                GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "cancelled", workflowId: 1, runNumber: 11619),
+                GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "success", workflowId: 1, runNumber: 11618),
+                GitHubAPI.WorkflowRun(name: "Lint", status: "completed", conclusion: "cancelled", workflowId: 2, runNumber: 5),
+            ]
+            let latest = GitHubAPI.latestPerWorkflow(runs)
+            try expectEqual(latest.map(\.runNumber), [11618])
         }
 
         test("aggregate/timedOutIsFailure") {

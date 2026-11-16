@@ -1269,11 +1269,13 @@ public enum GitHubAPI {
     /// Returns the most recent run per `workflowId`, in first-seen order.
     /// Picks by `runNumber` rather than trusting the API's newest-first
     /// order: the list endpoint now and then serves a stale answer that
-    /// puts a months-old failed run on top.
+    /// puts a months-old failed run on top. Cancelled runs are skipped —
+    /// a cancel (by hand, or a concurrency group superseding the run) says
+    /// nothing about the code, so the last run that did finish counts.
     public static func latestPerWorkflow(_ runs: [WorkflowRun]) -> [WorkflowRun] {
         var index: [Int: Int] = [:]
         var out: [WorkflowRun] = []
-        for run in runs {
+        for run in runs where run.conclusion != "cancelled" {
             guard let i = index[run.workflowId] else {
                 index[run.workflowId] = out.count
                 out.append(run)
@@ -1317,7 +1319,7 @@ public enum GitHubAPI {
         for run in runs {
             guard run.status == "completed" else { continue }
             switch run.conclusion {
-            case "success", "neutral", "skipped", "stale", nil:
+            case "success", "neutral", "skipped", "stale", "cancelled", nil:
                 continue
             default:
                 let name = run.name
@@ -1331,8 +1333,8 @@ public enum GitHubAPI {
     /// Maps a list of workflow runs to a single `CIStatus`. Public so
     /// tests can drive the conclusion/status combinations without the
     /// network. Mapping mirrors GitHub's own UI:
-    ///   success/neutral/skipped/stale → green (silent)
-    ///   failure/timed_out/cancelled/action_required/startup_failure → red
+    ///   success/neutral/skipped/stale/cancelled → green (silent)
+    ///   failure/timed_out/action_required/startup_failure → red
     ///   anything not yet completed → pending
     public static func aggregate(workflowRuns: [WorkflowRun]) -> CIStatus {
         if workflowRuns.isEmpty { return .none }
@@ -1346,7 +1348,7 @@ public enum GitHubAPI {
                 continue
             }
             switch run.conclusion {
-            case "success", "neutral", "skipped", "stale", nil:
+            case "success", "neutral", "skipped", "stale", "cancelled", nil:
                 continue
             default:
                 anyFailure = true
