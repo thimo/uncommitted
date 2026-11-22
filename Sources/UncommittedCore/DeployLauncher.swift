@@ -44,34 +44,52 @@ public enum DeployLauncher {
 
     // MARK: - Pure builders
 
-    /// The AppleScript for Ghostty. Path and command arrive as `argv`, never
-    /// as script text, so no quoting can break out of the script.
+    /// The AppleScript for Ghostty. Path, input and title arrive as `argv`,
+    /// never as script text, so no quoting can break out of the script.
+    /// The deploy goes into a background tab of the front window — the tab
+    /// that was selected stays selected and Ghostty isn't brought forward —
+    /// so it doesn't take over the screen; a window only when none is open.
     static let ghosttyScript = """
     on run argv
       tell application "Ghostty"
         set cfg to new surface configuration
         set initial working directory of cfg to (item 1 of argv)
         set initial input of cfg to (item 2 of argv) & linefeed
-        new window with configuration cfg
-        activate
+        if (count of windows) is 0 then
+          new window with configuration cfg
+        else
+          set win to front window
+          set previousTab to selected tab of win
+          set deployTab to new tab in win with configuration cfg
+          set name override of deployTab to (item 3 of argv)
+          select tab previousTab
+        end if
       end tell
     end run
     """
 
+    /// What gets typed into the shell: the tab closes itself after a
+    /// successful deploy and stays open, in the repo, after a failed one.
+    /// `&&` and `exit` read the same in zsh, bash and fish.
+    static func shellInput(command: String) -> String {
+        "\(command) && exit"
+    }
+
     /// Full argument list for `/usr/bin/osascript`.
     public static func ghosttyArguments(repoPath: String, command: String) -> [String] {
-        ["-e", ghosttyScript, repoPath, command]
+        let title = "deploy: \(URL(fileURLWithPath: repoPath).lastPathComponent)"
+        return ["-e", ghosttyScript, repoPath, shellInput(command: command), title]
     }
 
     /// The `.command` script for other terminals. Terminal.app starts these
-    /// with cwd = home, hence the `cd`; the final `exec` keeps the window
-    /// open in the repo once the deploy ends.
+    /// with cwd = home, hence the `cd`. A successful deploy ends the script;
+    /// after a failed one the final `exec` leaves a shell open in the repo.
     public static func commandScript(repoPath: String, command: String) -> String {
         let quoted = "'" + repoPath.replacingOccurrences(of: "'", with: "'\\''") + "'"
         return """
         #!/bin/zsh
         cd \(quoted) || exit 1
-        \(command)
+        \(command) && exit 0
         echo
         exec "${SHELL:-/bin/zsh}" -l
 

@@ -61,13 +61,15 @@ enum DeployLauncherTests {
             let script = DeployLauncher.commandScript(repoPath: "/Users/a/My Repos/it's", command: "bin/kamal deploy")
             try expect(script.hasPrefix("#!/bin/zsh\n"))
             try expect(script.contains("cd '/Users/a/My Repos/it'\\''s' || exit 1\n"), script)
-            try expect(script.contains("\nbin/kamal deploy\n"))
+            // Ends on success; only a failed deploy reaches the exec below.
+            try expect(script.contains("\nbin/kamal deploy && exit 0\n"))
             try expect(script.contains("exec \"${SHELL:-/bin/zsh}\" -l"))
         }
 
         test("Deploy/ghostty_passesPathAndCommandAsArguments") {
             let args = DeployLauncher.ghosttyArguments(repoPath: "/r/it's here", command: "kamal deploy")
-            try expectEqual(Array(args.suffix(2)), ["/r/it's here", "kamal deploy"])
+            // Closes the tab on success, leaves it open on failure.
+            try expectEqual(Array(args.suffix(3)), ["/r/it's here", "kamal deploy && exit", "deploy: it's here"])
             let scriptText = args[1]
             try expect(!scriptText.contains("/r/it's here"))
             try expect(!scriptText.contains("kamal deploy"))
