@@ -10,7 +10,7 @@ Status: **shipped in v0.5.**
 
 ## What you see
 
-In the popover, each repo row gets up to three extra badges, rendered to
+In the popover, each repo row gets up to four extra badges, rendered to
 the **left** of the existing local-status pills:
 
 | Badge | Meaning |
@@ -21,6 +21,7 @@ the **left** of the existing local-status pills:
 | `⤴ 3` (muted) | 3 open PRs, none need you |
 | `⊙ 2 / 5` | 2 open issues need you, 5 are someone else's (the `/ 5` is muted) |
 | `⊙ 5` (muted) | 5 open issues, none need you |
+| `📦 3` (brown) | 3 commits on the default branch are not deployed to production |
 
 An issue **needs you** when it's assigned to you, or when it's assigned
 to nobody on a repo you run (admin or maintainer) — there, nobody else
@@ -54,6 +55,46 @@ feature off and every open issue counts again.
 Green CI is intentionally **invisible** — Uncommitted's job is to
 surface what needs attention, not confirm what's working.
 
+### Where the CI verdict comes from
+
+Two sources, merged into one badge:
+
+- **GitHub Actions workflow runs** on the branch — the latest run of
+  each workflow. Cancelled runs and GitHub-managed runs (Dependabot
+  updates, CodeQL default setup) don't count.
+- **Commit statuses** on the branch head — what a local or third-party
+  CI posts through the statuses API, for instance a `bin/ci` script that
+  reports its own verdict.
+
+Any failure (a failed run, or a status in `failure` or `error`) makes the
+badge red; otherwise anything still running or `pending` makes it yellow.
+The hover panel names what failed, workflow names first, then status
+contexts. Check runs from GitHub Apps other than Actions are not read.
+
+Statuses belong to one commit, so a push clears them until the CI
+reports on the new head. When one of the two calls fails, the badge
+keeps that branch's last answer rather than judging on half the picture.
+
+### Undeployed commits
+
+The deploy pill shows how far the repository's default branch is ahead
+of production: the number of commits after the newest
+[GitHub Deployment][deployments] for the environment `production` whose
+latest status is `success`. A newer deployment that failed or is still
+in progress doesn't move that point. The pill is hidden at zero, and a
+repo without such a deployment never shows it.
+
+The records can come from anything that writes GitHub Deployments —
+GitHub Actions environments, or a deploy tool's hook calling the API
+(a Kamal `post-deploy` hook, say). The environment name has to be
+exactly `production`, and only the 20 most recent records are read.
+
+Like PRs and issues, the pill belongs to the remote: it shows on the
+first clone of a repo only, and a repo with undeployed commits stays
+visible under "Hide repositories with no changes".
+
+[deployments]: https://docs.github.com/en/rest/deployments/deployments
+
 In the menu bar itself, the branch icon turns red whenever **any**
 tracked repo has failing CI. The count number stays on
 uncommitted+unpushed (pure local git state), so you get two bits of
@@ -68,15 +109,18 @@ info at a glance:
   in your browser.
 - **Click the issue pill** → opens `https://github.com/<owner>/<repo>/issues`.
 - **Click the CI badge (red or yellow)** → opens the Actions tab,
-  pre-filtered to the current branch.
+  pre-filtered to the current branch. A failing commit status has no
+  page there; the hover panel names it.
+- **Click the deploy pill** → opens the comparison
+  `compare/<deployed sha>...<default branch>`: the undeployed commits.
 
 ## Muting a single repo
 
-Right-click a repo row and choose **Mute GitHub status** to hide the PR
-and issue pills and CI badges for that repo only. A muted repo also stops
-contributing to the red menu bar icon and, when "Hide repositories with
-no changes" is on, no longer stays visible just because it has open PRs,
-open issues or failing CI.
+Right-click a repo row and choose **Mute GitHub status** to hide the PR,
+issue and deploy pills and CI badges for that repo only. A muted repo also
+stops contributing to the red menu bar icon and, when "Hide repositories
+with no changes" is on, no longer stays visible just because it has open
+PRs, open issues, undeployed commits or failing CI.
 
 Nothing git-side changes: uncommitted files, unpushed commits, the
 behind count, pull/push buttons and auto-fetch all keep working. The
@@ -138,12 +182,15 @@ GitHub traffic:
 - **PRs and issues** are keyed by `owner/repo` — fetched **once** per
   slug, in a single GraphQL call, and shown on the first clone of that
   slug in your repo order only.
+- **Undeployed commits** are keyed by `owner/repo` too — one GraphQL
+  call per slug, plus one compare call when production is behind.
 - **CI status** is keyed by `owner/repo + branch` — fetched once per
-  unique (slug, branch) pair, broadcast to clones on the same branch.
+  unique (slug, branch) pair (one call for the workflow runs, one for
+  the commit statuses), broadcast to clones on the same branch.
 
 So four clones of `sportcity-nl/electrolyte` on four different feature
-branches collapse to **1 PR fetch + 4 CI fetches** per cycle, not 8.
-Two clones on the same branch collapse the CI fetch too.
+branches share the PR and deployment fetches and do four CI fetches per
+cycle; two clones on the same branch collapse the CI fetch too.
 
 ## Bot detection
 

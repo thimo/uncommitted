@@ -113,15 +113,25 @@ cleanup?" without leaving the menu bar.
 | 🕐 | CI is running on the latest push |
 | `⤴ 2 / 3` | 2 open PRs need you · 3 more are just open (the tail is muted) |
 | `⊙ 2 / 5` | 2 open issues need you (yours, or unassigned on a repo you run) · 5 are someone else's (the tail is muted) |
+| `📦 3` | 3 commits on the default branch are not deployed to production yet |
 
-Green CI is invisible by design — the menu bar is for things that need
+The CI badge combines GitHub Actions workflow runs with the commit
+statuses on the branch head, so a verdict posted by a local or
+third-party CI (a `bin/ci` status, for instance) counts too. Green CI is
+invisible by design — the menu bar is for things that need
 attention, not confirmation. The branch icon in the menu bar itself
 turns **red** whenever any tracked repo has failing CI, so a single
 glance tells you "is anything broken?" without opening the popover.
 
+The deploy pill compares the default branch with the latest successful
+[GitHub Deployment][deployments] for the `production` environment. It
+needs nothing but those records, whichever tool writes them; a repo
+without them shows no pill.
+
 Click the PR pill to open the GitHub PR list; click the issue pill to
 open the GitHub issues list; click the red/yellow CI badge to open the
-Actions page filtered to that branch. The issues badge can be turned off
+Actions page filtered to that branch; click the deploy pill to open the
+comparison of the undeployed commits. The issues badge can be turned off
 separately from the rest of GitHub status in Settings → Remote → GitHub,
 for anyone who tracks PRs and CI but doesn't want the issue tracker
 in their menu bar. A configurable label (default `someday`, editable in
@@ -141,7 +151,7 @@ Toggle the feature in Settings → Remote → GitHub. Full details:
 **Muting a single repo.** For a repo you track but don't own — a fork,
 a dependency you keep checked out, a team repo where the PRs aren't
 yours to review — right-click its row and choose **Mute GitHub
-status**. That hides the PR pill and CI badges for that repo and keeps
+status**. That hides the PR, issue and deploy pills and CI badges for that repo and keeps
 its red CI out of the menu bar icon. Everything git-side stays exactly
 as it was: uncommitted files, unpushed commits, the behind count, the
 pull and push buttons, and auto-fetch. Muted repos are listed in
@@ -149,6 +159,7 @@ Settings → Remote under "Muted repositories", where you can unmute
 them again.
 
 [gh]: https://cli.github.com
+[deployments]: https://docs.github.com/en/rest/deployments/deployments
 
 ## Auto-fetch from remotes
 
