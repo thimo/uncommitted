@@ -84,6 +84,11 @@ latest status is `success`. A newer deployment that failed or is still
 in progress doesn't move that point. The pill is hidden at zero, and a
 repo without such a deployment never shows it.
 
+A push shows up in the pill right away, without a GitHub call: once the
+clone's `origin/<default branch>` moves, Uncommitted counts the commits
+after the deployed one with local git. That count only ever raises the
+number; a deploy lowers it when GitHub reports the new deployment.
+
 The records can come from anything that writes GitHub Deployments —
 GitHub Actions environments, or a deploy tool's hook calling the API
 (a Kamal `post-deploy` hook, say). The environment name has to be

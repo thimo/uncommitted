@@ -181,6 +181,14 @@ public final class GitHubStatusScheduler: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // A push (or a fetch that brought someone else's commits) moves
+        // origin's default branch in the clone; the deploy pill follows
+        // from local git alone, without waiting for a GitHub poll.
+        repoStore.$repos
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] repos in self?.recountUndeployed(repos) }
+            .store(in: &cancellables)
+
         // Persist on every change, debounced 300ms. Mirrors ConfigStore.
         $statuses
             .dropFirst()
@@ -274,8 +282,8 @@ public final class GitHubStatusScheduler: ObservableObject {
                 // before it ends; one more look gives GitHub a moment.
                 func retry() -> Bool {
                     guard retriesLeft > 0 else { return false }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
-                        self?.checkDeployment(of: url, deployedHead: deployedHead, retriesLeft: retriesLeft - 1)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+                        self.checkDeployment(of: url, deployedHead: deployedHead, retriesLeft: retriesLeft - 1)
                     }
                     return true
                 }
@@ -296,6 +304,69 @@ public final class GitHubStatusScheduler: ObservableObject {
                 // with the hook's output has closed itself by now.
                 let commit = deployedHead.map { " for \($0.prefix(7))" } ?? ""
                 DiagnosticsLog.shared.warning("deploy", "\(url.lastPathComponent) was deployed, but GitHub has no successful production Deployment\(commit): the deploy was not recorded")
+            }
+        }
+    }
+
+    // MARK: - Undeployed commits from local git
+
+    /// `recountKey` of each repo when its undeployed commits were last
+    /// counted locally. Main thread only.
+    private var lastRecountKey: [URL: String] = [:]
+
+    /// One count at a time: at launch every repo with a deployment is due.
+    private let recountQueue = DispatchQueue(label: "nl.defrog.uncommitted.undeployed-recount", qos: .utility)
+
+    /// Everything a push or fetch can change for the count: the checked-out
+    /// branch, every tracking branch (the default branch need not be the
+    /// checked-out one), and the deployed commit counted from.
+    static func recountKey(status: RepoStatus, lag: DeploymentLag) -> String {
+        let branches = status.branches.map { "\($0.name):\($0.ahead):\($0.behind)" }.joined(separator: ",")
+        return "\(status.branch)|\(status.headOid ?? "")|\(status.ahead)|\(status.behind)|\(branches)|\(lag.deployedSHA)"
+    }
+
+    /// The lag after a local count, or nil when the count changes nothing.
+    /// A local count only ever raises the number: this clone may not have
+    /// fetched what another clone pushed, and "deployed" is GitHub's to
+    /// say. It also has to be a count from the commit GitHub named.
+    public static func raisedLag(current: DeploymentLag, localCount: Int, countedFrom sha: String) -> DeploymentLag? {
+        guard sha == current.deployedSHA, localCount > current.aheadBy else { return nil }
+        return DeploymentLag(aheadBy: localCount, deployedSHA: current.deployedSHA, defaultBranch: current.defaultBranch)
+    }
+
+    private func recountUndeployed(_ repos: [Repo]) {
+        guard !stopped else { return }
+        for repo in repos {
+            guard let status = repo.status,
+                  let lag = statuses[repo.url]?.deploymentLag else { continue }
+            let key = Self.recountKey(status: status, lag: lag)
+            guard lastRecountKey[repo.url] != key else { continue }
+            lastRecountKey[repo.url] = key
+            recount(repo.url)
+        }
+    }
+
+    /// Counts the commits after the deployed one in this clone and raises
+    /// the pill of every clone of the remote when the clone knows of more.
+    private func recount(_ url: URL) {
+        guard let lag = statuses[url]?.deploymentLag,
+              let slug = statuses[url]?.slug else { return }
+        recountQueue.async { [weak self] in
+            guard let count = GitService.commitCount(
+                from: lag.deployedSHA,
+                to: "origin/\(lag.defaultBranch)",
+                at: url
+            ) else { return }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                for clone in self.repoStore.repos where clone.url == url || self.statuses[clone.url]?.slug == slug {
+                    guard var current = self.statuses[clone.url],
+                          let currentLag = current.deploymentLag,
+                          let raised = Self.raisedLag(current: currentLag, localCount: count, countedFrom: lag.deployedSHA)
+                    else { continue }
+                    current.deploymentLag = raised
+                    self.statuses[clone.url] = current
+                }
             }
         }
     }
@@ -339,6 +410,7 @@ public final class GitHubStatusScheduler: ObservableObject {
         statuses.removeValue(forKey: url)
         lastRefreshAt.removeValue(forKey: url)
         lastRefreshState.removeValue(forKey: url)
+        lastRecountKey.removeValue(forKey: url)
     }
 
     // MARK: - Tick
@@ -607,6 +679,8 @@ public final class GitHubStatusScheduler: ObservableObject {
         }
         current.slug = slug
         statuses[url] = current
+        // GitHub's answer may predate a push this clone already has.
+        recount(url)
     }
 
     // MARK: - Display lookup

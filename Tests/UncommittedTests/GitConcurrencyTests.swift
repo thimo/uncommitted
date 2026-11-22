@@ -40,6 +40,32 @@ enum GitConcurrencyTests {
                 )
             }
         }
+
+        test("GitService/commitCount_countsCommitsAfterTheGivenOne") {
+            // What the deploy pill does after a push: count from the
+            // deployed commit to the branch, in the clone, without GitHub.
+            let repo = FileManager.default.temporaryDirectory
+                .appendingPathComponent("uncommitted-count-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: repo) }
+            try makeUpstream(at: repo)
+            let deployed = try requireNotNil(GitService.status(at: repo)?.headOid)
+            try expectEqual(GitService.commitCount(from: deployed, to: "main", at: repo), 0)
+            try commit(at: repo)
+            try commit(at: repo)
+            try expectEqual(GitService.commitCount(from: deployed, to: "main", at: repo), 2)
+        }
+
+        test("GitService/commitCount_unknownCommit_isNilNotZero") {
+            let repo = FileManager.default.temporaryDirectory
+                .appendingPathComponent("uncommitted-count-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: repo) }
+            try makeUpstream(at: repo)
+            let unknown = String(repeating: "a", count: 40)
+            try expectNil(GitService.commitCount(from: unknown, to: "main", at: repo))
+            try expectNil(GitService.commitCount(from: "main", to: "origin/main", at: repo))
+            // Never read as an option, even though `--all..main` would fail anyway.
+            try expectNil(GitService.commitCount(from: "--all", to: "main", at: repo))
+        }
     }
 
     // MARK: - Fixture helpers

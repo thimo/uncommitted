@@ -55,6 +55,29 @@ enum GitHubRateLimitTests {
             try expect(!gate.isAnyPaused())
         }
 
+        // MARK: - Undeployed commits counted locally
+
+        test("GitHubStatusScheduler/raisedLag_higherLocalCount_raises") {
+            let lag = DeploymentLag(aheadBy: 0, deployedSHA: "abc", defaultBranch: "main")
+            let raised = GitHubStatusScheduler.raisedLag(current: lag, localCount: 2, countedFrom: "abc")
+            try expectEqual(raised, DeploymentLag(aheadBy: 2, deployedSHA: "abc", defaultBranch: "main"))
+        }
+
+        test("GitHubStatusScheduler/raisedLag_neverLowers") {
+            // A clone that hasn't fetched counts fewer commits than GitHub
+            // reported; that must not shrink the pill.
+            let lag = DeploymentLag(aheadBy: 3, deployedSHA: "abc", defaultBranch: "main")
+            try expectNil(GitHubStatusScheduler.raisedLag(current: lag, localCount: 1, countedFrom: "abc"))
+            try expectNil(GitHubStatusScheduler.raisedLag(current: lag, localCount: 3, countedFrom: "abc"))
+        }
+
+        test("GitHubStatusScheduler/raisedLag_countFromAnOlderDeployment_ignored") {
+            // A deploy was recorded while the count ran: the count started
+            // from the previous deployment and says nothing anymore.
+            let lag = DeploymentLag(aheadBy: 0, deployedSHA: "new", defaultBranch: "main")
+            try expectNil(GitHubStatusScheduler.raisedLag(current: lag, localCount: 4, countedFrom: "old"))
+        }
+
         // MARK: - Popup-open throttle
 
         test("GitHubStatusScheduler/popupRefreshDue_neverRefreshed_true") {

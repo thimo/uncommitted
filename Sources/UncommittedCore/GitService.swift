@@ -262,6 +262,21 @@ public enum GitService {
         return Date(timeIntervalSince1970: TimeInterval(ct))
     }
 
+    /// Number of commits in `to` that are not in `from` (`git rev-list
+    /// --count from..to`). nil when either end is unknown in this clone,
+    /// so a caller never mistakes "can't tell" for zero.
+    public static func commitCount(from: String, to: String, at url: URL) -> Int? {
+        // Both ends come from outside (GitHub, the status cache): never
+        // let one be read as an option.
+        guard !from.hasPrefix("-"), !to.hasPrefix("-") else { return nil }
+        let result = execute(["rev-list", "--count", "\(from)..\(to)"], at: url)
+        guard result.exitStatus == 0,
+              let output = String(data: result.stdout, encoding: .utf8) else {
+            return nil
+        }
+        return Int(output.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     /// Runs `git log <range> --format=%s` and returns each commit's subject
     /// (first line only, which is what `%s` gives us). Empty on any error —
     /// callers treat this as a best-effort enrichment, never a failure.
