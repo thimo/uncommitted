@@ -277,6 +277,22 @@ public enum GitService {
         return Int(output.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    /// Subjects of the newest `limit` commits `commitCount(from:to:at:)`
+    /// counts, newest first. One entry per commit, also for a commit
+    /// without a subject, so the length can be checked against the count.
+    /// Empty on any error.
+    public static func commitSubjects(from: String, to: String, limit: Int, at url: URL) -> [String] {
+        guard !from.hasPrefix("-"), !to.hasPrefix("-"), limit > 0 else { return [] }
+        let result = execute(["log", "-n", "\(limit)", "--format=%s", "\(from)..\(to)"], at: url)
+        guard result.exitStatus == 0,
+              let output = String(data: result.stdout, encoding: .utf8) else {
+            return []
+        }
+        var lines = output.components(separatedBy: "\n")
+        if lines.last == "" { lines.removeLast() }
+        return lines.map { $0.isEmpty ? "(no subject)" : $0 }
+    }
+
     /// Runs `git log <range> --format=%s` and returns each commit's subject
     /// (first line only, which is what `%s` gives us). Empty on any error —
     /// callers treat this as a best-effort enrichment, never a failure.

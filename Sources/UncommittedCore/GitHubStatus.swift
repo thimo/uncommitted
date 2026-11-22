@@ -353,11 +353,20 @@ public struct DeploymentLag: Equatable, Codable {
     public let aheadBy: Int
     public let deployedSHA: String
     public let defaultBranch: String
+    /// Subjects of the undeployed commits, newest first, read from the
+    /// local clone: all of them, or the newest `subjectLimit` when there
+    /// are more. nil when the clone doesn't hold all `aheadBy` commits
+    /// (not fetched yet) — then only the count is known, from GitHub.
+    public let subjects: [String]?
 
-    public init(aheadBy: Int, deployedSHA: String, defaultBranch: String) {
+    /// As many as the hover panel lists; the rest is "+N more".
+    public static let subjectLimit = 12
+
+    public init(aheadBy: Int, deployedSHA: String, defaultBranch: String, subjects: [String]? = nil) {
         self.aheadBy = aheadBy
         self.deployedSHA = deployedSHA
         self.defaultBranch = defaultBranch
+        self.subjects = subjects
     }
 }
 

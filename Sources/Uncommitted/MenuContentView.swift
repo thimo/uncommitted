@@ -1249,11 +1249,39 @@ struct RepoDetailPopover: View {
                 EmptyView()
             }
             if let lag = gh.deploymentLag, lag.aheadBy > 0 {
-                GitHubLine(
-                    systemImage: "shippingbox",
-                    color: .brown,
-                    text: undeployedText(lag)
-                )
+                VStack(alignment: .leading, spacing: 4) {
+                    // Header in the wording and weight of "1 commit to push";
+                    // the branch and "production" are in the pill's tooltip.
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "shippingbox")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.brown)
+                            .frame(width: 16, alignment: .center)
+                        Text("\(lag.aheadBy) commit\(lag.aheadBy == 1 ? "" : "s") to deploy")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    // Same list as "commits to push": subjects, newest
+                    // first. Absent when the clone doesn't hold them all.
+                    if let subjects = lag.subjects, !subjects.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(subjects.enumerated()), id: \.offset) { _, subject in
+                                Text(subject)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.primary.opacity(0.70))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            // The list is capped at `DeploymentLag.subjectLimit`.
+                            if lag.aheadBy > subjects.count {
+                                Text("+\(lag.aheadBy - subjects.count) more")
+                                    .font(.caption)
+                                    .foregroundStyle(.primary.opacity(0.50))
+                            }
+                        }
+                        .padding(.leading, 22) // under the line's text, past its icon
+                    }
+                }
             }
         }
     }

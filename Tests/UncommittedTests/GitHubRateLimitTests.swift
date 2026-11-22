@@ -57,25 +57,51 @@ enum GitHubRateLimitTests {
 
         // MARK: - Undeployed commits counted locally
 
-        test("GitHubStatusScheduler/raisedLag_higherLocalCount_raises") {
+        test("GitHubStatusScheduler/mergedLag_higherLocalCount_raisesAndListsTheCommits") {
             let lag = DeploymentLag(aheadBy: 0, deployedSHA: "abc", defaultBranch: "main")
-            let raised = GitHubStatusScheduler.raisedLag(current: lag, localCount: 2, countedFrom: "abc")
-            try expectEqual(raised, DeploymentLag(aheadBy: 2, deployedSHA: "abc", defaultBranch: "main"))
+            let merged = GitHubStatusScheduler.mergedLag(current: lag, localCount: 2, localSubjects: ["b", "a"], countedFrom: "abc")
+            try expectEqual(merged, DeploymentLag(aheadBy: 2, deployedSHA: "abc", defaultBranch: "main", subjects: ["b", "a"]))
         }
 
-        test("GitHubStatusScheduler/raisedLag_neverLowers") {
+        test("GitHubStatusScheduler/mergedLag_sameCount_addsTheSubjects") {
+            // GitHub gave the count; the clone supplies what the commits are.
+            let lag = DeploymentLag(aheadBy: 1, deployedSHA: "abc", defaultBranch: "main")
+            let merged = GitHubStatusScheduler.mergedLag(current: lag, localCount: 1, localSubjects: ["a"], countedFrom: "abc")
+            try expectEqual(merged?.subjects, ["a"])
+            try expectEqual(merged?.aheadBy, 1)
+        }
+
+        test("GitHubStatusScheduler/mergedLag_neverLowers_andShowsNoPartialList") {
             // A clone that hasn't fetched counts fewer commits than GitHub
-            // reported; that must not shrink the pill.
+            // reported: the pill keeps its number, and a list of one under
+            // "3 commits" would be wrong.
             let lag = DeploymentLag(aheadBy: 3, deployedSHA: "abc", defaultBranch: "main")
-            try expectNil(GitHubStatusScheduler.raisedLag(current: lag, localCount: 1, countedFrom: "abc"))
-            try expectNil(GitHubStatusScheduler.raisedLag(current: lag, localCount: 3, countedFrom: "abc"))
+            try expectNil(GitHubStatusScheduler.mergedLag(current: lag, localCount: 1, localSubjects: ["a"], countedFrom: "abc"))
         }
 
-        test("GitHubStatusScheduler/raisedLag_countFromAnOlderDeployment_ignored") {
+        test("GitHubStatusScheduler/mergedLag_staleClone_keepsTheOtherClonesList") {
+            let lag = DeploymentLag(aheadBy: 2, deployedSHA: "abc", defaultBranch: "main", subjects: ["b", "a"])
+            try expectNil(GitHubStatusScheduler.mergedLag(current: lag, localCount: 1, localSubjects: ["a"], countedFrom: "abc"))
+        }
+
+        test("GitHubStatusScheduler/mergedLag_nothingNew_isNil") {
+            let lag = DeploymentLag(aheadBy: 1, deployedSHA: "abc", defaultBranch: "main", subjects: ["a"])
+            try expectNil(GitHubStatusScheduler.mergedLag(current: lag, localCount: 1, localSubjects: ["a"], countedFrom: "abc"))
+            let deployed = DeploymentLag(aheadBy: 0, deployedSHA: "abc", defaultBranch: "main")
+            try expectNil(GitHubStatusScheduler.mergedLag(current: deployed, localCount: 0, localSubjects: [], countedFrom: "abc"))
+        }
+
+        test("GitHubStatusScheduler/mergedLag_countFromAnOlderDeployment_ignored") {
             // A deploy was recorded while the count ran: the count started
             // from the previous deployment and says nothing anymore.
             let lag = DeploymentLag(aheadBy: 0, deployedSHA: "new", defaultBranch: "main")
-            try expectNil(GitHubStatusScheduler.raisedLag(current: lag, localCount: 4, countedFrom: "old"))
+            try expectNil(GitHubStatusScheduler.mergedLag(current: lag, localCount: 4, localSubjects: ["d", "c", "b", "a"], countedFrom: "old"))
+        }
+
+        test("DeploymentLag/decodesACacheWrittenBeforeSubjects") {
+            let json = Data(#"{"aheadBy":2,"deployedSHA":"abc","defaultBranch":"main"}"#.utf8)
+            let lag = try JSONDecoder().decode(DeploymentLag.self, from: json)
+            try expectEqual(lag, DeploymentLag(aheadBy: 2, deployedSHA: "abc", defaultBranch: "main"))
         }
 
         // MARK: - Popup-open throttle

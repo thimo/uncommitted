@@ -31,7 +31,9 @@ write access along with everyone else, an archived repo. Mute the repo
 if even grey is too much.
 
 The hover panel lists the PRs and issues behind those counts — whatever
-needs you first — and each row opens on github.com.
+needs you first — and each row opens on github.com. Under the deploy line
+it lists the undeployed commits by subject, read from the local clone;
+the list is left out while the clone hasn't fetched all of them.
 
 Issues have their own switch: **Include open issues** in Settings →
 Remote, under **Show GitHub status**. With it off, issues are left out

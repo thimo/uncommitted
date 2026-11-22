@@ -53,6 +53,11 @@ enum GitConcurrencyTests {
             try commit(at: repo)
             try commit(at: repo)
             try expectEqual(GitService.commitCount(from: deployed, to: "main", at: repo), 2)
+            try expectEqual(GitService.commitSubjects(from: deployed, to: "main", limit: 12, at: repo), ["tick", "tick"])
+            try expectEqual(GitService.commitSubjects(from: deployed, to: "main", limit: 1, at: repo), ["tick"])
+            // A commit without a subject still takes its place in the list.
+            try run(["commit", "--quiet", "--allow-empty", "--allow-empty-message", "-m", ""], at: repo)
+            try expectEqual(GitService.commitSubjects(from: deployed, to: "main", limit: 12, at: repo), ["(no subject)", "tick", "tick"])
         }
 
         test("GitService/commitCount_unknownCommit_isNilNotZero") {

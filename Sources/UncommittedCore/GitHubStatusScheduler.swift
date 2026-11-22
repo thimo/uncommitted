@@ -328,10 +328,35 @@ public final class GitHubStatusScheduler: ObservableObject {
     /// The lag after a local count, or nil when the count changes nothing.
     /// A local count only ever raises the number: this clone may not have
     /// fetched what another clone pushed, and "deployed" is GitHub's to
-    /// say. It also has to be a count from the commit GitHub named.
-    public static func raisedLag(current: DeploymentLag, localCount: Int, countedFrom sha: String) -> DeploymentLag? {
-        guard sha == current.deployedSHA, localCount > current.aheadBy else { return nil }
-        return DeploymentLag(aheadBy: localCount, deployedSHA: current.deployedSHA, defaultBranch: current.defaultBranch)
+    /// say. It also has to be a count from the commit GitHub named. The
+    /// subjects are taken over only when they are the whole list.
+    public static func mergedLag(
+        current: DeploymentLag,
+        localCount: Int,
+        localSubjects: [String],
+        countedFrom sha: String
+    ) -> DeploymentLag? {
+        guard sha == current.deployedSHA else { return nil }
+        let aheadBy = max(current.aheadBy, localCount)
+        let listed = min(aheadBy, DeploymentLag.subjectLimit)
+        let subjects: [String]?
+        if aheadBy > 0, localCount == aheadBy {
+            // This clone holds them all; a list that doesn't fit the
+            // count (the read failed) is no list.
+            subjects = localSubjects.count == listed ? localSubjects : nil
+        } else if aheadBy > 0, current.subjects?.count == listed {
+            // This clone knows less than the one that listed them.
+            subjects = current.subjects
+        } else {
+            subjects = nil
+        }
+        let merged = DeploymentLag(
+            aheadBy: aheadBy,
+            deployedSHA: current.deployedSHA,
+            defaultBranch: current.defaultBranch,
+            subjects: subjects
+        )
+        return merged == current ? nil : merged
     }
 
     private func recountUndeployed(_ repos: [Repo]) {
@@ -352,19 +377,27 @@ public final class GitHubStatusScheduler: ObservableObject {
         guard let lag = statuses[url]?.deploymentLag,
               let slug = statuses[url]?.slug else { return }
         recountQueue.async { [weak self] in
-            guard let count = GitService.commitCount(
-                from: lag.deployedSHA,
-                to: "origin/\(lag.defaultBranch)",
+            let range = (from: lag.deployedSHA, to: "origin/\(lag.defaultBranch)")
+            guard let count = GitService.commitCount(from: range.from, to: range.to, at: url) else { return }
+            let subjects = GitService.commitSubjects(
+                from: range.from,
+                to: range.to,
+                limit: min(count, DeploymentLag.subjectLimit),
                 at: url
-            ) else { return }
+            )
             DispatchQueue.main.async {
                 guard let self else { return }
                 for clone in self.repoStore.repos where clone.url == url || self.statuses[clone.url]?.slug == slug {
                     guard var current = self.statuses[clone.url],
                           let currentLag = current.deploymentLag,
-                          let raised = Self.raisedLag(current: currentLag, localCount: count, countedFrom: lag.deployedSHA)
+                          let merged = Self.mergedLag(
+                              current: currentLag,
+                              localCount: count,
+                              localSubjects: subjects,
+                              countedFrom: lag.deployedSHA
+                          )
                     else { continue }
-                    current.deploymentLag = raised
+                    current.deploymentLag = merged
                     self.statuses[clone.url] = current
                 }
             }
@@ -675,7 +708,16 @@ public final class GitHubStatusScheduler: ObservableObject {
         var current = statuses[url] ?? GitHubRepoStatus()
         switch result {
         case .noDeployment: current.deploymentLag = nil
-        case .lag(let lag): current.deploymentLag = lag
+        case .lag(let lag):
+            // GitHub only gives the count; keep the subjects already read
+            // from the clone while they still fit, so the list doesn't
+            // blink away until the recount below lands.
+            if let known = current.deploymentLag, known.deployedSHA == lag.deployedSHA,
+               known.aheadBy == lag.aheadBy, known.subjects != nil {
+                current.deploymentLag = known
+            } else {
+                current.deploymentLag = lag
+            }
         }
         current.slug = slug
         statuses[url] = current
