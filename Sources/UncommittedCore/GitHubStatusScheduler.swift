@@ -13,8 +13,10 @@ private let log = Logger(subsystem: "nl.defrog.uncommitted", category: "github-s
 ///  - "active" repo (`.git/HEAD` touched within `activeThreshold`): every `activeInterval`
 ///  - else: every `idleInterval`
 ///
-/// Failures don't back off — GitHub failures are usually transient
-/// (rate limit, network blip), so we retry at the normal cadence.
+/// Failures don't back off — GitHub failures are usually transient, so
+/// we retry at the normal cadence. The rate limit is the exception: a
+/// sweep stops at the first refusal and `GitHubRateLimitGate` holds
+/// further calls back for a few minutes.
 /// Repos without a GitHub remote silently never appear in `statuses`,
 /// so the UI naturally renders nothing for them.
 public final class GitHubStatusScheduler: ObservableObject {
@@ -30,6 +32,61 @@ public final class GitHubStatusScheduler: ObservableObject {
     public static let activeThreshold: TimeInterval = 24 * 60 * 60
     public static let tickInterval: TimeInterval = 60
     public static let startupDelay: TimeInterval = 30
+    /// Opening the popup refetches a repo only when its data is older than
+    /// this. A sweep costs about six GraphQL points per repository, so
+    /// with 38 repositories some twenty popup opens spent the hourly
+    /// budget of 5000 and took every other `gh` user down with it
+    /// (2026-11-22).
+    public static let popupMinimumAge: TimeInterval = 5 * 60
+
+    /// A tick or popup sweep that hasn't reported back after this long is
+    /// no longer counted as running: `gh` has no timeout of its own, and
+    /// one hung call must not block a repo's refreshes for good.
+    public static let inFlightTimeout: TimeInterval = 3 * 60
+
+    /// Whether opening the popup should refetch a repo last refreshed at
+    /// `last`. Pending and failing CI keep their one-minute cadence here
+    /// too, so the badge still clears promptly. `localStateChanged` — a
+    /// commit, push or checkout since that refresh — always refetches:
+    /// that is when the user opens the popup to watch CI start.
+    public static func popupRefreshDue(last: Date?, ciStatus: CIStatus?, localStateChanged: Bool, now: Date) -> Bool {
+        guard let last, !localStateChanged else { return true }
+        let minimumAge: TimeInterval
+        switch ciStatus {
+        case .pending, .failure: minimumAge = pendingInterval
+        default: minimumAge = popupMinimumAge
+        }
+        return now.timeIntervalSince(last) >= minimumAge
+    }
+
+    /// What a push, commit or checkout changes, as one comparable value.
+    static func localState(of repo: Repo) -> String {
+        guard let status = repo.status else { return "" }
+        return "\(status.branch)|\(status.headOid ?? "")|\(status.ahead)"
+    }
+
+    /// Repos with a tick or popup sweep under way, and since when, so the
+    /// two don't fetch the same repo twice. Main thread only.
+    private var inFlightSince: [URL: Date] = [:]
+
+    /// `localState` of each repo at its last refresh. Main thread only.
+    private var lastRefreshState: [URL: String] = [:]
+
+    private func isInFlight(_ url: URL, now: Date) -> Bool {
+        guard let since = inFlightSince[url] else { return false }
+        return now.timeIntervalSince(since) < Self.inFlightTimeout
+    }
+
+    private func markInFlight(_ urls: [URL], at now: Date) {
+        for url in urls { inFlightSince[url] = now }
+    }
+
+    /// Only entries this sweep set: after a timeout a newer sweep may own it.
+    private func clearInFlight(_ urls: [URL], startedAt: Date) {
+        for url in urls where inFlightSince[url] == startedAt {
+            inFlightSince.removeValue(forKey: url)
+        }
+    }
 
     private let repoStore: RepoStore
     private let configStore: ConfigStore
@@ -172,10 +229,33 @@ public final class GitHubStatusScheduler: ObservableObject {
 
     // MARK: - Public refresh entry points
 
-    /// Refresh now, bypassing cadence. Use on popover-open and manual
-    /// refresh. Off-thread under the hood; results post on main.
-    public func eagerRefresh(_ repos: [Repo]) {
-        guard !stopped else { return }
+    /// Refresh on popover-open: only repos whose data is older than
+    /// `popupMinimumAge` or that changed locally since, and never a repo a
+    /// running sweep already covers. Call on the main thread.
+    public func popupRefresh(_ repos: [Repo]) {
+        guard !stopped, !GitHubRateLimitGate.shared.isAnyPaused() else { return }
+        let now = Date()
+        let due = repos.filter { repo in
+            !isInFlight(repo.url, now: now) && Self.popupRefreshDue(
+                last: lastRefreshAt[repo.url],
+                ciStatus: statuses[repo.url]?.ciStatus,
+                localStateChanged: lastRefreshState[repo.url] != Self.localState(of: repo),
+                now: now
+            )
+        }
+        guard !due.isEmpty else { return }
+        let urls = due.map(\.url)
+        markInFlight(urls, at: now)
+        eagerRefresh(due) { [weak self] in self?.clearInFlight(urls, startedAt: now) }
+    }
+
+    /// Refresh now, bypassing cadence. Use on manual refresh. Off-thread
+    /// under the hood; results and `completion` post on main.
+    public func eagerRefresh(_ repos: [Repo], completion: (() -> Void)? = nil) {
+        guard !stopped else {
+            completion?()
+            return
+        }
         // `resolvedSpec` shells out to `git remote get-url` per repo.
         // Done on the caller (main) thread this blocked the run loop for
         // ~900ms with a dozen repos — measured: it stalled the popup's
@@ -186,9 +266,12 @@ public final class GitHubStatusScheduler: ObservableObject {
         // Config is main-thread state — read it here, not on the queue.
         let issueOptions = issueFetchOptions
         queue.async { [weak self] in
-            guard let self, !self.stopped else { return }
+            guard let self, !self.stopped else {
+                if let completion { DispatchQueue.main.async(execute: completion) }
+                return
+            }
             let specs = repos.compactMap(self.resolvedSpec(for:))
-            self.runFetch(specs: specs, issueOptions: issueOptions)
+            self.runFetch(specs: specs, issueOptions: issueOptions, completion: completion)
         }
     }
 
@@ -197,6 +280,7 @@ public final class GitHubStatusScheduler: ObservableObject {
     public func invalidate(url: URL) {
         statuses.removeValue(forKey: url)
         lastRefreshAt.removeValue(forKey: url)
+        lastRefreshState.removeValue(forKey: url)
     }
 
     // MARK: - Tick
@@ -205,6 +289,7 @@ public final class GitHubStatusScheduler: ObservableObject {
         guard !stopped else { return }
         let now = Date()
         let due: [RepoSpec] = repoStore.repos.compactMap { repo in
+            guard !isInFlight(repo.url, now: now) else { return nil }
             guard let spec = resolvedSpec(for: repo) else { return nil }
             let last = lastRefreshAt[repo.url]
             let interval: TimeInterval = {
@@ -226,7 +311,12 @@ public final class GitHubStatusScheduler: ObservableObject {
             }
             return spec
         }
-        runFetch(specs: due, issueOptions: issueFetchOptions)
+        guard !due.isEmpty else { return }
+        let urls = due.map(\.url)
+        markInFlight(urls, at: now)
+        runFetch(specs: due, issueOptions: issueFetchOptions) { [weak self] in
+            self?.clearInFlight(urls, startedAt: now)
+        }
     }
 
     // MARK: - Specs + fetch
@@ -238,6 +328,8 @@ public final class GitHubStatusScheduler: ObservableObject {
         let url: URL
         let remote: GitHubRemote
         let branch: String?
+        /// `localState(of:)` when the spec was made.
+        let localState: String
     }
 
     private func resolvedSpec(for repo: Repo) -> RepoSpec? {
@@ -249,7 +341,7 @@ public final class GitHubStatusScheduler: ObservableObject {
             guard let status = repo.status, !status.isDetached else { return nil }
             return status.branch
         }()
-        return RepoSpec(url: repo.url, remote: remote, branch: branch)
+        return RepoSpec(url: repo.url, remote: remote, branch: branch, localState: Self.localState(of: repo))
     }
 
     private func isActive(repo: Repo) -> Bool {
@@ -276,8 +368,24 @@ public final class GitHubStatusScheduler: ObservableObject {
         )
     }
 
-    private func runFetch(specs: [RepoSpec], issueOptions: IssueFetchOptions) {
-        guard !specs.isEmpty else { return }
+    private func runFetch(specs: [RepoSpec], issueOptions: IssueFetchOptions, completion: (() -> Void)? = nil) {
+        guard !specs.isEmpty else {
+            if let completion { DispatchQueue.main.async(execute: completion) }
+            return
+        }
+        // Rate-limited: nothing is asked, and the repos are forgotten as
+        // refreshed so the first tick after the pause picks them up —
+        // a refresh the user asked for mid-pause is late, not lost.
+        guard !GitHubRateLimitGate.shared.isAnyPaused() else {
+            DispatchQueue.main.async { [weak self] in
+                for spec in specs {
+                    self?.lastRefreshAt.removeValue(forKey: spec.url)
+                    self?.lastRefreshState.removeValue(forKey: spec.url)
+                }
+                completion?()
+            }
+            return
+        }
 
         // Dedup PR-count fetches by slug.
         let bySlug = Dictionary(grouping: specs) { $0.remote.slug }
@@ -286,12 +394,19 @@ public final class GitHubStatusScheduler: ObservableObject {
             "\(spec.remote.slug)#\(spec.branch ?? "")"
         }
 
-        let urls = specs.map(\.url)
+        let gate = GitHubRateLimitGate.shared
 
         queue.async { [weak self] in
             guard let self else { return }
+            // Set when GitHub refused a call for the rate limit: the rest
+            // of the sweep is dropped, with both budgets left alone.
+            var cutShort = false
+            // What was asked and answered (or failed for another reason).
+            var doneSlugs = Set<String>()
+            var doneCIKeys = Set<String>()
 
-            for (_, slugRepos) in bySlug {
+            for (slugKey, slugRepos) in bySlug {
+                if gate.isAnyPaused() { cutShort = true; break }
                 guard let firstRemote = slugRepos.first?.remote else { continue }
                 // Independent of the PR fetch below: neither may skip the other.
                 if let lag = GitHubAPI.fetchDeploymentLag(for: firstRemote) {
@@ -303,11 +418,15 @@ public final class GitHubStatusScheduler: ObservableObject {
                         }
                     }
                 }
-                guard let signals = GitHubAPI.fetchRepoSignals(
+                let signals = GitHubAPI.fetchRepoSignals(
                     for: firstRemote,
                     includeIssues: issueOptions.include,
                     ignoredLabel: issueOptions.ignoredLabel
-                ) else { continue }
+                )
+                // Refused during this slug: it counts as not asked.
+                if gate.isAnyPaused() { cutShort = true; break }
+                doneSlugs.insert(slugKey)
+                guard let signals else { continue }
                 let urlsForSlug = slugRepos.map(\.url)
                 let slug = firstRemote.slug
                 DispatchQueue.main.async {
@@ -324,11 +443,16 @@ public final class GitHubStatusScheduler: ObservableObject {
                 }
             }
 
-            for (_, ciRepos) in byCI {
+            for (ciKey, ciRepos) in byCI {
+                if cutShort || gate.isAnyPaused() { cutShort = true; break }
                 guard let firstSpec = ciRepos.first,
                       let branch = firstSpec.branch else { continue }
                 let fetched = GitHubAPI.fetchLatestWorkflowRuns(for: firstSpec.remote, ref: branch)
                 let fetchedStatuses = GitHubAPI.fetchCommitStatuses(for: firstSpec.remote, ref: branch)
+                // A refusal is not an answer: applying the half that did
+                // arrive could flip a red badge green.
+                if gate.isAnyPaused() { cutShort = true; break }
+                doneCIKeys.insert(ciKey)
                 let urlsForCI = ciRepos.map(\.url)
                 let slug = firstSpec.remote.slug
                 DispatchQueue.main.async {
@@ -356,13 +480,25 @@ public final class GitHubStatusScheduler: ObservableObject {
                 }
             }
 
-            // Mark all dispatched URLs as attempted (even if PR or CI
-            // returned nil) so a persistent error doesn't tight-loop.
+            // Mark every repo that was asked about as attempted (even if PR
+            // or CI returned nil) so a persistent error doesn't tight-loop.
+            // What a rate-limit cut left unasked is forgotten instead, so
+            // the first tick after the pause fetches exactly that part.
+            let finishedSlugs = doneSlugs
+            let finishedCIKeys = doneCIKeys
             DispatchQueue.main.async {
                 let now = Date()
-                for url in urls {
-                    self.lastRefreshAt[url] = now
+                for spec in specs {
+                    let ciDone = spec.branch.map { finishedCIKeys.contains("\(spec.remote.slug)#\($0)") } ?? true
+                    if finishedSlugs.contains(spec.remote.slug) && ciDone {
+                        self.lastRefreshAt[spec.url] = now
+                        self.lastRefreshState[spec.url] = spec.localState
+                    } else {
+                        self.lastRefreshAt.removeValue(forKey: spec.url)
+                        self.lastRefreshState.removeValue(forKey: spec.url)
+                    }
                 }
+                completion?()
             }
         }
     }

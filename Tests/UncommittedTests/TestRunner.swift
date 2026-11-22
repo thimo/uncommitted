@@ -78,6 +78,7 @@ struct TestRunnerMain {
         FetchStateStoreTests.register()
         GitErrorClassifierTests.register()
         GitHubStatusTests.register()
+        GitHubRateLimitTests.register()
         StalenessTests.register()
         ActionTests.register()
         DeployLauncherTests.register()

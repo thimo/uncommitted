@@ -821,11 +821,13 @@ public enum GHService {
     /// Uses `.convertFromSnakeCase` so endpoint payloads (`total_count`,
     /// `check_runs`, …) map to natural Swift camelCase fields.
     public static func api<T: Decodable>(_ endpoint: String, as type: T.Type) -> T? {
+        guard !GitHubRateLimitGate.shared.isPaused(.rest) else { return nil }
         let result = execute(["api", "--method", "GET", endpoint])
         guard result.isSuccess else {
             if !result.stderr.isEmpty,
                let text = String(data: result.stderr, encoding: .utf8) {
                 DiagnosticsLog.shared.warning("github", "gh api \(endpoint) failed: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+                notePossibleRateLimit(.rest, stderr: text)
             }
             return nil
         }
@@ -864,11 +866,13 @@ public enum GHService {
             args.append("-F")
             args.append("\(key)=\(value)")
         }
+        guard !GitHubRateLimitGate.shared.isPaused(.graphql) else { return nil }
         let result = execute(args)
         guard result.isSuccess else {
             if !result.stderr.isEmpty,
                let text = String(data: result.stderr, encoding: .utf8) {
                 DiagnosticsLog.shared.warning("github", "gh api graphql failed: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+                notePossibleRateLimit(.graphql, stderr: text)
             }
             return nil
         }
@@ -880,6 +884,12 @@ public enum GHService {
             DiagnosticsLog.shared.warning("github", "gh api graphql decode failed: \(error.localizedDescription)")
             return nil
         }
+    }
+
+    private static func notePossibleRateLimit(_ resource: GitHubRateLimitGate.Resource, stderr: String) {
+        guard GitHubRateLimitGate.shared.noteFailure(resource, stderr: stderr) else { return }
+        let minutes = Int(GitHubRateLimitGate.pause / 60)
+        DiagnosticsLog.shared.warning("github", "\(resource) rate limit reached, GitHub refreshes paused for \(minutes) minutes")
     }
 
     private static let pipeDrainTimeoutSeconds: Int = 2

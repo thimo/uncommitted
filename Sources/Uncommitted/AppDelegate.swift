@@ -565,10 +565,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.resizePanelIfVisible()
         }
 
-        // Eager-refresh GitHub status for visible repos so freshly-opened
-        // popups don't show stale data. The scheduler dedups by slug + sha
-        // so this is cheap even when the cadence has just fired.
-        githubScheduler.eagerRefresh(repoStore.repos)
+        // Refresh GitHub status so a freshly-opened popup doesn't show
+        // stale data. Throttled per repo: an unthrottled sweep on every
+        // open spent the whole hourly GraphQL budget.
+        githubScheduler.popupRefresh(repoStore.repos)
 
         // Same idea for remote-tracking refs: the 24h/7d tiers are a
         // background backstop, not fresh enough for the moment the user

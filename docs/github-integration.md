@@ -174,15 +174,23 @@ Tiered, internal — no slider in Settings. The defaults are tuned for
 
 Plus two on-demand triggers:
 
-- **Popover open** — every visible repo gets refreshed eagerly,
-  bypassing the cadence. Means a freshly-opened popup is never showing
-  old CI/PR data.
-- **Manual refresh** (planned) — the existing refresh button
-  Option-clicked.
+- **Popover open** — every repo whose GitHub data is older than five
+  minutes gets refreshed, bypassing the cadence. A repo with pending or
+  failing CI is refreshed when its data is older than one minute, and a
+  repo with a commit, push or checkout since its last refresh always.
+- **Refresh button** — refreshes every repo, whatever its age.
+
+A full refresh costs about six GraphQL points per repository, out of the
+5000 an account gets per hour and shares with every other `gh` user on
+the machine. Hence the five minutes: without them, opening the popup
+often enough spent the whole budget.
 
 There's no exponential back-off on failures. Most GitHub failures are
-transient (rate limit, network blip) — we just retry on the next tick.
-If `gh` outright isn't available, the scheduler stays inert.
+transient — we just retry on the next tick. The rate limit is the
+exception: at the first refused call the refresh stops, and no further
+calls go out for five minutes. The badges keep their last answer
+meanwhile, and whatever was skipped — the Refresh button included — is
+fetched once the pause is over. If `gh` outright isn't available, the scheduler stays inert.
 
 ## Caching and multi-clone repos
 
