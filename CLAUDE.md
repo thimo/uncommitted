@@ -50,7 +50,8 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
   conflict/operation state (`u` lines + git-dir markers), daily-reminder
   date math, the per-repo git lock (plus a real-git regression test for
   the concurrent fetch/pull race), the deploy launcher's pure builders
-  (command detection, terminal choice, script and osascript arguments),
+  (command detection, terminal choice, script and osascript arguments)
+  and its done-marker watcher,
   and the diagnostics log (daily files,
   retention, last-error tracking). UI/orchestration (AppKit/SwiftUI, RepoStore, RepoWatcher)
   is untested — won't run headlessly under the CLT-only toolchain.

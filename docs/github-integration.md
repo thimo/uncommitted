@@ -98,7 +98,12 @@ in its right-click menu. It runs `bin/kamal deploy` (or `kamal deploy` when
 the repo has no binstub) in a terminal in the repo, so the deploy can
 ask for a 1Password login. In Ghostty that is a background tab of the front
 window, titled `deploy: <repo>`; it closes itself after a successful deploy
-and stays open after a failed one. The terminal is Ghostty or Terminal, whichever
+and stays open after a failed one. When the deploy has succeeded, Uncommitted
+asks GitHub for that repository's deployments at once, so the deploy pill clears
+without waiting for the next refresh. If GitHub then has no successful
+`production` deployment for the commit that was shipped, the deploy was not
+recorded, and the diagnostics log says so. The
+terminal is Ghostty or Terminal, whichever
 comes first among the configured actions, and Terminal when neither is
 configured. Kamal ships the local HEAD, so the entry is disabled, with the
 reason in its title, while the working tree has uncommitted changes, a git

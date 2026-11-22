@@ -249,6 +249,64 @@ public final class GitHubStatusScheduler: ObservableObject {
         eagerRefresh(due) { [weak self] in self?.clearInFlight(urls, startedAt: now) }
     }
 
+    /// A deploy of this repo, started from its menu, just ended: ask GitHub
+    /// for its deployments right away, so the pill doesn't wait for the
+    /// next poll, minutes later. `deployedHead` is the commit Kamal
+    /// shipped — the local HEAD at launch. Call on the main thread.
+    public func refreshAfterDeploy(of url: URL, deployedHead: String?) {
+        checkDeployment(of: url, deployedHead: deployedHead, retriesLeft: 1)
+    }
+
+    /// The deployment a finished deploy was seen to have recorded, per
+    /// slug. For a short while an answer naming another commit is taken
+    /// for a sweep that asked before the record existed. Main thread only.
+    private var confirmedDeploys: [String: (sha: String, at: Date)] = [:]
+    private static let confirmedDeployWindow: TimeInterval = 2 * 60
+
+    private func checkDeployment(of url: URL, deployedHead: String?, retriesLeft: Int) {
+        guard !stopped, let repo = repoStore.repos.first(where: { $0.url == url }) else { return }
+        queue.async { [weak self] in
+            guard let self, let spec = self.resolvedSpec(for: repo) else { return }
+            let result = GitHubAPI.fetchDeploymentLag(for: spec.remote)
+            DispatchQueue.main.async {
+                let slug = spec.remote.slug
+                // The record is written by the deploy's own hook just
+                // before it ends; one more look gives GitHub a moment.
+                func retry() -> Bool {
+                    guard retriesLeft > 0 else { return false }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+                        self?.checkDeployment(of: url, deployedHead: deployedHead, retriesLeft: retriesLeft - 1)
+                    }
+                    return true
+                }
+                // No answer (network, rate limit) is never a verdict; the
+                // normal cadence catches up.
+                guard let result else {
+                    _ = retry()
+                    return
+                }
+                if case .lag(let lag) = result, deployedHead == nil || lag.deployedSHA == deployedHead {
+                    self.confirmedDeploys[slug] = (lag.deployedSHA, Date())
+                    self.applyDeploymentLagToClones(result, slug: slug, of: url)
+                    return
+                }
+                if retry() { return }
+                self.applyDeploymentLagToClones(result, slug: slug, of: url)
+                // The one place this failure is visible: the terminal tab
+                // with the hook's output has closed itself by now.
+                let commit = deployedHead.map { " for \($0.prefix(7))" } ?? ""
+                DiagnosticsLog.shared.warning("deploy", "\(url.lastPathComponent) was deployed, but GitHub has no successful production Deployment\(commit): the deploy was not recorded")
+            }
+        }
+    }
+
+    /// The pill shows on one clone per remote, so every clone gets it.
+    private func applyDeploymentLagToClones(_ result: GitHubAPI.DeploymentLagResult, slug: String, of url: URL) {
+        for repo in repoStore.repos where repo.url == url || statuses[repo.url]?.slug == slug {
+            applyDeploymentLag(result, slug: slug, to: repo.url)
+        }
+    }
+
     /// Refresh now, bypassing cadence. Use on manual refresh. Off-thread
     /// under the hood; results and `completion` post on main.
     public func eagerRefresh(_ repos: [Repo], completion: (() -> Void)? = nil) {
@@ -532,6 +590,16 @@ public final class GitHubStatusScheduler: ObservableObject {
     }
 
     private func applyDeploymentLag(_ result: GitHubAPI.DeploymentLagResult, slug: String, to url: URL) {
+        if let confirmed = confirmedDeploys[slug] {
+            if Date().timeIntervalSince(confirmed.at) >= Self.confirmedDeployWindow {
+                confirmedDeploys.removeValue(forKey: slug)
+            } else if case .lag(let lag) = result, lag.deployedSHA == confirmed.sha {
+                // Agrees with what was just confirmed.
+            } else {
+                // Asked before the deploy was recorded, landed after it.
+                return
+            }
+        }
         var current = statuses[url] ?? GitHubRepoStatus()
         switch result {
         case .noDeployment: current.deploymentLag = nil

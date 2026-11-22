@@ -918,10 +918,15 @@ struct RepoRow: View {
                         defaultBranch: githubScheduler.statuses[repo.url]?.deploymentLag?.defaultBranch
                     )
                     Button {
+                        let scheduler = githubScheduler
+                        let url = repo.url
+                        // Kamal ships the local HEAD as it is now.
+                        let head = repo.status?.headOid
                         DeployLauncher.launch(
-                            repoURL: repo.url,
+                            repoURL: url,
                             command: deployCommand,
-                            terminal: DeployLauncher.terminalApp(in: configStore.config.actions)
+                            terminal: DeployLauncher.terminalApp(in: configStore.config.actions),
+                            onFinished: { scheduler.refreshAfterDeploy(of: url, deployedHead: head) }
                         )
                     } label: {
                         Label(blocker.map { "Deploy with Kamal — \($0)" } ?? "Deploy with Kamal",

@@ -58,21 +58,44 @@ enum DeployLauncherTests {
         }
 
         test("Deploy/script_quotesPathAndKeepsWindowOpen") {
-            let script = DeployLauncher.commandScript(repoPath: "/Users/a/My Repos/it's", command: "bin/kamal deploy")
+            let script = DeployLauncher.commandScript(repoPath: "/Users/a/My Repos/it's", command: "bin/kamal deploy", doneMarker: "/tmp/m x/d.done")
             try expect(script.hasPrefix("#!/bin/zsh\n"))
             try expect(script.contains("cd '/Users/a/My Repos/it'\\''s' || exit 1\n"), script)
-            // Ends on success; only a failed deploy reaches the exec below.
-            try expect(script.contains("\nbin/kamal deploy && exit 0\n"))
+            // Leaves the marker and ends on success; only a failed deploy
+            // reaches the exec below.
+            try expect(script.contains("\nbin/kamal deploy && touch '/tmp/m x/d.done' && exit 0\n"), script)
             try expect(script.contains("exec \"${SHELL:-/bin/zsh}\" -l"))
         }
 
         test("Deploy/ghostty_passesPathAndCommandAsArguments") {
-            let args = DeployLauncher.ghosttyArguments(repoPath: "/r/it's here", command: "kamal deploy")
-            // Closes the tab on success, leaves it open on failure.
-            try expectEqual(Array(args.suffix(3)), ["/r/it's here", "kamal deploy && exit", "deploy: it's here"])
+            let args = DeployLauncher.ghosttyArguments(repoPath: "/r/it's here", command: "kamal deploy", doneMarker: "/tmp/d.done")
+            // Leaves the marker and closes the tab on success, leaves the
+            // tab open on failure.
+            try expectEqual(Array(args.suffix(3)), ["/r/it's here", "kamal deploy && touch '/tmp/d.done' && exit", "deploy: it's here"])
             let scriptText = args[1]
             try expect(!scriptText.contains("/r/it's here"))
             try expect(!scriptText.contains("kamal deploy"))
+        }
+
+        test("Deploy/watch_reportsOnceTheMarkerAppears_andRemovesIt") {
+            let marker = FileManager.default.temporaryDirectory.appendingPathComponent("uncommitted-test-\(UUID().uuidString).done")
+            let finished = DispatchSemaphore(value: 0)
+            // Not the default main queue: this runner blocks it.
+            DeployLauncher.watch(marker: marker, pollInterval: 0.05, timeout: 5, callbackQueue: .global()) { finished.signal() }
+            try expect(finished.wait(timeout: .now() + 0.3) == .timedOut, "reported before the marker existed")
+            FileManager.default.createFile(atPath: marker.path, contents: nil)
+            try expect(finished.wait(timeout: .now() + 3) == .success, "never reported")
+            try expect(!FileManager.default.fileExists(atPath: marker.path))
+        }
+
+        test("Deploy/watch_givesUpAfterTheTimeout") {
+            let marker = FileManager.default.temporaryDirectory.appendingPathComponent("uncommitted-test-\(UUID().uuidString).done")
+            let finished = DispatchSemaphore(value: 0)
+            DeployLauncher.watch(marker: marker, pollInterval: 0.05, timeout: 0.2, callbackQueue: .global()) { finished.signal() }
+            Thread.sleep(forTimeInterval: 1.5)
+            FileManager.default.createFile(atPath: marker.path, contents: nil)
+            try expect(finished.wait(timeout: .now() + 0.5) == .timedOut, "reported after giving up")
+            try? FileManager.default.removeItem(at: marker)
         }
     }
 

@@ -68,49 +68,113 @@ public enum DeployLauncher {
     end run
     """
 
+    /// Single-quoted for the shell; reads the same in zsh, bash and fish.
+    static func shellQuoted(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
     /// What gets typed into the shell: the tab closes itself after a
     /// successful deploy and stays open, in the repo, after a failed one.
-    /// `&&` and `exit` read the same in zsh, bash and fish.
-    static func shellInput(command: String) -> String {
-        "\(command) && exit"
+    /// A successful deploy also leaves the marker file, which is how the
+    /// app learns the deploy is over — the terminal runs it, not us.
+    /// `&&`, `touch` and `exit` read the same in zsh, bash and fish.
+    static func shellInput(command: String, doneMarker: String) -> String {
+        "\(command) && touch \(shellQuoted(doneMarker)) && exit"
     }
 
     /// Full argument list for `/usr/bin/osascript`.
-    public static func ghosttyArguments(repoPath: String, command: String) -> [String] {
+    public static func ghosttyArguments(repoPath: String, command: String, doneMarker: String) -> [String] {
         let title = "deploy: \(URL(fileURLWithPath: repoPath).lastPathComponent)"
-        return ["-e", ghosttyScript, repoPath, shellInput(command: command), title]
+        return ["-e", ghosttyScript, repoPath, shellInput(command: command, doneMarker: doneMarker), title]
     }
 
     /// The `.command` script for other terminals. Terminal.app starts these
-    /// with cwd = home, hence the `cd`. A successful deploy ends the script;
-    /// after a failed one the final `exec` leaves a shell open in the repo.
-    public static func commandScript(repoPath: String, command: String) -> String {
-        let quoted = "'" + repoPath.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    /// with cwd = home, hence the `cd`. A successful deploy leaves the
+    /// marker and ends the script; after a failed one the final `exec`
+    /// leaves a shell open in the repo.
+    public static func commandScript(repoPath: String, command: String, doneMarker: String) -> String {
         return """
         #!/bin/zsh
-        cd \(quoted) || exit 1
-        \(command) && exit 0
+        cd \(shellQuoted(repoPath)) || exit 1
+        \(command) && touch \(shellQuoted(doneMarker)) && exit 0
         echo
         exec "${SHELL:-/bin/zsh}" -l
 
         """
     }
 
+    // MARK: - Noticing the end of a deploy
+
+    /// How often the marker is looked for, and for how long. A deploy that
+    /// takes longer, or fails, simply never reports.
+    public static let markerPollInterval: TimeInterval = 2
+    public static let markerTimeout: TimeInterval = 45 * 60
+
+    private static let watchQueue = DispatchQueue(label: "nl.defrog.uncommitted.deploy-watch", qos: .utility)
+
+    /// Calls `onFinished` (on the main thread unless told otherwise) once
+    /// `marker` exists, and removes the file. Gives up silently after
+    /// `timeout`.
+    public static func watch(
+        marker: URL,
+        pollInterval: TimeInterval = markerPollInterval,
+        timeout: TimeInterval = markerTimeout,
+        callbackQueue: DispatchQueue = .main,
+        onFinished: @escaping () -> Void
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        func poll() {
+            if FileManager.default.fileExists(atPath: marker.path) {
+                try? FileManager.default.removeItem(at: marker)
+                callbackQueue.async(execute: onFinished)
+            } else if Date() < deadline {
+                watchQueue.asyncAfter(deadline: .now() + pollInterval, execute: poll)
+            }
+        }
+        watchQueue.async(execute: poll)
+    }
+
+    /// Markers nobody is waiting for anymore: the deploy outlasted the
+    /// watcher, or the app was restarted while it ran.
+    static func removeStaleMarkers(in dir: URL, now: Date = Date()) {
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        for file in files where file.pathExtension == "done" {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let modified, now.timeIntervalSince(modified) > markerTimeout {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+    }
+
     // MARK: - Launching
 
-    public static func launch(repoURL: URL, command: String, terminal: String) {
+    /// `onFinished` runs on the main thread when the deploy command ended
+    /// successfully; never after a failed or abandoned one.
+    public static func launch(repoURL: URL, command: String, terminal: String, onFinished: @escaping () -> Void) {
         DiagnosticsLog.shared.info("deploy", "starting \(command) for \(repoURL.lastPathComponent) in \(terminal)")
-        if terminal.caseInsensitiveCompare("Ghostty") == .orderedSame {
-            run(executable: "/usr/bin/osascript", args: ghosttyArguments(repoPath: repoURL.path, command: command))
-            return
-        }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Uncommitted", isDirectory: true)
-        // Unique per launch: the terminal reads the file after we return, so
-        // two clones with the same folder name must not share one script.
-        let script = dir.appendingPathComponent("deploy-\(repoURL.lastPathComponent)-\(UUID().uuidString).command")
+        // Unique per launch: the terminal reads the files after we return, so
+        // two clones with the same folder name must not share them.
+        let launchID = "deploy-\(repoURL.lastPathComponent)-\(UUID().uuidString)"
+        let marker = dir.appendingPathComponent("\(launchID).done")
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            try commandScript(repoPath: repoURL.path, command: command).write(to: script, atomically: true, encoding: .utf8)
+        } catch {
+            DiagnosticsLog.shared.error("deploy", "could not create \(dir.path): \(error.localizedDescription)")
+            return
+        }
+        removeStaleMarkers(in: dir)
+        watch(marker: marker) {
+            DiagnosticsLog.shared.info("deploy", "\(command) for \(repoURL.lastPathComponent) finished")
+            onFinished()
+        }
+        if terminal.caseInsensitiveCompare("Ghostty") == .orderedSame {
+            run(executable: "/usr/bin/osascript", args: ghosttyArguments(repoPath: repoURL.path, command: command, doneMarker: marker.path))
+            return
+        }
+        let script = dir.appendingPathComponent("\(launchID).command")
+        do {
+            try commandScript(repoPath: repoURL.path, command: command, doneMarker: marker.path).write(to: script, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
         } catch {
             DiagnosticsLog.shared.error("deploy", "could not write \(script.path): \(error.localizedDescription)")
