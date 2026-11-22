@@ -44,6 +44,10 @@ public final class GitHubStatusScheduler: ObservableObject {
     /// `slug#branch` — see `GitHubAPI.newestRuns`. Main thread only.
     private var lastCIRuns: [String: [GitHubAPI.WorkflowRun]] = [:]
 
+    /// Commit statuses from the previous CI fetch, same key — the
+    /// fallback when a fetch fails. Main thread only.
+    private var lastCommitStatuses: [String: [GitHubAPI.CommitStatus]] = [:]
+
     private let queue = DispatchQueue(
         label: "nl.defrog.uncommitted.github-status",
         qos: .utility,
@@ -323,20 +327,24 @@ public final class GitHubStatusScheduler: ObservableObject {
             for (_, ciRepos) in byCI {
                 guard let firstSpec = ciRepos.first,
                       let branch = firstSpec.branch else { continue }
-                // Half an answer is no answer: with either call failed the
-                // badge keeps what it showed, like PRs do. Aggregating the
-                // half that did arrive would flip a red badge green for a
-                // round whenever the failing half is the one that's missing.
-                guard let fetched = GitHubAPI.fetchLatestWorkflowRuns(for: firstSpec.remote, ref: branch),
-                      let commitStatuses = GitHubAPI.fetchCommitStatuses(for: firstSpec.remote, ref: branch)
-                else { continue }
+                let fetched = GitHubAPI.fetchLatestWorkflowRuns(for: firstSpec.remote, ref: branch)
+                let fetchedStatuses = GitHubAPI.fetchCommitStatuses(for: firstSpec.remote, ref: branch)
                 let urlsForCI = ciRepos.map(\.url)
                 let slug = firstSpec.remote.slug
                 DispatchQueue.main.async {
                     let now = Date()
                     let key = "\(slug)#\(branch)"
-                    let runs = GitHubAPI.newestRuns(fresh: fetched, previous: self.lastCIRuns[key] ?? [])
+                    // A failed call falls back to this branch's last answer:
+                    // aggregating only the half that arrived would flip a red
+                    // badge green for a round. Per branch, not per clone, so
+                    // a checkout never inherits the other branch's badge; a
+                    // call that never succeeds counts as empty and leaves
+                    // the other half to decide.
+                    let runs = fetched.map { GitHubAPI.newestRuns(fresh: $0, previous: self.lastCIRuns[key] ?? []) }
+                        ?? self.lastCIRuns[key] ?? []
+                    let commitStatuses = fetchedStatuses ?? self.lastCommitStatuses[key] ?? []
                     self.lastCIRuns[key] = runs
+                    self.lastCommitStatuses[key] = commitStatuses
                     let ci = GitHubAPI.aggregate(workflowRuns: runs, commitStatuses: commitStatuses)
                     let failingNames = GitHubAPI.failingNames(in: runs, commitStatuses: commitStatuses)
                     let notGreen = runs.filter { GitHubAPI.aggregate(workflowRuns: [$0]) != .success }
