@@ -289,6 +289,16 @@ public final class GitHubStatusScheduler: ObservableObject {
 
             for (_, slugRepos) in bySlug {
                 guard let firstRemote = slugRepos.first?.remote else { continue }
+                // Independent of the PR fetch below: neither may skip the other.
+                if let lag = GitHubAPI.fetchDeploymentLag(for: firstRemote) {
+                    let urlsForSlug = slugRepos.map(\.url)
+                    let slug = firstRemote.slug
+                    DispatchQueue.main.async {
+                        for url in urlsForSlug {
+                            self.applyDeploymentLag(lag, slug: slug, to: url)
+                        }
+                    }
+                }
                 guard let signals = GitHubAPI.fetchRepoSignals(
                     for: firstRemote,
                     includeIssues: issueOptions.include,
@@ -377,6 +387,16 @@ public final class GitHubStatusScheduler: ObservableObject {
         statuses[url] = current
     }
 
+    private func applyDeploymentLag(_ result: GitHubAPI.DeploymentLagResult, slug: String, to url: URL) {
+        var current = statuses[url] ?? GitHubRepoStatus()
+        switch result {
+        case .noDeployment: current.deploymentLag = nil
+        case .lag(let lag): current.deploymentLag = lag
+        }
+        current.slug = slug
+        statuses[url] = current
+    }
+
     // MARK: - Display lookup
 
     /// What the UI should render for a repo. Same as `statuses[url]`
@@ -391,7 +411,9 @@ public final class GitHubStatusScheduler: ObservableObject {
     public func status(for url: URL) -> GitHubRepoStatus? {
         guard var status = statuses[url] else { return nil }
         if !configStore.config.showGitHubIssues { status = status.withoutIssues }
-        guard status.slug != nil, !status.prs.isEmpty || !status.issues.isEmpty else { return status }
+        guard status.slug != nil,
+              !status.prs.isEmpty || !status.issues.isEmpty || status.deploymentLag != nil
+        else { return status }
         return primaryRemoteURLs.contains(url) ? status : status.withoutRemoteWideSignals
     }
 

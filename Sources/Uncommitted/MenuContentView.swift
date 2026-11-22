@@ -169,6 +169,8 @@ struct MenuContentView: View {
             // Open PRs (any author) — keep visible too. Dependabot pile-ups
             // are still "something to deal with", just at lower urgency.
             if gh.hasOpenPRs { return true }
+            // Finished but undeployed work is still something to do.
+            if gh.undeployedCommitCount > 0 { return true }
             // Open issues count the same way — but never issues carrying
             // the ignored label (a repo whose only open issues are
             // "someday" reads as clean, same as the badge). With issues
@@ -855,6 +857,7 @@ struct RepoRow: View {
                     onPull: { store.pull(repo: repo) },
                     onOpenPRs: { openPRsPage() },
                     onOpenIssues: { openIssuesPage() },
+                    onOpenDeploy: { openDeployComparePage() },
                     onOpenCI: { openCIPage() }
                 )
             }
@@ -1038,6 +1041,13 @@ struct RepoRow: View {
         openGitHubPage(forRepoAt: repo.url, path: "issues")
     }
 
+    /// Opens the compare view production → default branch: the commits
+    /// that are not deployed yet.
+    private func openDeployComparePage() {
+        guard let lag = displayableGitHubStatus?.deploymentLag else { return }
+        openGitHubPage(forRepoAt: repo.url, path: githubComparePath(for: lag))
+    }
+
     /// Opens the GitHub Actions page for this repo, pre-filtered to the
     /// current branch when one is known. The badge merges workflow runs
     /// with commit statuses (not check-run apps); /actions shows the runs,
@@ -1184,6 +1194,7 @@ struct RepoDetailPopover: View {
         if gh.ciStatus == .failure || gh.ciStatus == .pending { return true }
         if !gh.prs.isEmpty { return true }
         if !gh.issues.isEmpty { return true }
+        if gh.undeployedCommitCount > 0 { return true }
         return false
     }
 
@@ -1210,6 +1221,13 @@ struct RepoDetailPopover: View {
                 )
             default:
                 EmptyView()
+            }
+            if let lag = gh.deploymentLag, lag.aheadBy > 0 {
+                GitHubLine(
+                    systemImage: "shippingbox",
+                    color: .brown,
+                    text: undeployedText(lag)
+                )
             }
         }
     }
@@ -2034,6 +2052,17 @@ private func openGitHubPage(forRepoAt repoURL: URL, path: String) {
     NSWorkspace.shared.open(url)
 }
 
+/// "3 commits on main not deployed to production".
+private func undeployedText(_ lag: DeploymentLag) -> String {
+    "\(lag.aheadBy) commit\(lag.aheadBy == 1 ? "" : "s") on \(lag.defaultBranch) not deployed to production"
+}
+
+/// Compare path production → default branch, branch percent-encoded.
+private func githubComparePath(for lag: DeploymentLag) -> String {
+    let branch = lag.defaultBranch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? lag.defaultBranch
+    return "compare/\(lag.deployedSHA)...\(branch)"
+}
+
 struct StatusBadges: View {
     let status: RepoStatus
     let githubStatus: GitHubRepoStatus?
@@ -2046,6 +2075,7 @@ struct StatusBadges: View {
     let onPull: () -> Void
     let onOpenPRs: () -> Void
     let onOpenIssues: () -> Void
+    let onOpenDeploy: () -> Void
     let onOpenCI: () -> Void
 
     var body: some View {
@@ -2060,9 +2090,10 @@ struct StatusBadges: View {
         // Built once per render — it walks every fetched issue's labels.
         let issueCount = githubStatus?.issueCount(ignoringLabel: ignoredIssueLabel)
         let hasIssueBadge = issueCount?.isEmpty == false
+        let hasDeployBadge = (githubStatus?.undeployedCommitCount ?? 0) > 0
         // A pullable/pushable *other* branch also counts as "not clear" — the
         // muted teaser below would otherwise sit next to a green checkmark.
-        let allClear = status.isClean && !hasCIBadge && !hasPRBadge && !hasIssueBadge
+        let allClear = status.isClean && !hasCIBadge && !hasPRBadge && !hasIssueBadge && !hasDeployBadge
                     && !status.hasActionableOtherBranch
 
         HStack(spacing: 4) {
@@ -2081,6 +2112,9 @@ struct StatusBadges: View {
                         ignoredIssueLabel: ignoredIssueLabel,
                         action: onOpenIssues
                     )
+                }
+                if let lag = gh.deploymentLag, hasDeployBadge {
+                    DeployBadge(lag: lag, action: onOpenDeploy)
                 }
             }
 
@@ -2295,6 +2329,44 @@ private struct IssueBadge: View {
         guard count.ignored > 0 else { return base }
         let label = ignoredIssueLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         return "\(base) · \(count.ignored) labelled \(label)"
+    }
+}
+
+/// Undeployed-commits pill: `📦 3`, modeled on `PRBadge`. Only rendered
+/// when the default branch is ahead of production.
+private struct DeployBadge: View {
+    let lag: DeploymentLag
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        let primary: Color = .brown
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: "shippingbox")
+                    .foregroundStyle(primary)
+                Text("\(lag.aheadBy)")
+                    .foregroundStyle(primary)
+            }
+            .fixedSize()
+            .font(.body.weight(.medium).monospacedDigit())
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                    .fill(isHovered ? primary.opacity(0.18) : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: interactiveCornerRadius)
+                    .strokeBorder(primary.opacity(isHovered ? 0.0 : 0.35), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: interactiveCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .onHover { isHovered = $0 }
+        .help(undeployedText(lag))
     }
 }
 

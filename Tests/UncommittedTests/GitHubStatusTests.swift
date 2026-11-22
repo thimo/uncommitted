@@ -15,6 +15,89 @@ enum GitHubStatusTests {
         registerLegacyCacheTests()
         registerPRReasonLabelTests()
         registerPrimaryCloneTests()
+        registerDeploymentLagTests()
+    }
+
+    // MARK: - Deployment lag
+
+    private static func deployments(head: String? = "head1", nodes: String) -> GitHubAPI.DeploymentsResponse {
+        let ref = head.map { "{\"name\":\"main\",\"target\":{\"oid\":\"\($0)\"}}" } ?? "null"
+        let json = "{\"data\":{\"repository\":{\"defaultBranchRef\":\(ref),\"deployments\":{\"nodes\":[\(nodes)]}}}}"
+        return try! JSONDecoder().decode(GitHubAPI.DeploymentsResponse.self, from: Data(json.utf8))
+    }
+
+    private static func registerDeploymentLagTests() {
+        test("Deployments/newestFailed_olderSucceeded_usesOlder") {
+            let r = deployments(nodes: """
+            {"commitOid":"c3","latestStatus":{"state":"FAILURE"}},
+            {"commitOid":"c2","latestStatus":{"state":"SUCCESS"}},
+            {"commitOid":"c1","latestStatus":{"state":"SUCCESS"}}
+            """)
+            try expectEqual(GitHubAPI.deploymentFacts(from: r),
+                            .deployed(sha: "c2", defaultBranch: "main", headOid: "head1"))
+        }
+
+        test("Deployments/noNodes_isNone") {
+            try expectEqual(GitHubAPI.deploymentFacts(from: deployments(nodes: "")), .none)
+        }
+
+        test("Deployments/noSuccessfulNode_isNone") {
+            let r = deployments(nodes: """
+            {"commitOid":"c2","latestStatus":{"state":"IN_PROGRESS"}},
+            {"commitOid":"c1","latestStatus":{"state":"FAILURE"}}
+            """)
+            try expectEqual(GitHubAPI.deploymentFacts(from: r), .none)
+        }
+
+        test("Deployments/nullLatestStatus_isSkipped") {
+            let r = deployments(nodes: """
+            {"commitOid":"c2","latestStatus":null},
+            {"commitOid":"c1","latestStatus":{"state":"SUCCESS"}}
+            """)
+            try expectEqual(GitHubAPI.deploymentFacts(from: r),
+                            .deployed(sha: "c1", defaultBranch: "main", headOid: "head1"))
+        }
+
+        test("Deployments/nullDefaultBranchRef_isNone") {
+            let r = deployments(head: nil, nodes: "{\"commitOid\":\"c1\",\"latestStatus\":{\"state\":\"SUCCESS\"}}")
+            try expectEqual(GitHubAPI.deploymentFacts(from: r), .none)
+        }
+
+        test("Deployments/deployedEqualsHead_reportsHeadOid") {
+            // The fetch compares sha to headOid and skips the compare call.
+            let r = deployments(nodes: "{\"commitOid\":\"head1\",\"latestStatus\":{\"state\":\"SUCCESS\"}}")
+            try expectEqual(GitHubAPI.deploymentFacts(from: r),
+                            .deployed(sha: "head1", defaultBranch: "main", headOid: "head1"))
+        }
+
+        test("GitHubRepoStatus/legacyCacheWithoutDeploymentLag_decodesToNil") {
+            let json = "{\"ciStatus\":\"success\",\"fetchedAt\":\"2026-08-25T00:00:00Z\"}"
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let status = try decoder.decode(GitHubRepoStatus.self, from: Data(json.utf8))
+            try expectNil(status.deploymentLag)
+            try expectEqual(status.undeployedCommitCount, 0)
+        }
+
+        test("GitHubRepoStatus/deploymentLagRoundTrips") {
+            let lag = DeploymentLag(aheadBy: 3, deployedSHA: "abc", defaultBranch: "main")
+            let status = GitHubRepoStatus(deploymentLag: lag)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let back = try decoder.decode(GitHubRepoStatus.self, from: try encoder.encode(status))
+            try expectEqual(back.deploymentLag, lag)
+            try expectEqual(back.undeployedCommitCount, 3)
+        }
+
+        test("GitHubRepoStatus/withoutRemoteWideSignals_clearsDeploymentLag") {
+            let status = GitHubRepoStatus(
+                slug: "org/el",
+                deploymentLag: DeploymentLag(aheadBy: 2, deployedSHA: "abc", defaultBranch: "main")
+            )
+            try expectNil(status.withoutRemoteWideSignals.deploymentLag)
+        }
     }
 
     // MARK: - GitHubRemoteParser

@@ -347,6 +347,20 @@ public struct ExactIgnoredIssueCounts: Equatable, Codable {
     }
 }
 
+/// How far the default branch is ahead of the last successful production
+/// deployment. `aheadBy` may be 0 (fully deployed); the UI hides that.
+public struct DeploymentLag: Equatable, Codable {
+    public let aheadBy: Int
+    public let deployedSHA: String
+    public let defaultBranch: String
+
+    public init(aheadBy: Int, deployedSHA: String, defaultBranch: String) {
+        self.aheadBy = aheadBy
+        self.deployedSHA = deployedSHA
+        self.defaultBranch = defaultBranch
+    }
+}
+
 /// Aggregate GitHub state for a repo at a moment in time.
 public struct GitHubRepoStatus: Equatable, Codable {
     public var prs: [PRSummary]
@@ -376,6 +390,11 @@ public struct GitHubRepoStatus: Equatable, Codable {
     /// Server-side counts for the ignored label; nil when no label was
     /// configured at fetch time (or the cache predates this).
     public var exactIgnoredIssues: ExactIgnoredIssueCounts?
+    /// Default branch vs. last successful production deployment; nil when
+    /// the repo has no such deployment (or it hasn't been fetched yet).
+    public var deploymentLag: DeploymentLag?
+
+    public var undeployedCommitCount: Int { deploymentLag?.aheadBy ?? 0 }
 
     /// Badge counts derived from `prs`. Drafts excluded.
     public var prCount: PRCount { PRCount(prs: prs) }
@@ -416,7 +435,8 @@ public struct GitHubRepoStatus: Equatable, Codable {
         slug: String? = nil,
         openIssueCount: Int = 0,
         unclaimedIssueCount: Int = 0,
-        exactIgnoredIssues: ExactIgnoredIssueCounts? = nil
+        exactIgnoredIssues: ExactIgnoredIssueCounts? = nil,
+        deploymentLag: DeploymentLag? = nil
     ) {
         self.prs = prs
         self.issues = issues
@@ -428,6 +448,7 @@ public struct GitHubRepoStatus: Equatable, Codable {
         self.openIssueCount = openIssueCount
         self.unclaimedIssueCount = unclaimedIssueCount
         self.exactIgnoredIssues = exactIgnoredIssues
+        self.deploymentLag = deploymentLag
     }
 
     // Custom decoder so adding/renaming a field doesn't invalidate cache
@@ -437,7 +458,7 @@ public struct GitHubRepoStatus: Equatable, Codable {
     // stale PR data for one refresh cycle instead of failing to decode.
     enum CodingKeys: String, CodingKey {
         case prs, issues, ciStatus, failingCheckNames, ciTargetSHA, fetchedAt, slug
-        case openIssueCount, unclaimedIssueCount, exactIgnoredIssues
+        case openIssueCount, unclaimedIssueCount, exactIgnoredIssues, deploymentLag
     }
 
     public init(from decoder: Decoder) throws {
@@ -452,6 +473,7 @@ public struct GitHubRepoStatus: Equatable, Codable {
         self.openIssueCount = try c.decodeIfPresent(Int.self, forKey: .openIssueCount) ?? 0
         self.unclaimedIssueCount = try c.decodeIfPresent(Int.self, forKey: .unclaimedIssueCount) ?? 0
         self.exactIgnoredIssues = try c.decodeIfPresent(ExactIgnoredIssueCounts.self, forKey: .exactIgnoredIssues)
+        self.deploymentLag = try c.decodeIfPresent(DeploymentLag.self, forKey: .deploymentLag)
     }
 
     /// Copy with remote-wide GitHub signals removed — what a non-primary
@@ -462,6 +484,7 @@ public struct GitHubRepoStatus: Equatable, Codable {
     public var withoutRemoteWideSignals: GitHubRepoStatus {
         var copy = withoutIssues
         copy.prs = []
+        copy.deploymentLag = nil
         return copy
     }
 
@@ -1200,6 +1223,103 @@ public enum GitHubAPI {
             return nil
         }
         return signals(from: response, ignoredLabel: label)
+    }
+
+    // MARK: - Deployment lag
+
+    public struct DeploymentsResponse: Decodable {
+        public let data: ResponseData
+
+        public struct ResponseData: Decodable {
+            public let repository: Repository?
+        }
+        public struct Repository: Decodable {
+            public let defaultBranchRef: BranchRef?
+            public let deployments: DeploymentConnection
+        }
+        public struct BranchRef: Decodable {
+            public let name: String
+            public let target: Target?
+        }
+        public struct Target: Decodable {
+            public let oid: String
+        }
+        public struct DeploymentConnection: Decodable {
+            public let nodes: [DeploymentNode]
+        }
+        public struct DeploymentNode: Decodable {
+            public let commitOid: String?
+            public let latestStatus: LatestStatus?
+        }
+        public struct LatestStatus: Decodable {
+            /// SUCCESS | FAILURE | IN_PROGRESS | INACTIVE | …
+            public let state: String
+        }
+    }
+
+    /// What the GraphQL answer says before any compare call is needed.
+    public enum DeploymentFacts: Equatable {
+        /// No default branch, or no successful production deployment.
+        case none
+        case deployed(sha: String, defaultBranch: String, headOid: String)
+    }
+
+    /// Outcome of a lag fetch. Failure is the optional's nil, kept apart
+    /// from `.none` so a failed call keeps the previous value while a
+    /// repo without deployments clears it.
+    public enum DeploymentLagResult: Equatable {
+        case noDeployment
+        case lag(DeploymentLag)
+    }
+
+    // Own query, not part of `pullRequestsQuery`: a token that can't read
+    // deployments must not take the PR data down with it.
+    private static let deploymentsQuery = """
+    query($owner:String!,$name:String!){
+      repository(owner:$owner,name:$name){
+        defaultBranchRef { name target { oid } }
+        deployments(environments:["production"], first:20, orderBy:{field:CREATED_AT,direction:DESC}){
+          nodes { commitOid latestStatus { state } }
+        }
+      }
+    }
+    """
+
+    /// Pure decision step: the newest production deployment whose latest
+    /// status is SUCCESS is what's live. A newer failed or in-flight one
+    /// doesn't change that.
+    public static func deploymentFacts(from response: DeploymentsResponse) -> DeploymentFacts {
+        guard let repository = response.data.repository,
+              let branch = repository.defaultBranchRef,
+              let head = branch.target?.oid,
+              let deployed = repository.deployments.nodes.first(where: {
+                  $0.latestStatus?.state == "SUCCESS" && $0.commitOid != nil
+              }),
+              let sha = deployed.commitOid else { return .none }
+        return .deployed(sha: sha, defaultBranch: branch.name, headOid: head)
+    }
+
+    struct CompareResponse: Decodable {
+        let aheadBy: Int
+    }
+
+    /// Fetches how far the default branch is ahead of production; nil when
+    /// a call fails (caller keeps the previous value).
+    public static func fetchDeploymentLag(for remote: GitHubRemote) -> DeploymentLagResult? {
+        guard let response = GHService.graphql(
+            query: deploymentsQuery,
+            variables: ["owner": remote.owner, "name": remote.repo],
+            as: DeploymentsResponse.self
+        ) else { return nil }
+        guard response.data.repository != nil else { return nil }
+        guard case let .deployed(sha, branch, head) = deploymentFacts(from: response) else { return .noDeployment }
+        if sha == head {
+            return .lag(DeploymentLag(aheadBy: 0, deployedSHA: sha, defaultBranch: branch))
+        }
+        let encoded = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? branch
+        let endpoint = "repos/\(remote.owner)/\(remote.repo)/compare/\(sha)...\(encoded)?per_page=1"
+        guard let compare = GHService.api(endpoint, as: CompareResponse.self) else { return nil }
+        return .lag(DeploymentLag(aheadBy: compare.aheadBy, deployedSHA: sha, defaultBranch: branch))
     }
 
     /// Bot heuristic. Public so tests can exercise the patterns directly.
