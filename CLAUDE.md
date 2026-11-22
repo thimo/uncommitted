@@ -48,7 +48,9 @@ This file is the fast-warm-up doc for Claude Code. For end-user docs see
   per-branch status (`for-each-ref` parser + ff/diverged classification),
   conflict/operation state (`u` lines + git-dir markers), daily-reminder
   date math, the per-repo git lock (plus a real-git regression test for
-  the concurrent fetch/pull race), and the diagnostics log (daily files,
+  the concurrent fetch/pull race), the deploy launcher's pure builders
+  (command detection, terminal choice, script and osascript arguments),
+  and the diagnostics log (daily files,
   retention, last-error tracking). UI/orchestration (AppKit/SwiftUI, RepoStore, RepoWatcher)
   is untested — won't run headlessly under the CLT-only toolchain.
 
@@ -160,6 +162,9 @@ and usually fix a specific pitfall:
   remote git commands (fetch/pull/push)
 - `Sources/UncommittedCore/Models.swift` — `Repo`, `RepoStatus` (counts are
   computed from `*Paths` arrays so they can't drift)
+- `Sources/UncommittedCore/DeployLauncher.swift` — "Deploy with Kamal"
+  context-menu action: detects `config/deploy.yml`, opens the deploy in the
+  user's terminal (osascript for Ghostty, a `.command` script otherwise)
 - `Sources/UncommittedCore/DiagnosticsLog.swift` + `CrashReporter.swift` —
   daily log files in `~/Library/Logs/Uncommitted/` (14-day retention,
   os.log mirror, observable `lastError` for Settings), plus last-breath

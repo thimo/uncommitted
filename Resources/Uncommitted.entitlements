@@ -2,7 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Minimal hardened runtime — no relaxations needed.
-         Required for notarization even without App Sandbox. -->
+    <!-- Hardened runtime, required for notarization even without App Sandbox.
+         The one relaxation: sending Apple events, used to open a Ghostty
+         window for the Kamal deploy entry. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
 </dict>
 </plist>

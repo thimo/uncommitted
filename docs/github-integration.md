@@ -93,6 +93,16 @@ Like PRs and issues, the pill belongs to the remote: it shows on the
 first clone of a repo only, and a repo with undeployed commits stays
 visible under "Hide repositories with no changes".
 
+A repo that has a `config/deploy.yml` also gets a "Deploy with Kamal" entry
+in its right-click menu. It runs `bin/kamal deploy` (or `kamal deploy` when
+the repo has no binstub) in a terminal window in the repo, so the deploy can
+ask for a 1Password login. The terminal is Ghostty or Terminal, whichever
+comes first among the configured actions, and Terminal when neither is
+configured. Kamal ships the local HEAD, so the entry is disabled, with the
+reason in its title, while the working tree has uncommitted changes, a git
+operation is in progress, HEAD is detached, or the checkout is not on the
+default branch. For Ghostty, macOS asks once for permission to control it.
+
 [deployments]: https://docs.github.com/en/rest/deployments/deployments
 
 In the menu bar itself, the branch icon turns red whenever **any**

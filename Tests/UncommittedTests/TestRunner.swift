@@ -80,6 +80,7 @@ struct TestRunnerMain {
         GitHubStatusTests.register()
         StalenessTests.register()
         ActionTests.register()
+        DeployLauncherTests.register()
         BranchStatusTests.register()
         DiagnosticsLogTests.register()
         ConflictStateTests.register()

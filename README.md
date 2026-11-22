@@ -126,7 +126,9 @@ glance tells you "is anything broken?" without opening the popover.
 The deploy pill compares the default branch with the latest successful
 [GitHub Deployment][deployments] for the `production` environment. It
 needs nothing but those records, whichever tool writes them; a repo
-without them shows no pill.
+without them shows no pill. A repo with a `config/deploy.yml` also gets a
+"Deploy with Kamal" entry in its right-click menu, which runs the deploy in
+your terminal app.
 
 Click the PR pill to open the GitHub PR list; click the issue pill to
 open the GitHub issues list; click the red/yellow CI badge to open the

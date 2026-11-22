@@ -909,6 +909,27 @@ struct RepoRow: View {
                     }
                 }
             }
+            if let deployCommand = DeployLauncher.deployCommand(forRepoAt: repo.url) {
+                Section {
+                    // Raw scheduler status on purpose: a muted repo still
+                    // has a default branch to check against.
+                    let blocker = DeployLauncher.blocker(
+                        status: repo.status,
+                        defaultBranch: githubScheduler.statuses[repo.url]?.deploymentLag?.defaultBranch
+                    )
+                    Button {
+                        DeployLauncher.launch(
+                            repoURL: repo.url,
+                            command: deployCommand,
+                            terminal: DeployLauncher.terminalApp(in: configStore.config.actions)
+                        )
+                    } label: {
+                        Label(blocker.map { "Deploy with Kamal — \($0)" } ?? "Deploy with Kamal",
+                              systemImage: "shippingbox")
+                    }
+                    .disabled(blocker != nil)
+                }
+            }
             Section {
                 let noRemote = fetchState?.noRemote == true
                 Button {
