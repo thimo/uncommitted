@@ -20,7 +20,7 @@ public struct GitHubRemote: Equatable {
 }
 
 /// CI conclusion for a single commit. `.none` means there is no remote
-/// branch to look at (local-only) or no check-runs were ever attached;
+/// branch to look at (local-only) or no workflow runs or commit statuses;
 /// the UI renders nothing for both, since "no signal" isn't actionable.
 public enum CIStatus: String, Equatable, Codable {
     case success
@@ -352,11 +352,10 @@ public struct GitHubRepoStatus: Equatable, Codable {
     public var prs: [PRSummary]
     public var issues: [IssueSummary]
     public var ciStatus: CIStatus
-    /// Names of the check-runs whose conclusion put the aggregate into
-    /// `.failure`. Useful for the detail popover so the user knows
-    /// *which* check broke (e.g. "lint" vs. "test"), since GitHub's
-    /// Actions tab only shows workflow runs and may hide third-party
-    /// app checks that nevertheless fail the aggregate.
+    /// Names of the workflows and commit-status contexts that put the
+    /// aggregate into `.failure`. Useful for the detail popover so the
+    /// user knows *which* check broke (e.g. "lint" vs. "bin/ci"), since
+    /// GitHub's Actions tab doesn't show commit statuses.
     public var failingCheckNames: [String]
     public var ciTargetSHA: String?
     public var fetchedAt: Date
@@ -1311,9 +1310,101 @@ public enum GitHubAPI {
         return latestPerWorkflow(response.workflowRuns.filter { $0.event != "dynamic" })
     }
 
+    // MARK: - CI / commit statuses
+
+    /// One commit status on a branch head: what a local or third-party CI
+    /// (e.g. context `bin/ci`) posts instead of running as a workflow.
+    /// `state` is GraphQL's `StatusState`: ERROR, EXPECTED, FAILURE,
+    /// PENDING, SUCCESS.
+    public struct CommitStatus: Equatable {
+        public let context: String
+        public let state: String
+        public let targetUrl: String?
+
+        public init(context: String, state: String, targetUrl: String? = nil) {
+            self.context = context
+            self.state = state
+            self.targetUrl = targetUrl
+        }
+
+        /// "bin/ci failure https://…" — one status, for the log.
+        public var logDescription: String {
+            "\(context) \(state.lowercased()) \(targetUrl ?? "")".trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    public struct CommitStatusesResponse: Decodable {
+        public let data: ResponseData
+
+        public struct ResponseData: Decodable {
+            public let repository: Repository?
+        }
+        public struct Repository: Decodable {
+            public let ref: Ref?
+        }
+        public struct Ref: Decodable {
+            public let target: Target?
+        }
+        public struct Target: Decodable {
+            public let status: Status?
+        }
+        public struct Status: Decodable {
+            public let contexts: [Context]
+        }
+        public struct Context: Decodable {
+            public let context: String
+            public let state: String
+            public let targetUrl: String?
+        }
+    }
+
+    /// Flattens the GraphQL answer; a missing ref or a commit without
+    /// statuses yields an empty list.
+    public static func commitStatuses(from response: CommitStatusesResponse) -> [CommitStatus] {
+        let contexts = response.data.repository?.ref?.target?.status?.contexts ?? []
+        return contexts.map { CommitStatus(context: $0.context, state: $0.state, targetUrl: $0.targetUrl) }
+    }
+
+    // GraphQL rather than REST: the REST statuses endpoint errors on a
+    // branch that isn't on the remote (local-only), which would log a
+    // warning on every refresh. Here a missing ref is just `ref: null`.
+    private static let commitStatusesQuery = """
+    query($owner:String!,$name:String!,$ref:String!){
+      repository(owner:$owner,name:$name){
+        ref(qualifiedName:$ref){
+          target{ ... on Commit { oid status { contexts { context state targetUrl } } } }
+        }
+      }
+    }
+    """
+
+    /// Fetches the commit statuses of a branch head; nil only when the
+    /// call itself fails. A branch missing on the remote, or a commit
+    /// without statuses, gives an empty list.
+    public static func fetchCommitStatuses(for remote: GitHubRemote, ref: String) -> [CommitStatus]? {
+        let variables = ["owner": remote.owner, "name": remote.repo, "ref": "refs/heads/\(ref)"]
+        guard let response = GHService.graphql(
+            query: commitStatusesQuery,
+            variables: variables,
+            as: CommitStatusesResponse.self
+        ) else { return nil }
+        return commitStatuses(from: response)
+    }
+
+    private enum StatusBucket { case success, failure, pending }
+
+    private static func bucket(_ status: CommitStatus) -> StatusBucket {
+        switch status.state.uppercased() {
+        case "FAILURE", "ERROR": return .failure
+        case "PENDING", "EXPECTED": return .pending
+        default: return .success
+        }
+    }
+
     /// Names of the workflows whose latest run is in the "failure"
-    /// bucket. Dedupes by workflow name and preserves first-seen order.
-    public static func failingNames(in runs: [WorkflowRun]) -> [String] {
+    /// bucket, then the contexts of failing commit statuses. Dedupes by
+    /// name and preserves first-seen order.
+    public static func failingNames(in runs: [WorkflowRun], commitStatuses: [CommitStatus] = []) -> [String] {
         var seen = Set<String>()
         var ordered: [String] = []
         for run in runs {
@@ -1327,20 +1418,34 @@ public enum GitHubAPI {
                 ordered.append(name)
             }
         }
+        for status in commitStatuses where bucket(status) == .failure {
+            guard !status.context.isEmpty, seen.insert(status.context).inserted else { continue }
+            ordered.append(status.context)
+        }
         return ordered
     }
 
-    /// Maps a list of workflow runs to a single `CIStatus`. Public so
-    /// tests can drive the conclusion/status combinations without the
-    /// network. Mapping mirrors GitHub's own UI:
+    /// Maps workflow runs plus commit statuses to a single `CIStatus`.
+    /// Public so tests can drive the combinations without the network.
+    /// Mapping mirrors GitHub's own UI:
     ///   success/neutral/skipped/stale/cancelled → green (silent)
     ///   failure/timed_out/action_required/startup_failure → red
     ///   anything not yet completed → pending
-    public static func aggregate(workflowRuns: [WorkflowRun]) -> CIStatus {
-        if workflowRuns.isEmpty { return .none }
+    /// Commit statuses: FAILURE/ERROR → red, PENDING/EXPECTED → pending,
+    /// SUCCESS → green.
+    public static func aggregate(workflowRuns: [WorkflowRun], commitStatuses: [CommitStatus] = []) -> CIStatus {
+        if workflowRuns.isEmpty && commitStatuses.isEmpty { return .none }
 
         var anyPending = false
         var anyFailure = false
+
+        for status in commitStatuses {
+            switch bucket(status) {
+            case .failure: anyFailure = true
+            case .pending: anyPending = true
+            case .success: break
+            }
+        }
 
         for run in workflowRuns {
             guard run.status == "completed" else {

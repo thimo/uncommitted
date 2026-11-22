@@ -1039,9 +1039,9 @@ struct RepoRow: View {
     }
 
     /// Opens the GitHub Actions page for this repo, pre-filtered to the
-    /// current branch when one is known. The badge tracks workflow-run
-    /// conclusions (not third-party check apps), so /actions is the
-    /// page that surfaces exactly what our badge represents.
+    /// current branch when one is known. The badge merges workflow runs
+    /// with commit statuses (not check-run apps); /actions shows the runs,
+    /// the only part of it that has a page of its own.
     private func openCIPage() {
         guard let urlString = GitService.remoteURL(at: repo.url),
               let remote = GitHubRemoteParser.parse(urlString) else {

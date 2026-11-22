@@ -229,6 +229,91 @@ enum GitHubStatusTests {
             try expectEqual(GitHubAPI.aggregate(workflowRuns: runs), .failure)
         }
 
+        // MARK: commit statuses
+
+        func status(_ context: String, _ state: String) -> GitHubAPI.CommitStatus {
+            GitHubAPI.CommitStatus(context: context, state: state, targetUrl: nil)
+        }
+        let green = GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "success")
+
+        func parse(_ json: String) throws -> [GitHubAPI.CommitStatus] {
+            let response = try JSONDecoder().decode(GitHubAPI.CommitStatusesResponse.self, from: Data(json.utf8))
+            return GitHubAPI.commitStatuses(from: response)
+        }
+
+        test("commitStatuses/parsesContexts") {
+            let json = """
+            {"data":{"repository":{"ref":{"target":{"oid":"abc","status":{"contexts":[
+              {"context":"bin/ci","state":"FAILURE","targetUrl":"https://ci.example/1"},
+              {"context":"lint","state":"SUCCESS","targetUrl":null}
+            ]}}}}}}
+            """
+            let statuses = try parse(json)
+            try expectEqual(statuses, [
+                GitHubAPI.CommitStatus(context: "bin/ci", state: "FAILURE", targetUrl: "https://ci.example/1"),
+                GitHubAPI.CommitStatus(context: "lint", state: "SUCCESS", targetUrl: nil),
+            ])
+            try expectEqual(statuses[0].logDescription, "bin/ci failure https://ci.example/1")
+        }
+
+        test("commitStatuses/nullStatusIsEmpty") {
+            let json = #"{"data":{"repository":{"ref":{"target":{"oid":"abc","status":null}}}}}"#
+            let statuses = try parse(json)
+            try expectEqual(statuses, [])
+        }
+
+        test("commitStatuses/nullRefIsEmpty") {
+            let json = #"{"data":{"repository":{"ref":null}}}"#
+            let statuses = try parse(json)
+            try expectEqual(statuses, [])
+        }
+
+        test("aggregate/statusFailureWithGreenRunsIsFailure") {
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: [green], commitStatuses: [status("bin/ci", "FAILURE")]), .failure)
+        }
+
+        test("aggregate/statusPendingWithGreenRunsIsPending") {
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: [green], commitStatuses: [status("bin/ci", "PENDING")]), .pending)
+        }
+
+        test("aggregate/statusesOnly") {
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: [], commitStatuses: [status("bin/ci", "SUCCESS")]), .success)
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: [], commitStatuses: [status("bin/ci", "FAILURE")]), .failure)
+        }
+
+        test("aggregate/statusErrorAndExpected") {
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: [], commitStatuses: [status("a", "ERROR")]), .failure)
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: [], commitStatuses: [status("a", "EXPECTED")]), .pending)
+        }
+
+        test("aggregate/statusStateIsCaseInsensitive") {
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: [], commitStatuses: [status("a", "failure")]), .failure)
+        }
+
+        test("aggregate/failureBeatsPendingAcrossRunsAndStatuses") {
+            let running = GitHubAPI.WorkflowRun(status: "in_progress", conclusion: nil)
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: [running], commitStatuses: [status("a", "FAILURE")]), .failure)
+        }
+
+        test("aggregate/bothEmptyIsNone") {
+            try expectEqual(GitHubAPI.aggregate(workflowRuns: [], commitStatuses: []), .none)
+        }
+
+        test("failingNames/mergesRunsThenStatusesDeduped") {
+            let runs = [
+                GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "failure"),
+                green,
+            ]
+            let statuses = [
+                status("bin/ci", "ERROR"),
+                status("Tests", "FAILURE"),
+                status("lint", "SUCCESS"),
+                status("deploy", "PENDING"),
+                status("bin/ci", "FAILURE"),
+            ]
+            try expectEqual(GitHubAPI.failingNames(in: runs, commitStatuses: statuses), ["Tests", "bin/ci"])
+        }
+
         test("newestRuns/dropsWorkflowsMissingFromFresh") {
             let previous = [GitHubAPI.WorkflowRun(name: "Old", status: "completed", conclusion: "failure", workflowId: 9, runNumber: 3)]
             let fresh = [GitHubAPI.WorkflowRun(name: "Tests", status: "completed", conclusion: "success", workflowId: 1, runNumber: 7)]

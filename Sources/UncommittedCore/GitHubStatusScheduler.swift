@@ -313,19 +313,26 @@ public final class GitHubStatusScheduler: ObservableObject {
             for (_, ciRepos) in byCI {
                 guard let firstSpec = ciRepos.first,
                       let branch = firstSpec.branch else { continue }
-                let fetched = GitHubAPI.fetchLatestWorkflowRuns(for: firstSpec.remote, ref: branch)
+                // Half an answer is no answer: with either call failed the
+                // badge keeps what it showed, like PRs do. Aggregating the
+                // half that did arrive would flip a red badge green for a
+                // round whenever the failing half is the one that's missing.
+                guard let fetched = GitHubAPI.fetchLatestWorkflowRuns(for: firstSpec.remote, ref: branch),
+                      let commitStatuses = GitHubAPI.fetchCommitStatuses(for: firstSpec.remote, ref: branch)
+                else { continue }
                 let urlsForCI = ciRepos.map(\.url)
                 let slug = firstSpec.remote.slug
                 DispatchQueue.main.async {
                     let now = Date()
                     let key = "\(slug)#\(branch)"
-                    let runs = fetched.map { GitHubAPI.newestRuns(fresh: $0, previous: self.lastCIRuns[key] ?? []) } ?? []
-                    if fetched != nil { self.lastCIRuns[key] = runs }
-                    let ci = GitHubAPI.aggregate(workflowRuns: runs)
-                    let failingNames = GitHubAPI.failingNames(in: runs)
+                    let runs = GitHubAPI.newestRuns(fresh: fetched, previous: self.lastCIRuns[key] ?? [])
+                    self.lastCIRuns[key] = runs
+                    let ci = GitHubAPI.aggregate(workflowRuns: runs, commitStatuses: commitStatuses)
+                    let failingNames = GitHubAPI.failingNames(in: runs, commitStatuses: commitStatuses)
                     let notGreen = runs.filter { GitHubAPI.aggregate(workflowRuns: [$0]) != .success }
+                    let notGreenStatuses = commitStatuses.filter { GitHubAPI.aggregate(workflowRuns: [], commitStatuses: [$0]) != .success }
                     for url in urlsForCI {
-                        self.logCIChange(to: ci, runs: notGreen, url: url, slug: slug, branch: branch)
+                        self.logCIChange(to: ci, runs: notGreen, statuses: notGreenStatuses, url: url, slug: slug, branch: branch)
                         self.applyCI(ci, failingNames: failingNames, to: url, at: now)
                     }
                 }
@@ -394,14 +401,16 @@ public final class GitHubStatusScheduler: ObservableObject {
         return PrimaryClonePicker.primaryURLs(orderedURLs: ordered, slugs: slugs)
     }
 
-    /// One line per CI transition, naming the runs behind a non-green
-    /// result — a red badge is otherwise untraceable once GitHub has moved on.
-    private func logCIChange(to new: CIStatus, runs: [GitHubAPI.WorkflowRun], url: URL, slug: String, branch: String) {
+    /// One line per CI transition, naming the runs and commit statuses
+    /// behind a non-green result — a red badge is otherwise untraceable
+    /// once GitHub has moved on.
+    private func logCIChange(to new: CIStatus, runs: [GitHubAPI.WorkflowRun], statuses commitStatuses: [GitHubAPI.CommitStatus], url: URL, slug: String, branch: String) {
         let old = statuses[url]?.ciStatus ?? .none
         guard old != new else { return }
         var message = "\(url.lastPathComponent) (\(slug)#\(branch)): \(old) → \(new)"
-        if !runs.isEmpty {
-            message += " — " + runs.map(\.logDescription).joined(separator: "; ")
+        let parts = runs.map(\.logDescription) + commitStatuses.map(\.logDescription)
+        if !parts.isEmpty {
+            message += " — " + parts.joined(separator: "; ")
         }
         if new == .failure {
             DiagnosticsLog.shared.warning("ci", message)
