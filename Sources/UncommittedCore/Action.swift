@@ -164,7 +164,7 @@ public enum ActionRunner {
     /// it didn't, PATH is the inherited one extended with the fallback
     /// directories.
     private static func resolveShellEnvironment() -> (environment: [String: String], resolved: Bool) {
-        var env = ProcessInfo.processInfo.environment
+        var env = ChildEnvironment.base
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var fallback = env
         fallback["PATH"] = pathWithFallbackDirectories(env["PATH"], home: home)
@@ -173,6 +173,7 @@ public enum ActionRunner {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shell)
         process.arguments = ["-l", "-c", "/usr/bin/printenv PATH"]
+        process.environment = env
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardInput = FileHandle.nullDevice
@@ -221,9 +222,7 @@ public enum ActionRunner {
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = args
         process.standardInput = FileHandle.nullDevice
-        if let environment {
-            process.environment = environment
-        }
+        process.environment = environment ?? ChildEnvironment.base
         let stderr = Pipe()
         process.standardError = stderr
         do {

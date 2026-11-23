@@ -49,6 +49,32 @@ enum ActionTests {
             try expectEqual(ActionRunner.pathWithFallbackDirectories("", home: "/Users/alice"), expected)
         }
 
+        // MARK: - Child environment
+
+        test("ChildEnvironment/sanitized_dropsEveryClaudeVariable") {
+            let out = ChildEnvironment.sanitized([
+                "CLAUDE_CODE_CHILD_SESSION": "1",
+                "CLAUDECODE": "1",
+                "CLAUDE_PID": "123",
+                "CLAUDE_EFFORT": "high",
+                "CLAUDE_CODE_SESSION_ID": "abc",
+                "CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/s",
+                "HOME": "/Users/alice",
+            ])
+            try expectEqual(out, ["HOME": "/Users/alice"])
+        }
+
+        test("ChildEnvironment/sanitized_keepsNamesThatOnlyContainClaude") {
+            let env = ["MY_CLAUDE_DIR": "/x", "claude_lower": "y", "PATH": "/usr/bin"]
+            try expectEqual(ChildEnvironment.sanitized(env), env)
+        }
+
+        test("ChildEnvironment/base_hasNoClaudeVariable") {
+            // This runner is usually started from a Claude Code session, so
+            // the real environment is the interesting input.
+            try expect(!ChildEnvironment.base.keys.contains { $0.hasPrefix("CLAUDE") }, "base still carries a CLAUDE variable")
+        }
+
         // MARK: - Codable round-trips
 
         test("Action/kind_finder_roundTrips") {

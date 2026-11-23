@@ -444,7 +444,7 @@ public enum GitService {
     /// we only inject defaults when nothing is configured, so a custom
     /// ssh wrapper still wins.
     private static func buildEnvironment() -> [String: String] {
-        var env = ProcessInfo.processInfo.environment
+        var env = ChildEnvironment.base
         if env["GIT_SSH_COMMAND"] == nil {
             env["GIT_SSH_COMMAND"] = "ssh -o ControlMaster=no -o ControlPath=none"
         }

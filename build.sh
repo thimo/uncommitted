@@ -75,7 +75,9 @@ fi
 echo
 if [ "$WAS_RUNNING" = "1" ]; then
   echo "==> Relaunching (was running before build)"
-  open "$APP_INSTALL"
+  # `open` hands its own environment to the app. From a Claude Code session
+  # that includes the CLAUDE* session markers, so start from an empty one.
+  env -i HOME="$HOME" USER="$USER" SHELL="$SHELL" PATH=/usr/bin:/bin open "$APP_INSTALL"
   echo "Done. Relaunched in the menu bar (no Dock icon)."
 else
   echo "Done. Open $APP_INSTALL to run — it lives in the menu bar (no Dock icon)."

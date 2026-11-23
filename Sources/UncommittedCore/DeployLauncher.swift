@@ -199,6 +199,7 @@ public enum DeployLauncher {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = args
+        process.environment = ChildEnvironment.base
         process.standardInput = FileHandle.nullDevice
         let stderr = Pipe()
         process.standardError = stderr

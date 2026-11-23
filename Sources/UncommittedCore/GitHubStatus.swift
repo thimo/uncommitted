@@ -906,7 +906,7 @@ public enum GHService {
     private static func buildEnvironment() -> [String: String] {
         // gh respects HOME and reads its config from ~/.config/gh.
         // No special tweaks needed — pass the parent environment through.
-        ProcessInfo.processInfo.environment
+        ChildEnvironment.base
     }
 }
 

@@ -203,6 +203,7 @@ private struct DiagnosticsSettingsSection: View {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         task.arguments = ["-c", "-k", "--sequesterRsrc", diagnostics.directory.path, destination.path]
+        task.environment = ChildEnvironment.base
         do {
             try task.run()
             task.waitUntilExit()
