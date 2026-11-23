@@ -112,7 +112,12 @@ struct MenuContentView: View {
                 ActionRunner.run(repoURL: repo.url, action: action)
                 dismissPopover()
             },
-            onFetch: { fetchScheduler.manualFetch(repos: [repo]) },
+            onFetch: {
+                // The row shows GitHub data too (issues, PRs, CI), so a
+                // refresh the user asks for has to refetch that as well.
+                fetchScheduler.manualFetch(repos: [repo])
+                githubScheduler.eagerRefresh([repo])
+            },
             onOpenFile: { fileURL in
                 // Open the clicked file with the repo's default action (the
                 // same one the row's name runs) — set your editor as the
@@ -939,6 +944,7 @@ struct RepoRow: View {
                 let noRemote = fetchState?.noRemote == true
                 Button {
                     fetchScheduler.manualFetch(repos: [repo])
+                    githubScheduler.eagerRefresh([repo])
                 } label: {
                     Label("Fetch from remote", systemImage: "arrow.triangle.2.circlepath")
                 }
