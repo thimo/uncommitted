@@ -77,7 +77,11 @@ if [ "$WAS_RUNNING" = "1" ]; then
   echo "==> Relaunching (was running before build)"
   # `open` hands its own environment to the app. From a Claude Code session
   # that includes the CLAUDE* session markers, so start from an empty one.
-  env -i HOME="$HOME" USER="$USER" SHELL="$SHELL" PATH=/usr/bin:/bin open "$APP_INSTALL"
+  # SHELL is the account's login shell, not the caller's: the app asks it
+  # for the PATH of command actions, and a session's zsh doesn't know the
+  # fish PATH that holds `code` (2026-11-24).
+  LOGIN_SHELL="$(dscl . -read "/Users/$USER" UserShell | awk '{print $2}')"
+  env -i HOME="$HOME" USER="$USER" SHELL="${LOGIN_SHELL:-$SHELL}" PATH=/usr/bin:/bin open "$APP_INSTALL"
   echo "Done. Relaunched in the menu bar (no Dock icon)."
 else
   echo "Done. Open $APP_INSTALL to run — it lives in the menu bar (no Dock icon)."
