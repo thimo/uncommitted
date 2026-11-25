@@ -99,6 +99,18 @@ public enum GitService {
             return nil
         }
 
+        // Git reports a linked worktree nested in the checkout as one
+        // untracked directory. It is a checkout of this same repo, not
+        // untracked work.
+        if parsed.untrackedPaths.contains(where: { $0.hasSuffix("/") }) {
+            let worktrees = linkedWorktreePaths(at: url)
+            if !worktrees.isEmpty {
+                parsed.untrackedPaths.removeAll {
+                    $0.hasSuffix("/") && worktrees.contains(String($0.dropLast()))
+                }
+            }
+        }
+
         if parsed.ahead > 0 {
             parsed.aheadCommits = commitSubjects(range: "@{u}..HEAD", at: url)
         }
@@ -134,6 +146,37 @@ public enum GitService {
             return URL(fileURLWithPath: path)
         }
         return repoURL.appendingPathComponent(path).standardizedFileURL
+    }
+
+    /// Repo-relative paths of the linked worktrees (`git worktree add`)
+    /// that live inside this checkout, read from the `gitdir` pointer
+    /// files under `<common git dir>/worktrees/`. Pure filesystem — no
+    /// subprocess. Public for the test runner.
+    public static func linkedWorktreePaths(at repoURL: URL) -> Set<String> {
+        guard var gitDir = gitDirectory(for: repoURL) else { return [] }
+        // A linked worktree's own git dir points back at the shared one.
+        if let common = try? String(contentsOf: gitDir.appendingPathComponent("commondir"), encoding: .utf8) {
+            let path = common.trimmingCharacters(in: .whitespacesAndNewlines)
+            gitDir = path.hasPrefix("/")
+                ? URL(fileURLWithPath: path)
+                : gitDir.appendingPathComponent(path).standardizedFileURL
+        }
+        let fm = FileManager.default
+        let registry = gitDir.appendingPathComponent("worktrees")
+        guard let entries = try? fm.contentsOfDirectory(atPath: registry.path) else { return [] }
+
+        let root = repoURL.resolvingSymlinksInPath().path
+        var result: Set<String> = []
+        for entry in entries {
+            let pointer = registry.appendingPathComponent(entry).appendingPathComponent("gitdir")
+            guard let contents = try? String(contentsOf: pointer, encoding: .utf8) else { continue }
+            // The pointer names the worktree's `.git` file.
+            let worktree = URL(fileURLWithPath: contents.trimmingCharacters(in: .whitespacesAndNewlines))
+                .deletingLastPathComponent().resolvingSymlinksInPath().path
+            guard worktree.hasPrefix(root + "/") else { continue }
+            result.insert(String(worktree.dropFirst(root.count + 1)))
+        }
+        return result
     }
 
     /// Detects a started-but-unfinished multi-step operation from the

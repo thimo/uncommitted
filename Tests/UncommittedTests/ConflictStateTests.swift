@@ -100,6 +100,28 @@ enum ConflictStateTests {
             try expectNil(GitService.gitDirectory(for: repo))
         }
 
+        // MARK: - linked worktrees
+
+        test("LinkedWorktrees/nestedOnesListed_outsideOnesSkipped") {
+            let repo = try makeTempRepo()
+            let registry = repo.appendingPathComponent(".git/worktrees")
+            let nested = repo.appendingPathComponent(".claude/worktrees/agent-1")
+            try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+            try touch(registry.appendingPathComponent("agent-1/gitdir"))
+            try "\(nested.path)/.git\n".write(
+                to: registry.appendingPathComponent("agent-1/gitdir"), atomically: true, encoding: .utf8)
+            try touch(registry.appendingPathComponent("elsewhere/gitdir"))
+            try "/somewhere/else/.git\n".write(
+                to: registry.appendingPathComponent("elsewhere/gitdir"), atomically: true, encoding: .utf8)
+
+            try expectEqual(GitService.linkedWorktreePaths(at: repo), [".claude/worktrees/agent-1"])
+        }
+
+        test("LinkedWorktrees/noRegistry_returnsEmpty") {
+            let repo = try makeTempRepo()
+            try expect(GitService.linkedWorktreePaths(at: repo).isEmpty)
+        }
+
         // MARK: - operation detection
 
         test("Operation/mergeHead_readsAsMerge") {
